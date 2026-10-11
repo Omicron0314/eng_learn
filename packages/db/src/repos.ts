@@ -9,6 +9,7 @@ import {
   type TimeRange,
 } from "@eng-learn/core";
 import { and, asc, count, desc, eq, gte, inArray, like, lt, or, sql, sum } from "drizzle-orm";
+import { z } from "zod";
 import type { Conn } from "./client";
 import { type EventPayload, type EventType, parseEventPayload } from "./events";
 import { newId } from "./id";
@@ -16,12 +17,13 @@ import * as t from "./schema";
 
 export const DEFAULT_USER_ID = "00000000-0000-7000-8000-000000000001";
 
-export type CardBack = {
-  meaning?: string;
-  example?: string;
-  meaningSource: "import" | "ai" | "user";
-  pos?: string;
-};
+export const CardBackSchema = z.object({
+  meaning: z.string().optional(),
+  example: z.string().optional(),
+  meaningSource: z.enum(["import", "ai", "user"]),
+  pos: z.string().optional(),
+});
+export type CardBack = z.infer<typeof CardBackSchema>;
 
 export type CardRow = {
   id: string;
@@ -77,7 +79,7 @@ function toCardRow(r: CardSelect, lemma: string): CardRow {
     lexemeId: r.lexemeId,
     lemma,
     front: r.front,
-    back: JSON.parse(r.backJson) as CardBack,
+    back: CardBackSchema.parse(JSON.parse(r.backJson)),
     deck: r.deck,
     suspended: r.suspended,
     origin: r.origin as CardOrigin,
@@ -142,12 +144,12 @@ export function createRepos(db: Conn) {
             range ? inRange(t.events.ts, range) : undefined,
           ),
         )
-        .orderBy(asc(t.events.ts))
+        .orderBy(asc(t.events.ts), asc(t.events.id))
         .all();
       return rows.map((r) => ({
         id: r.id,
         ts: r.ts,
-        payload: JSON.parse(r.payloadJson) as EventPayload<T>,
+        payload: parseEventPayload(type, JSON.parse(r.payloadJson)),
       }));
     },
     timestamps(userId: string, range: TimeRange): number[] {
@@ -220,7 +222,7 @@ export function createRepos(db: Conn) {
           userId: input.userId,
           lexemeId: input.lexemeId,
           front: input.front,
-          backJson: JSON.stringify(input.back),
+          backJson: JSON.stringify(CardBackSchema.parse(input.back)),
           deck: input.deck,
           suspended: false,
           origin: input.origin,
@@ -255,7 +257,7 @@ export function createRepos(db: Conn) {
     },
     updateBack(id: string, back: CardBack, now = Date.now()) {
       db.update(t.cards)
-        .set({ backJson: JSON.stringify(back), updatedAt: now })
+        .set({ backJson: JSON.stringify(CardBackSchema.parse(back)), updatedAt: now })
         .where(eq(t.cards.id, id))
         .run();
     },
@@ -265,10 +267,10 @@ export function createRepos(db: Conn) {
     search(
       userId: string,
       f: {
-        q?: string;
-        deck?: string;
-        state?: string;
-        suspended?: boolean;
+        q?: string | undefined;
+        deck?: string | undefined;
+        state?: string | undefined;
+        suspended?: boolean | undefined;
         offset: number;
         limit: number;
       },
@@ -364,7 +366,7 @@ export function createRepos(db: Conn) {
         .select()
         .from(t.reviewLogs)
         .where(and(eq(t.reviewLogs.userId, userId), inRange(t.reviewLogs.reviewedAt, range)))
-        .orderBy(asc(t.reviewLogs.reviewedAt))
+        .orderBy(asc(t.reviewLogs.reviewedAt), asc(t.reviewLogs.id))
         .all()
         .map((r) => ({
           ...r,
@@ -380,7 +382,7 @@ export function createRepos(db: Conn) {
         .select({ rating: t.reviewLogs.rating, reviewedAt: t.reviewLogs.reviewedAt })
         .from(t.reviewLogs)
         .where(and(eq(t.reviewLogs.cardId, cardId), sql`${t.reviewLogs.reviewedAt} > ${ts}`))
-        .orderBy(asc(t.reviewLogs.reviewedAt))
+        .orderBy(asc(t.reviewLogs.reviewedAt), asc(t.reviewLogs.id))
         .limit(1)
         .get();
       return r ? { rating: r.rating as Rating, reviewedAt: r.reviewedAt } : null;

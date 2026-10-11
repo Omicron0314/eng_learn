@@ -1,0 +1,392 @@
+[
+  {
+    "targets": [
+      "learn",
+      "walk",
+      "help",
+      "read",
+      "try",
+      "plan",
+      "share",
+      "care"
+    ],
+    "genre": "story"
+  },
+  {
+    "targets": [
+      "read",
+      "try",
+      "plan",
+      "share",
+      "care",
+      "grow",
+      "hope",
+      "work"
+    ],
+    "genre": "dialogue"
+  },
+  {
+    "targets": [
+      "share",
+      "care",
+      "grow",
+      "hope",
+      "work",
+      "choose",
+      "bring",
+      "open"
+    ],
+    "genre": "monologue"
+  },
+  {
+    "targets": [
+      "hope",
+      "work",
+      "choose",
+      "bring",
+      "open",
+      "change",
+      "ask",
+      "follow"
+    ],
+    "genre": "story"
+  },
+  {
+    "targets": [
+      "bring",
+      "open",
+      "change",
+      "ask",
+      "follow",
+      "believe",
+      "build",
+      "decide"
+    ],
+    "genre": "dialogue"
+  },
+  {
+    "targets": [
+      "ask",
+      "follow",
+      "believe",
+      "build",
+      "decide",
+      "accept",
+      "explain",
+      "agree"
+    ],
+    "genre": "monologue"
+  },
+  {
+    "targets": [
+      "build",
+      "decide",
+      "accept",
+      "explain",
+      "agree",
+      "improve",
+      "prepare",
+      "provide"
+    ],
+    "genre": "story"
+  },
+  {
+    "targets": [
+      "explain",
+      "agree",
+      "improve",
+      "prepare",
+      "provide",
+      "receive",
+      "remain",
+      "return"
+    ],
+    "genre": "dialogue"
+  },
+  {
+    "targets": [
+      "prepare",
+      "provide",
+      "receive",
+      "remain",
+      "return",
+      "remember",
+      "support",
+      "travel"
+    ],
+    "genre": "monologue"
+  },
+  {
+    "targets": [
+      "remain",
+      "return",
+      "remember",
+      "support",
+      "travel",
+      "carry",
+      "create",
+      "enjoy"
+    ],
+    "genre": "story"
+  },
+  {
+    "targets": [
+      "support",
+      "travel",
+      "carry",
+      "create",
+      "enjoy",
+      "offer",
+      "finish",
+      "discuss"
+    ],
+    "genre": "dialogue"
+  },
+  {
+    "targets": [
+      "create",
+      "enjoy",
+      "offer",
+      "finish",
+      "discuss",
+      "develop",
+      "allow",
+      "compare"
+    ],
+    "genre": "monologue"
+  },
+  {
+    "targets": [
+      "finish",
+      "discuss",
+      "develop",
+      "allow",
+      "compare",
+      "continue",
+      "consider",
+      "discover"
+    ],
+    "genre": "story"
+  },
+  {
+    "targets": [
+      "allow",
+      "compare",
+      "continue",
+      "consider",
+      "discover",
+      "include",
+      "increase",
+      "protect"
+    ],
+    "genre": "dialogue"
+  },
+  {
+    "targets": [
+      "consider",
+      "discover",
+      "include",
+      "increase",
+      "protect",
+      "reduce",
+      "solve",
+      "suggest"
+    ],
+    "genre": "monologue"
+  },
+  {
+    "targets": [
+      "increase",
+      "protect",
+      "reduce",
+      "solve",
+      "suggest",
+      "understand",
+      "learn",
+      "walk"
+    ],
+    "genre": "story"
+  },
+  {
+    "targets": [
+      "solve",
+      "suggest",
+      "understand",
+      "learn",
+      "walk",
+      "help",
+      "read",
+      "try"
+    ],
+    "genre": "dialogue"
+  },
+  {
+    "targets": [
+      "learn",
+      "walk",
+      "help",
+      "read",
+      "try",
+      "plan",
+      "share",
+      "care"
+    ],
+    "genre": "monologue"
+  },
+  {
+    "targets": [
+      "read",
+      "try",
+      "plan",
+      "share",
+      "care",
+      "grow",
+      "hope",
+      "work"
+    ],
+    "genre": "story"
+  },
+  {
+    "targets": [
+      "share",
+      "care",
+      "grow",
+      "hope",
+      "work",
+      "choose",
+      "bring",
+      "open"
+    ],
+    "genre": "dialogue"
+  },
+  {
+    "targets": [
+      "hope",
+      "work",
+      "choose",
+      "bring",
+      "open",
+      "change",
+      "ask",
+      "follow"
+    ],
+    "genre": "monologue"
+  },
+  {
+    "targets": [
+      "bring",
+      "open",
+      "change",
+      "ask",
+      "follow",
+      "believe",
+      "build",
+      "decide"
+    ],
+    "genre": "story"
+  },
+  {
+    "targets": [
+      "ask",
+      "follow",
+      "believe",
+      "build",
+      "decide",
+      "accept",
+      "explain",
+      "agree"
+    ],
+    "genre": "dialogue"
+  },
+  {
+    "targets": [
+      "build",
+      "decide",
+      "accept",
+      "explain",
+      "agree",
+      "improve",
+      "prepare",
+      "provide"
+    ],
+    "genre": "monologue"
+  },
+  {
+    "targets": [
+      "explain",
+      "agree",
+      "improve",
+      "prepare",
+      "provide",
+      "receive",
+      "remain",
+      "return"
+    ],
+    "genre": "story"
+  },
+  {
+    "targets": [
+      "prepare",
+      "provide",
+      "receive",
+      "remain",
+      "return",
+      "remember",
+      "support",
+      "travel"
+    ],
+    "genre": "dialogue"
+  },
+  {
+    "targets": [
+      "remain",
+      "return",
+      "remember",
+      "support",
+      "travel",
+      "carry",
+      "create",
+      "enjoy"
+    ],
+    "genre": "monologue"
+  },
+  {
+    "targets": [
+      "support",
+      "travel",
+      "carry",
+      "create",
+      "enjoy",
+      "offer",
+      "finish",
+      "discuss"
+    ],
+    "genre": "story"
+  },
+  {
+    "targets": [
+      "create",
+      "enjoy",
+      "offer",
+      "finish",
+      "discuss",
+      "develop",
+      "allow",
+      "compare"
+    ],
+    "genre": "dialogue"
+  },
+  {
+    "targets": [
+      "finish",
+      "discuss",
+      "develop",
+      "allow",
+      "compare",
+      "continue",
+      "consider",
+      "discover"
+    ],
+    "genre": "monologue"
+  }
+]

@@ -13,7 +13,11 @@ const POS_RE =
 const LETTER_PHRASE = /^[A-Za-z][A-Za-z'’.\- ]*$/;
 
 function stripPhonetics(s: string): string {
-  return s.replace(/\/[^/]*\//g, " ").replace(/\[[^\]]*\]/g, " ");
+  // Protect an attached variant headword before pairing phonetic delimiters.
+  // This also preserves the existing support for IPA attached without whitespace.
+  const variants = s.match(/^[A-Za-z'’.-]+(?:\/[A-Za-z'’.-]+)+(?=\s|$)/)?.[0];
+  const rest = variants ? s.slice(variants.length) : s;
+  return (variants ?? "") + rest.replace(/\/[^/]*\//g, " ").replace(/\[[^\]]*\]/g, " ");
 }
 
 /**

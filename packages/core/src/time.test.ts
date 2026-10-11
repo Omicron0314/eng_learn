@@ -19,6 +19,20 @@ describe("dayRange", () => {
     expect(dayKey(Date.parse("2026-10-11T20:00:00Z"), cfg)).toBe("2026-10-12");
   });
 
+  it("AC9: learning day uses wall time near spring and autumn DST transitions", () => {
+    const dst = { timezone: "America/New_York", dayStartHour: 4 };
+    expect(dayKey(Date.parse("2026-03-08T08:30:00Z"), dst)).toBe("2026-03-08");
+    expect(new Date(dayRange(new Date("2026-03-08T08:30:00Z"), dst).start).toISOString()).toBe(
+      "2026-03-08T08:00:00.000Z",
+    );
+    expect(dayKey(Date.parse("2026-11-01T08:30:00Z"), dst)).toBe("2026-10-31");
+    expect(dayKey(Date.parse("2026-11-01T09:00:00Z"), dst)).toBe("2026-11-01");
+    const gap = { ...dst, dayStartHour: 2 };
+    expect(dayRange(new Date("2026-03-08T07:30:00Z"), gap).start).toBe(
+      Date.parse("2026-03-08T07:00:00Z"),
+    );
+  });
+
   it("handles DST timezones", () => {
     const r = dayRange(new Date("2026-03-08T15:00:00Z"), {
       timezone: "America/New_York",

@@ -115,8 +115,9 @@ describe("completeJson", () => {
 
   it("AC7: falls back when JSON mode is unsupported", async () => {
     const llm = new FakeLLM({ script: [new JsonModeUnsupportedError(), '{"title":"C"}'] });
-    const { p } = run(llm);
+    const { p, calls } = run(llm);
     const r = await p;
+    expect(calls.map((c) => c.status)).toEqual(["error", "ok"]);
     expect(r.jsonModeUsed).toBe(false);
     expect(llm.requests[1]?.jsonMode).toBe(false);
   });

@@ -99,14 +99,13 @@ export function demoResponder(req: LLMRequest): string {
     return JSON.stringify({
       lemma,
       pos: "n.",
-      meaningZh: `${lemma} 的语境释义(演示)`,
+      meaningZh: "语境释义（演示）",
       meaningEn: `meaning of ${lemma}`,
       ipa: `/${lemma}/`,
     });
   }
   if (req.purpose === "definition") {
-    const word = firstUser.match(/Word:\s*(.+)/)?.[1]?.trim() ?? "word";
-    return JSON.stringify({ meaningZh: `${word}(演示释义)`, pos: "" });
+    return JSON.stringify({ meaningZh: "演示释义", pos: "" });
   }
   return "{}";
 }

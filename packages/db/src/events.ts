@@ -35,7 +35,11 @@ export const eventSchemas = {
     missingTargets: z.array(z.string()),
   }),
   article_open: z.object({ articleId: id }),
-  article_complete: z.object({ articleId: id, via: z.enum(["button", "scroll"]) }),
+  article_complete: z.object({
+    articleId: id,
+    via: z.enum(["button", "scroll"]),
+    openId: id.optional(),
+  }),
   lookup: z.object({
     lexemeId: id,
     lemma: z.string(),
@@ -58,7 +62,13 @@ export const eventSchemas = {
     articleId: z.string().optional(),
   }),
   inbox_ignore: z.object({ inboxId: id, lexemeId: id }),
-  audio_generate: z.object({ articleId: id, audioId: id, chars: z.number().int().min(0) }),
+  audio_reserve: z.object({ articleId: id, chars: z.number().int().min(0) }),
+  audio_generate: z.object({
+    articleId: id,
+    audioId: id,
+    chars: z.number().int().min(0),
+    reservationId: id.optional(),
+  }),
   audio_play: z.object({
     articleId: id,
     rate: z.number().min(0.5).max(2),

@@ -53,6 +53,8 @@ export type CompleteJsonOptions = {
   /** Human-readable JSON shape included in the repair prompt. */
   shape: string;
   repairTemplate?: string;
+  /** Filter untrusted reply and diagnostic excerpts before sending repair context. */
+  sanitizeRepairContext?: (text: string) => string;
 };
 
 export async function completeJson<T>(
@@ -67,10 +69,6 @@ export async function completeJson<T>(
     try {
       return await llm.complete({ ...req, messages, jsonMode });
     } catch (err) {
-      if (err instanceof JsonModeUnsupportedError && jsonMode) {
-        jsonMode = false;
-        return call(messages);
-      }
       opts.onCall({
         purpose: req.purpose,
         provider: llm.provider,
@@ -82,6 +80,10 @@ export async function completeJson<T>(
         status: "error",
         error: (err as Error).message,
       });
+      if (err instanceof JsonModeUnsupportedError && jsonMode) {
+        jsonMode = false;
+        return call(messages);
+      }
       throw err;
     }
   };
@@ -107,10 +109,15 @@ export async function completeJson<T>(
   }
   record(first, "invalid_output", firstParsed.error);
 
+  const sanitize = opts.sanitizeRepairContext ?? ((text: string) => text);
   const repairMessages: LLMMessage[] = [
     ...req.messages,
-    { role: "assistant", content: first.text },
-    ...renderRepair(opts.repairTemplate ?? DEFAULT_REPAIR_TEMPLATE, firstParsed.error, opts.shape),
+    { role: "assistant", content: sanitize(first.text) },
+    ...renderRepair(
+      opts.repairTemplate ?? DEFAULT_REPAIR_TEMPLATE,
+      sanitize(firstParsed.error),
+      opts.shape,
+    ),
   ];
   const second = await call(repairMessages);
   const secondParsed = parseWith(second.text, schema);

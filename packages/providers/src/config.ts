@@ -1,4 +1,10 @@
+import { z } from "zod";
 import { ConfigError } from "./errors";
+
+function validateEndpoint(value: string | undefined, key: string) {
+  const parsed = z.url({ protocol: /^https?$/ }).safeParse(value?.trim());
+  if (!parsed.success) throw new ConfigError(`${key} must be an HTTP(S) URL`);
+}
 
 export type Price = { inputPerMTok: number; outputPerMTok: number };
 
@@ -6,7 +12,16 @@ export type LLMConfig =
   | { provider: "openai-compatible"; baseURL: string; apiKey: string; model: string; price?: Price }
   | { provider: "fake"; model: string; price?: Price };
 
-export type TTSConfig = { provider: "none" } | { provider: "fake"; voice: string; model: string };
+export type TTSConfig =
+  | { provider: "none" }
+  | { provider: "fake"; voice: string; model: string }
+  | {
+      provider: "openai-compatible";
+      baseURL: string;
+      apiKey: string;
+      voice: string;
+      model: string;
+    };
 
 export type ProviderConfig = {
   llm: LLMConfig;
@@ -22,7 +37,12 @@ function readPrice(env: Env): Price | undefined {
   if (!i || !o) return undefined;
   const inputPerMTok = Number(i);
   const outputPerMTok = Number(o);
-  if (!Number.isFinite(inputPerMTok) || !Number.isFinite(outputPerMTok)) {
+  if (
+    !Number.isFinite(inputPerMTok) ||
+    !Number.isFinite(outputPerMTok) ||
+    inputPerMTok < 0 ||
+    outputPerMTok < 0
+  ) {
     throw new ConfigError("LLM_PRICE_INPUT_PER_MTOK / LLM_PRICE_OUTPUT_PER_MTOK must be numbers");
   }
   return { inputPerMTok, outputPerMTok };
@@ -46,6 +66,7 @@ export function loadLLMConfig(env: Env): LLMConfig {
   if (missing.length > 0) {
     throw new ConfigError(`Missing LLM configuration: ${missing.join(", ")}`, [...missing]);
   }
+  validateEndpoint(env.LLM_BASE_URL, "LLM_BASE_URL");
   return {
     provider: "openai-compatible",
     baseURL: (env.LLM_BASE_URL ?? "").trim(),
@@ -63,6 +84,20 @@ export function loadTTSConfig(env: Env): TTSConfig {
       provider: "fake",
       voice: env.TTS_VOICE?.trim() || "fake-voice",
       model: env.TTS_MODEL?.trim() || "fake-tts",
+    };
+  }
+  if (provider === "openai-compatible") {
+    const required = ["TTS_BASE_URL", "TTS_API_KEY", "TTS_MODEL", "TTS_VOICE"] as const;
+    const missing = required.filter((k) => !env[k]?.trim());
+    if (missing.length)
+      throw new ConfigError(`Missing TTS configuration: ${missing.join(", ")}`, [...missing]);
+    validateEndpoint(env.TTS_BASE_URL, "TTS_BASE_URL");
+    return {
+      provider,
+      baseURL: (env.TTS_BASE_URL ?? "").trim(),
+      apiKey: (env.TTS_API_KEY ?? "").trim(),
+      model: (env.TTS_MODEL ?? "").trim(),
+      voice: (env.TTS_VOICE ?? "").trim(),
     };
   }
   throw new ConfigError(`Unknown TTS_PROVIDER: ${provider}`);

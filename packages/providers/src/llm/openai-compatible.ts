@@ -21,7 +21,7 @@ export class OpenAICompatibleLLM implements LLMProvider {
       baseURL: opts.baseURL,
       apiKey: opts.apiKey,
       timeout: opts.timeoutMs ?? 120_000,
-      maxRetries: 1,
+      maxRetries: 0,
       ...(opts.fetch ? { fetch: opts.fetch } : {}),
     });
   }
@@ -48,9 +48,11 @@ export class OpenAICompatibleLLM implements LLMProvider {
         if (req.jsonMode && err.status === 400 && /response_format|json/i.test(err.message)) {
           throw new JsonModeUnsupportedError(err.message);
         }
-        throw new ProviderError(`LLM request failed (${err.status ?? "network"}): ${err.message}`);
+        throw new ProviderError(
+          `LLM request failed (${err.status ?? "network"}); check provider configuration or retry later`,
+        );
       }
-      throw new ProviderError(`LLM request failed: ${(err as Error).message}`);
+      throw new ProviderError("LLM request failed; check provider configuration or retry later");
     }
   }
 }

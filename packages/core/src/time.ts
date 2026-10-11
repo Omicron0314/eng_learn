@@ -36,13 +36,32 @@ function tzOffset(ts: number, timezone: string): number {
 function zonedToUtc(y: number, m: number, d: number, hour: number, timezone: string): number {
   const guess = Date.UTC(y, m - 1, d, hour);
   const first = guess - tzOffset(guess, timezone);
-  return guess - tzOffset(first, timezone);
+  const second = guess - tzOffset(first, timezone);
+  // Nonexistent wall times during spring-forward advance through the gap.
+  return tzOffset(first, timezone) !== tzOffset(second, timezone)
+    ? Math.max(first, second)
+    : second;
+}
+
+function learningDate(ts: number, cfg: DayConfig) {
+  const p = zonedParts(ts, cfg.timezone);
+  // Subtract a calendar day, not elapsed hours: a DST transition changes the offset.
+  const date = new Date(Date.UTC(p.year, p.month - 1, p.day - (p.hour < cfg.dayStartHour ? 1 : 0)));
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
 }
 
 /** The learning day containing `now`, as [start, end). */
 export function dayRange(now: Date, cfg: DayConfig): TimeRange {
-  const shifted = now.getTime() - cfg.dayStartHour * 3_600_000;
-  const p = zonedParts(shifted, cfg.timezone);
+  let p = learningDate(now.getTime(), cfg);
+  // For a boundary in the DST gap, use the previous day until its resolved instant.
+  if (now.getTime() < zonedToUtc(p.year, p.month, p.day, cfg.dayStartHour, cfg.timezone)) {
+    const previous = new Date(Date.UTC(p.year, p.month - 1, p.day - 1));
+    p = {
+      year: previous.getUTCFullYear(),
+      month: previous.getUTCMonth() + 1,
+      day: previous.getUTCDate(),
+    };
+  }
   const start = zonedToUtc(p.year, p.month, p.day, cfg.dayStartHour, cfg.timezone);
   const next = new Date(Date.UTC(p.year, p.month - 1, p.day + 1));
   const end = zonedToUtc(
@@ -57,7 +76,7 @@ export function dayRange(now: Date, cfg: DayConfig): TimeRange {
 
 /** Learning-day key (YYYY-MM-DD) for a timestamp. */
 export function dayKey(ts: number, cfg: DayConfig): string {
-  const p = zonedParts(ts - cfg.dayStartHour * 3_600_000, cfg.timezone);
+  const p = zonedParts(dayRange(new Date(ts), cfg).start, cfg.timezone);
   return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
 }
 

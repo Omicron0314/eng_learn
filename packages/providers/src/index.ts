@@ -8,4 +8,5 @@ export * from "./llm/structured";
 export * from "./llm/types";
 export * from "./prompts";
 export * from "./tts/fake";
+export * from "./tts/openai-compatible";
 export * from "./tts/types";
