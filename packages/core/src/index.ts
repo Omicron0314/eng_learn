@@ -9,6 +9,7 @@ export * from "./lexicon/tokenize";
 export * from "./lexicon/wordlist";
 export * from "./metrics/experiment";
 export * from "./metrics/stats";
+export * from "./provider-config";
 export * from "./settings";
 export * from "./srs/queue";
 export * from "./srs/srs";
