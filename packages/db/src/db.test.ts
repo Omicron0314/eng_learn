@@ -20,7 +20,7 @@ function freshDb() {
 describe("migrations", () => {
   it("AC1: migrate is idempotent", () => {
     const db = openDb(":memory:");
-    expect(migrate(db)).toEqual(["0001_init", "0002_append_only_triggers"]);
+    expect(migrate(db)).toEqual(["0001_init", "0002_append_only_triggers", "0003_provider_config"]);
     expect(migrate(db)).toEqual([]);
   });
 
@@ -129,6 +129,29 @@ describe("settings", () => {
     expect(() => repos.settings.save(DEFAULT_USER_ID, { ...s, dailyNewLimit: -1 })).toThrow();
     repos.settings.save(DEFAULT_USER_ID, { ...s, dailyNewLimit: 5 });
     expect(repos.settings.get(DEFAULT_USER_ID).dailyNewLimit).toBe(5);
+  });
+});
+
+describe("providerConfig", () => {
+  it("round-trips stored provider config and rejects invalid values", () => {
+    const { repos } = freshDb();
+    expect(repos.providerConfig.get(DEFAULT_USER_ID)).toEqual({});
+    const value = {
+      llm: {
+        provider: "openai-compatible" as const,
+        baseURL: "https://llm.example.com/v1",
+        apiKey: "sk-test-only",
+        model: "test-model",
+      },
+      tts: { provider: "none" as const },
+    };
+    repos.providerConfig.save(DEFAULT_USER_ID, value);
+    expect(repos.providerConfig.get(DEFAULT_USER_ID)).toEqual(value);
+    expect(() =>
+      repos.providerConfig.save(DEFAULT_USER_ID, {
+        llm: { ...value.llm, baseURL: "not-a-url" },
+      }),
+    ).toThrow();
   });
 });
 

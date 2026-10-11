@@ -6,6 +6,8 @@ import {
   type Settings,
   SettingsSchema,
   type SrsCard,
+  type StoredProviderConfig,
+  StoredProviderConfigSchema,
   type TimeRange,
 } from "@eng-learn/core";
 import { and, asc, count, desc, eq, gte, inArray, like, lt, or, sql, sum } from "drizzle-orm";
@@ -115,6 +117,26 @@ export function createRepos(db: Conn) {
       db.insert(t.settings)
         .values({ userId, json, updatedAt: now })
         .onConflictDoUpdate({ target: t.settings.userId, set: { json, updatedAt: now } })
+        .run();
+    },
+  };
+
+  const providerConfig = {
+    get(userId: string): StoredProviderConfig {
+      const row = db
+        .select()
+        .from(t.providerConfig)
+        .where(eq(t.providerConfig.userId, userId))
+        .get();
+      if (!row) return {};
+      const parsed = StoredProviderConfigSchema.safeParse(JSON.parse(row.json));
+      return parsed.success ? parsed.data : {};
+    },
+    save(userId: string, value: StoredProviderConfig, now = Date.now()): void {
+      const json = JSON.stringify(StoredProviderConfigSchema.parse(value));
+      db.insert(t.providerConfig)
+        .values({ userId, json, updatedAt: now })
+        .onConflictDoUpdate({ target: t.providerConfig.userId, set: { json, updatedAt: now } })
         .run();
     },
   };
@@ -725,6 +747,7 @@ export function createRepos(db: Conn) {
   return {
     users,
     settings,
+    providerConfig,
     events,
     lexemes,
     cards,

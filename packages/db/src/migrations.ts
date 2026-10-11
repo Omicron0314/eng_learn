@@ -176,6 +176,16 @@ CREATE TRIGGER review_logs_no_update BEFORE UPDATE ON review_logs BEGIN SELECT R
 CREATE TRIGGER review_logs_no_delete BEFORE DELETE ON review_logs BEGIN SELECT RAISE(ABORT, 'review_logs is append-only'); END;
 `,
   },
+  {
+    id: "0003_provider_config",
+    sql: `
+CREATE TABLE provider_config (
+  user_id TEXT PRIMARY KEY REFERENCES users(id),
+  json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+`,
+  },
 ];
 
 export function runMigrations(sqlite: Database.Database): string[] {

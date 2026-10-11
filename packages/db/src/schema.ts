@@ -22,6 +22,14 @@ export const settings = sqliteTable("settings", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+export const providerConfig = sqliteTable("provider_config", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id),
+  json: text("json").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export const lexemes = sqliteTable(
   "lexemes",
   {
