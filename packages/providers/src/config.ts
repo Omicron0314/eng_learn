@@ -1,3 +1,4 @@
+import type { StoredLLMConfig, StoredTTSConfig } from "@eng-learn/core";
 import { z } from "zod";
 import { ConfigError } from "./errors";
 
@@ -31,7 +32,7 @@ export type ProviderConfig = {
 
 type Env = Record<string, string | undefined>;
 
-function readPrice(env: Env): Price | undefined {
+function readPriceInternal(env: Env): Price | undefined {
   const i = env.LLM_PRICE_INPUT_PER_MTOK;
   const o = env.LLM_PRICE_OUTPUT_PER_MTOK;
   if (!i || !o) return undefined;
@@ -50,7 +51,7 @@ function readPrice(env: Env): Price | undefined {
 
 export function loadLLMConfig(env: Env): LLMConfig {
   const provider = env.LLM_PROVIDER?.trim() || "openai-compatible";
-  const price = readPrice(env);
+  const price = readPriceInternal(env);
   if (provider === "fake") {
     return {
       provider: "fake",
@@ -130,4 +131,128 @@ export function loadProviderConfig(env: Env): ProviderConfig {
     tts: loadTTSConfig(env),
     blobDir: env.BLOB_DIR?.trim() || "./data/blobs",
   };
+}
+
+// --- Database-stored (settings page) configuration ---------------------------
+
+export type ProviderSource = "settings" | "env";
+
+function hostOf(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
+
+const LLM_ENV_KEYS = ["LLM_PROVIDER", "LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL"] as const;
+/** True when any LLM environment variable is set (even partially). */
+export function hasLlmEnv(env: Env): boolean {
+  return LLM_ENV_KEYS.some((k) => Boolean(env[k]?.trim()));
+}
+/** True when a TTS provider is explicitly selected via the environment. */
+export function hasTtsEnv(env: Env): boolean {
+  return Boolean(env.TTS_PROVIDER?.trim());
+}
+
+export function readPrice(env: Env): Price | undefined {
+  return readPriceInternal(env);
+}
+
+function llmConfigFromStored(stored: StoredLLMConfig, price?: Price): LLMConfig {
+  if (stored.provider === "fake") {
+    return { provider: "fake", model: stored.model, ...(price ? { price } : {}) };
+  }
+  return {
+    provider: "openai-compatible",
+    baseURL: stored.baseURL,
+    apiKey: stored.apiKey,
+    model: stored.model,
+    ...(price ? { price } : {}),
+  };
+}
+
+function ttsConfigFromStored(stored: StoredTTSConfig): TTSConfig {
+  if (stored.provider === "none") return { provider: "none" };
+  if (stored.provider === "fake")
+    return { provider: "fake", model: stored.model, voice: stored.voice };
+  return {
+    provider: "openai-compatible",
+    baseURL: stored.baseURL,
+    apiKey: stored.apiKey,
+    model: stored.model,
+    voice: stored.voice,
+  };
+}
+
+/**
+ * Effective LLM config: settings-page (database) values take precedence over the
+ * environment. Throws ConfigError with a user-facing message when neither exists.
+ */
+export function resolveLLMConfig(env: Env, stored?: StoredLLMConfig): LLMConfig {
+  if (stored) return llmConfigFromStored(stored, readPrice(env));
+  if (!hasLlmEnv(env)) throw new ConfigError("未配置 LLM：请在设置页填写服务商端点、密钥与模型");
+  return loadLLMConfig(env);
+}
+
+/** Effective TTS config; defaults to browser speech when nothing is configured. */
+export function resolveTTSConfig(env: Env, stored?: StoredTTSConfig): TTSConfig {
+  if (stored) return ttsConfigFromStored(stored);
+  return loadTTSConfig(env);
+}
+
+export type LLMStatus = {
+  configured: boolean;
+  source: ProviderSource | null;
+  provider: string;
+  host: string | null;
+  model: string | null;
+  missing: string[];
+};
+
+export function llmStatus(env: Env, stored?: StoredLLMConfig): LLMStatus {
+  if (stored) {
+    return {
+      configured: true,
+      source: "settings",
+      provider: stored.provider,
+      host: stored.provider === "openai-compatible" ? hostOf(stored.baseURL) : null,
+      model: stored.model,
+      missing: [],
+    };
+  }
+  if (!hasLlmEnv(env)) {
+    return {
+      configured: false,
+      source: null,
+      provider: "openai-compatible",
+      host: null,
+      model: null,
+      missing: ["端点", "密钥", "模型"],
+    };
+  }
+  const s = llmConfigStatus(env);
+  return {
+    configured: s.missing.length === 0 && (s.provider === "fake" || s.host !== null),
+    source: "env",
+    provider: s.provider,
+    host: s.host,
+    model: s.model,
+    missing: s.missing,
+  };
+}
+
+export type TTSStatus = { source: ProviderSource | null; provider: string };
+
+export function ttsStatus(env: Env, stored?: StoredTTSConfig): TTSStatus {
+  if (stored) return { source: "settings", provider: stored.provider };
+  if (hasTtsEnv(env)) {
+    try {
+      return { source: "env", provider: loadTTSConfig(env).provider };
+    } catch {
+      return { source: "env", provider: "配置无效" };
+    }
+  }
+  return { source: null, provider: "none" };
 }

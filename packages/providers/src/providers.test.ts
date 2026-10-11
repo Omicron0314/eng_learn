@@ -4,7 +4,14 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { LocalFileBlob } from "./blob";
-import { loadLLMConfig, loadTTSConfig } from "./config";
+import {
+  llmStatus,
+  loadLLMConfig,
+  loadTTSConfig,
+  resolveLLMConfig,
+  resolveTTSConfig,
+  ttsStatus,
+} from "./config";
 import {
   ConfigError,
   JsonModeUnsupportedError,
@@ -48,6 +55,51 @@ describe("config", () => {
     expect(createTTS(loadTTSConfig({}))).toBeNull();
     expect(createTTS(loadTTSConfig({ TTS_PROVIDER: "fake" }))).toBeInstanceOf(FakeTTS);
     expect(() => loadTTSConfig({ TTS_PROVIDER: "nope" })).toThrow(ConfigError);
+  });
+
+  it("settings-page config takes precedence over env and reports status", () => {
+    const stored = {
+      provider: "openai-compatible" as const,
+      baseURL: "https://stored.example.com/v1",
+      apiKey: "sk-stored",
+      model: "stored-model",
+    };
+    const env = {
+      LLM_BASE_URL: "https://env.example.com",
+      LLM_API_KEY: "sk-env",
+      LLM_MODEL: "env-model",
+      TTS_PROVIDER: "fake",
+    };
+    expect(resolveLLMConfig(env, stored)).toMatchObject({
+      baseURL: "https://stored.example.com/v1",
+      model: "stored-model",
+    });
+    expect(resolveLLMConfig(env)).toMatchObject({ model: "env-model" });
+    expect(llmStatus(env, stored)).toMatchObject({ configured: true, source: "settings" });
+    expect(llmStatus(env)).toMatchObject({ configured: true, source: "env", model: "env-model" });
+    expect(llmStatus({})).toMatchObject({ configured: false, source: null });
+    expect(resolveTTSConfig(env, { provider: "none" })).toEqual({ provider: "none" });
+    expect(resolveTTSConfig(env)).toMatchObject({ provider: "fake" });
+    expect(
+      ttsStatus(
+        {},
+        {
+          provider: "openai-compatible",
+          baseURL: "https://x.co",
+          apiKey: "k",
+          model: "m",
+          voice: "v",
+        },
+      ),
+    ).toEqual({
+      source: "settings",
+      provider: "openai-compatible",
+    });
+  });
+
+  it("resolveLLMConfig without settings or env fails with a user-facing message", () => {
+    expect(() => resolveLLMConfig({})).toThrow(/设置页/);
+    expect(llmStatus({}).missing).toEqual(["端点", "密钥", "模型"]);
   });
 });
 
