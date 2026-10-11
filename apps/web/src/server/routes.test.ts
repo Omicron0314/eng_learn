@@ -115,6 +115,29 @@ describe("API routes against memory SQLite and fakes", () => {
     expect((await call("settings", { unknown: 4 })).status).toBe(400);
     expect((await call("settings", { dailyNewLimit: 201 })).status).toBe(400);
   });
+  it("settings/providers validates input and never returns secrets", async () => {
+    initialize();
+    expect((await call("settings/providers", {})).status).toBe(400);
+    expect(
+      (await call("settings/providers", { llm: { provider: "openai-compatible" } })).status,
+    ).toBe(400);
+    const saved = await call("settings/providers", {
+      llm: {
+        provider: "openai-compatible",
+        baseURL: "https://llm.example.com/v1",
+        model: "test-model",
+        apiKey: "sk-route-secret",
+      },
+    });
+    expect(saved.status).toBe(200);
+    expect(JSON.stringify(await saved.json())).not.toContain("sk-route-secret");
+    const view = await (await call("settings")).json();
+    expect(JSON.stringify(view)).not.toContain("sk-route-secret");
+    expect(view.providerConfig.llm).toMatchObject({
+      hasApiKey: true,
+      baseURL: "https://llm.example.com/v1",
+    });
+  });
   it("serves audio ranges, enforces size before parsing and deduplicates reading sessions", async () => {
     const { deps } = initialize();
     const articleId = seedArticle(deps);

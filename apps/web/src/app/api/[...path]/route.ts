@@ -215,6 +215,8 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
               .strict(),
           ),
         );
+      else if (key === "settings/providers")
+        result = services.updateProviderConfig(deps, await jsonInput(request, z.unknown()));
       else if (key === "settings") {
         const patch = await jsonInput(
           request,

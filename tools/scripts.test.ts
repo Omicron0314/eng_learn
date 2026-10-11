@@ -64,7 +64,7 @@ describe("runnable tool scripts", () => {
           genre: "story",
           levelTier: "medium",
           promptVersion: "article.v1",
-          model: deps.llm.model,
+          model: deps.llmProvider().model,
           source: "llm",
           license: null,
           analysisJson: "{}",

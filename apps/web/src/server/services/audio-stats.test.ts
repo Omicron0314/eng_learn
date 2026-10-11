@@ -44,7 +44,7 @@ describe("T5.1 audio", () => {
     });
     expect(tts.calls).toBe(2);
     expect(getTtsUsage(deps).usedChars).toBe(usage * 2);
-    deps.tts = new FakeTTS("another-configured-voice", "another-configured-model");
+    deps.ttsProvider = () => new FakeTTS("another-configured-voice", "another-configured-model");
     const second = await ensureAudio(deps, articleId);
     expect(second).toMatchObject({ cacheHit: false });
     if (second.mode !== "server") throw new Error("server");
@@ -53,7 +53,7 @@ describe("T5.1 audio", () => {
   it("AC5/AC6: browser fallback returns text with no writes", async () => {
     const { deps, tts } = setup();
     const articleId = seedArticle(deps);
-    deps.tts = null;
+    deps.ttsProvider = () => null;
     expect(await ensureAudio(deps, articleId)).toMatchObject({
       mode: "browser",
       text: expect.stringContaining("Home\n\n"),
@@ -110,21 +110,22 @@ describe("T5.3 quota", () => {
   it("compatible adapter partial synthesis remains fully reserved after a later chunk fails", async () => {
     const { deps } = setup();
     let calls = 0;
-    deps.tts = new OpenAICompatibleTTS({
-      baseURL: "https://example.invalid",
-      apiKey: "test-only",
-      model: "configured-model",
-      voice: "configured-voice",
-      fetch: async () => {
-        calls++;
-        return calls === 1
-          ? new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } })
-          : new Response(JSON.stringify({ error: { message: "chunk failed" } }), {
-              status: 500,
-              headers: { "content-type": "application/json" },
-            });
-      },
-    });
+    deps.ttsProvider = () =>
+      new OpenAICompatibleTTS({
+        baseURL: "https://example.invalid",
+        apiKey: "test-only",
+        model: "configured-model",
+        voice: "configured-voice",
+        fetch: async () => {
+          calls++;
+          return calls === 1
+            ? new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } })
+            : new Response(JSON.stringify({ error: { message: "chunk failed" } }), {
+                status: 500,
+                headers: { "content-type": "application/json" },
+              });
+        },
+      });
     const body = "text ".repeat(1000);
     const articleId = seedArticle(deps, body, "title");
     const chars = `title\n\n${body}`.length;

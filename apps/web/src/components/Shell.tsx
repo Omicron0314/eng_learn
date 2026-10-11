@@ -24,8 +24,10 @@ export function Shell({ children }: { children: ReactNode }) {
         .catch(() => {});
     };
     refresh();
-    api<{ providers: { llm: { provider: string } } }>("settings")
-      .then((view) => setDemo(view.providers.llm.provider === "fake"))
+    api<{ providers: { llm: { configured: boolean; provider: string } } }>("settings")
+      .then((view) =>
+        setDemo(view.providers.llm.configured && view.providers.llm.provider === "fake"),
+      )
       .catch(() => {});
     window.addEventListener("inbox-changed", refresh);
     return () => window.removeEventListener("inbox-changed", refresh);

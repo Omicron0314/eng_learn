@@ -44,7 +44,7 @@ export async function jsonCompletion<T>(
   sanitizeRepairContext?: (text: string) => string,
 ) {
   try {
-    return await completeJson(deps.llm, { purpose, messages }, schema, {
+    return await completeJson(deps.llmProvider(), { purpose, messages }, schema, {
       shape,
       ...(sanitizeRepairContext ? { sanitizeRepairContext } : {}),
       ...(deps.price ? { price: deps.price } : {}),

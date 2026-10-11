@@ -5,6 +5,192 @@ import type { getSettingsView } from "../server/services";
 import { api, Heading, Loading, Notice, tierLabels, useLoad } from "./ui";
 
 type View = ReturnType<typeof getSettingsView>;
+
+type ProviderFormProps = { data: View; onSaved: (patch: Partial<View>) => void };
+
+function ProviderForm({ data, onSaved }: ProviderFormProps) {
+  const stored = data.providerConfig;
+  const [llmProvider, setLlmProvider] = useState(stored.llm?.provider ?? "openai-compatible");
+  const [ttsProvider, setTtsProvider] = useState(stored.tts?.provider ?? "none");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const keyPlaceholder = (hasKey: boolean) =>
+    hasKey ? "已设置，留空则保持不变" : "仅服务端保存，不会下发到浏览器";
+  const keyValue = (v: FormDataEntryValue | null) => {
+    const s = String(v ?? "").trim();
+    return s ? s : undefined;
+  };
+  async function save(form: FormData) {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const payload: { llm?: unknown; tts?: unknown } = {};
+      payload.llm =
+        llmProvider === "fake"
+          ? { provider: "fake", model: keyValue(form.get("llmModel")) }
+          : {
+              provider: "openai-compatible",
+              baseURL: String(form.get("llmBaseURL") ?? "").trim(),
+              model: String(form.get("llmModel") ?? "").trim(),
+              apiKey: keyValue(form.get("llmApiKey")),
+            };
+      payload.tts =
+        ttsProvider === "none"
+          ? { provider: "none" }
+          : ttsProvider === "fake"
+            ? {
+                provider: "fake",
+                model: keyValue(form.get("ttsModel")),
+                voice: keyValue(form.get("ttsVoice")),
+              }
+            : {
+                provider: "openai-compatible",
+                baseURL: String(form.get("ttsBaseURL") ?? "").trim(),
+                model: String(form.get("ttsModel") ?? "").trim(),
+                voice: String(form.get("ttsVoice") ?? "").trim(),
+                apiKey: keyValue(form.get("ttsApiKey")),
+              };
+      const saved = await api<Pick<View, "providers" | "providerConfig">>(
+        "settings/providers",
+        payload,
+      );
+      onSaved(saved);
+      setMessage("Provider 配置已保存，立即生效");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const llmStored = stored.llm?.provider === "openai-compatible" ? stored.llm : null;
+  const ttsStored = stored.tts?.provider === "openai-compatible" ? stored.tts : null;
+  return (
+    <form action={save} className="card section">
+      <h2>AI 服务（Provider）</h2>
+      <p className="muted">
+        在这里填写 LLM / TTS
+        服务商配置，保存后立即生效，无需重启。密钥只保存在本机数据库，仅服务端使用；留空表示保持原来的密钥不变。
+      </p>
+      <div className="fields three">
+        <label>
+          LLM 类型
+          <select
+            name="llmProvider"
+            value={llmProvider}
+            onChange={(e) => setLlmProvider(e.target.value as typeof llmProvider)}
+          >
+            <option value="openai-compatible">OpenAI 兼容接口</option>
+            <option value="fake">演示模式（假服务）</option>
+          </select>
+        </label>
+        {llmProvider === "openai-compatible" && (
+          <>
+            <label>
+              LLM 端点（Base URL）
+              <input
+                required
+                name="llmBaseURL"
+                placeholder="https://…"
+                defaultValue={llmStored?.baseURL ?? ""}
+              />
+            </label>
+            <label>
+              LLM 模型
+              <input required name="llmModel" defaultValue={llmStored?.model ?? ""} />
+            </label>
+            <label>
+              LLM API 密钥
+              <input
+                type="password"
+                name="llmApiKey"
+                autoComplete="off"
+                placeholder={keyPlaceholder(llmStored?.hasApiKey ?? false)}
+              />
+            </label>
+          </>
+        )}
+        {llmProvider === "fake" && (
+          <label>
+            LLM 模型名（可选）
+            <input
+              name="llmModel"
+              defaultValue={stored.llm?.provider === "fake" ? stored.llm.model : ""}
+            />
+          </label>
+        )}
+      </div>
+      <div className="fields three">
+        <label>
+          TTS 类型
+          <select
+            name="ttsProvider"
+            value={ttsProvider}
+            onChange={(e) => setTtsProvider(e.target.value as typeof ttsProvider)}
+          >
+            <option value="none">不配置（用浏览器朗读）</option>
+            <option value="openai-compatible">OpenAI 兼容接口</option>
+            <option value="fake">演示模式（假服务）</option>
+          </select>
+        </label>
+        {ttsProvider === "openai-compatible" && (
+          <>
+            <label>
+              TTS 端点（Base URL）
+              <input
+                required
+                name="ttsBaseURL"
+                placeholder="https://…"
+                defaultValue={ttsStored?.baseURL ?? ""}
+              />
+            </label>
+            <label>
+              TTS 模型
+              <input required name="ttsModel" defaultValue={ttsStored?.model ?? ""} />
+            </label>
+            <label>
+              TTS 声音
+              <input required name="ttsVoice" defaultValue={ttsStored?.voice ?? ""} />
+            </label>
+            <label>
+              TTS API 密钥
+              <input
+                type="password"
+                name="ttsApiKey"
+                autoComplete="off"
+                placeholder={keyPlaceholder(ttsStored?.hasApiKey ?? false)}
+              />
+            </label>
+          </>
+        )}
+        {ttsProvider === "fake" && (
+          <>
+            <label>
+              TTS 模型名（可选）
+              <input
+                name="ttsModel"
+                defaultValue={stored.tts?.provider === "fake" ? stored.tts.model : ""}
+              />
+            </label>
+            <label>
+              TTS 声音（可选）
+              <input
+                name="ttsVoice"
+                defaultValue={stored.tts?.provider === "fake" ? stored.tts.voice : ""}
+              />
+            </label>
+          </>
+        )}
+      </div>
+      <Notice error={error} message={message} />
+      <button type="submit" disabled={busy}>
+        保存 Provider 配置
+      </button>
+    </form>
+  );
+}
+
 const numeric = [
   ["dailyNewLimit", "每日新词上限", 0, 200, 1],
   ["dailyReviewLimit", "每日复习上限", 0, 2000, 1],
@@ -73,15 +259,23 @@ export function Settings() {
               <h2>服务状态</h2>
               <p>
                 LLM ·{" "}
-                {data.providers.llm.provider === "fake"
-                  ? "演示模式（假服务，不代表真实生成质量）"
-                  : data.providers.llm.provider}
+                {!data.providers.llm.configured
+                  ? "未配置"
+                  : data.providers.llm.provider === "fake"
+                    ? "演示模式（假服务，不代表真实生成质量）"
+                    : data.providers.llm.provider}
+                {" · "}
+                {data.providers.llm.source === "settings"
+                  ? "来自设置页"
+                  : data.providers.llm.source === "env"
+                    ? "来自环境变量"
+                    : "请在下方填写"}
               </p>
               <p className="muted">
                 {data.providers.llm.host ?? "未配置端点"} ·{" "}
                 {data.providers.llm.model ?? "无模型配置"}
               </p>
-              {data.providers.llm.missing.length > 0 && (
+              {!data.providers.llm.configured && data.providers.llm.missing.length > 0 && (
                 <Notice error={`缺少：${data.providers.llm.missing.join(", ")}`} />
               )}
             </div>
@@ -91,13 +285,19 @@ export function Settings() {
                 {data.providers.tts.provider === "none"
                   ? "使用浏览器朗读"
                   : data.providers.tts.provider}
+                {data.providers.tts.source === "settings"
+                  ? " · 来自设置页"
+                  : data.providers.tts.source === "env"
+                    ? " · 来自环境变量"
+                    : ""}
               </p>
               <p className="muted">
                 今日已用 {data.ttsUsage.usedChars} / {data.settings.ttsDailyCharLimit} 字符
               </p>
-              <p className="muted">密钥只在服务端环境变量中设置；此页不会发起测试调用。</p>
+              <p className="muted">密钥只保存在本机数据库中；此页不会发起测试调用。</p>
             </div>
           </section>
+          <ProviderForm data={data} onSaved={(patch) => setData({ ...data, ...patch })} />
           <form action={save} className="card section">
             <h2>学习与阅读</h2>
             <div className="fields three">

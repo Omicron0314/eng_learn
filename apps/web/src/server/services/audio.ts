@@ -48,7 +48,7 @@ const audioQueues = new WeakMap<AppDeps, Promise<unknown>>();
 export async function ensureAudio(deps: AppDeps, articleId: string): Promise<AudioResult> {
   const article = requireArticle(deps, articleId);
   const text = `${article.title}\n\n${article.body}`;
-  const tts = deps.tts;
+  const tts = deps.ttsProvider();
   if (!tts) return { mode: "browser", text };
   const hash = audioTextHash({ provider: tts.provider, model: tts.model, voice: tts.voice, text });
   return singleFlight(deps, `audio:${hash}`, () => {
