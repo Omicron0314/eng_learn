@@ -1,3 +1,4 @@
+/// <reference path="../types/wink-lemmatizer.d.ts" />
 import wink from "wink-lemmatizer";
 
 export interface Lemmatizer {
