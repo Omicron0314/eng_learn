@@ -91,3 +91,10 @@
 - standalone 同源校验使用直接 Host 与请求协议而不是监听地址；不以 Forwarded/X-Forwarded-* 推断可信公共地址。反向代理必须显式 APP_ORIGIN，仅允许 http/https origin，启动校验；HTTPS override 启用 Secure cookie，代理须正确限制域名/阻止后端绕过。
 - 阅读反馈保存到父级最新数据，折叠后仍显示选择；基线导入 wordsAdded/cardsAdded 分开显示；抽屉每次打开读取 lookupMode，自动建卡警告与实际 cardId/inboxId 结果明确显示。
 - 新增导入→KnownSet→原创文章分析、五表导入回滚和评分重开回归。真实四级语料与 Anki 兼容/默认双导出证据仍未补齐，不把合成测试当作真实验收。
+
+### 2026-10-12 Provider 配置移到设置页(作者决定)
+
+- LLM / TTS 的端点、密钥、模型、声音改为在 `/settings` 手动填写,入库 `provider_config`(迁移 0003),不再要求写在 `.env`。
+- 保存后立即生效(provider 按调用惰性解析,不缓存启动配置);数据库值优先于环境变量,环境变量保留作回退与 CI/评测用途。
+- 密钥仅服务端保存,API 视图与 `settings_update` 事件只含键名/`hasApiKey`,不含密钥值;密钥明文存本地 SQLite(自用单用户,可接受,不引入加密依赖)。
+- 缺配不再导致启动退出:仅当环境变量给了但无效时启动 fail-fast;无配置时运行期报“请在设置页配置”。真实付费调用仍不自动执行。
