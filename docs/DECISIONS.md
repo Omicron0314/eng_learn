@@ -48,6 +48,14 @@
 - 要求原子化提交(作者决定):每个提交一个逻辑变更,且单独通过 lint / typecheck / test。
 - 提交信息格式采用 Conventional Commits(默认,agent 提议)。
 
+### 2026-10-11 补齐编写 spec 时发现的缺口(agent 提议,待确认)
+
+- 新增任务 T1.5 `/settings` 页面(plan §7 有该页面,但没有对应任务)。设置的存储与默认值放在 T0.2。
+- plan §6.9 的“缺释义时由 LLM 生成释义”没有对应任务,归入 T1.3;因此 T1.3 增加对 T0.3 的依赖。
+- plan §1 的 H1 要统计文章阅读完成率,但事件类型里没有“读完”;新增事件 `article_complete`,在 T3.3 实现。
+- 部署相关(`.env.example`、`APP_PASSWORD` 访问保护、PWA manifest、Dockerfile 与 docker compose)没有对应任务,归入 T0.1。
+- schema 补充(词表、标记状态、设置等)见 `docs/DATA_MODEL.md` §3,需要人工确认后才能写迁移。
+
 ### 2026-10-11 取消 TTS 盲听 spike(作者决定)
 
 - 删除任务 S5;T5.1 不再依赖 S5。plan.md 与各拆分文档已同步。

@@ -31,4 +31,31 @@ llm_calls(id, user_id, purpose, provider, model, tokens_in, tokens_out,
 - `events` 和 `review_logs` 只追加。
 - 文章记录来源与许可字段(`articles.source`、`articles.license`)。
 
-注:上面的表结构草案里有几张表(如 `lexemes`、`article_targets`、`audios`、`gloss_cache`、`llm_calls`)没有写出 `user_id` / `updated_at`。T0.2 的 spec 需要明确每张表是否补齐,并记入 `docs/DECISIONS.md`。
+## 3. 补充提议(待人工确认,T0.2 实施)
+
+plan §5 的草案缺了几处功能需要的存储,且“所有表有 `user_id` 与 `updated_at`”与草案本身不一致。以下为 agent 提议,确认后由 T0.2 写入首个迁移,并记入 `docs/DECISIONS.md`。
+
+**新增表**
+
+```
+word_lists(id, user_id, name, kind, source_file, created_at, updated_at)
+   -- kind: baseline | study;baseline 词不建卡,study 词书走卡片导入
+word_list_items(id, list_id, user_id, lexeme_id, raw, created_at,
+                UNIQUE(list_id, lexeme_id))
+lexeme_marks(user_id, lexeme_id, status, marked_at, updated_at,
+             PRIMARY KEY(user_id, lexeme_id))
+   -- status: known | unknown;最新一次“认识 / 不认识”标记的当前状态,历史在 events
+settings(user_id PRIMARY KEY, json, updated_at)
+   -- 一行一个用户,json 经 zod 校验并带默认值
+```
+
+**对草案的调整**
+
+- `lexemes.pos`:`NOT NULL DEFAULT ''`,避免 SQLite 中 NULL 绕过唯一约束。`lexemes` 是全局词标识,不带 `user_id`。
+- `audios` 增加 `chars`、`created_at`,用于每日 TTS 字符上限统计;`text_hash` 唯一。
+- `gloss_cache` 为全局缓存,不带 `user_id`;增加 `created_at`;主键 `(lexeme_id, context_hash)`。
+- `user_id` 规则:用户拥有的数据都带 `user_id`(cards、review_logs、events、articles、inbox、llm_calls、word_lists、word_list_items、lexeme_marks、settings);从属于文章的表(article_targets、audios)通过 `article_id` 归属,不重复存 `user_id`;全局表(lexemes、gloss_cache)不带。
+- `updated_at` 规则:可变表带 `updated_at`(users、cards、articles、inbox、word_lists、lexeme_marks、settings);只追加表与缓存表不带。
+- 时间统一存 Unix 毫秒整数;JSON 列存 TEXT,读写时经 zod 校验。
+
+**事件类型**:完整清单与 payload 定义见 `docs/specs/README.md`。

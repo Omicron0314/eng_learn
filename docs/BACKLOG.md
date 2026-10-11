@@ -16,8 +16,9 @@
 | S4 | 词表导入 spike | — | S | 待办 |
 | T1.1 | CSV 与基础 .apkg 导入 | T0.2, S2 | M | 待办 |
 | T1.2 | FSRS 复习队列与评分 | T0.2 | M | 待办 |
-| T1.3 | `/review`、`/library` 页面 | T1.2 | M | 待办 |
+| T1.3 | `/review`、`/library` 页面 | T1.2, T0.3 | M | 待办 |
 | T1.4 | review\_logs 与 events 写入 | T1.2 | S | 待办 |
+| T1.5 | `/settings` 页面 | T0.2, T0.3 | S | 待办 |
 | T2.1 | 分词、词形还原、analyzeText | T0.1, S1 | M | 待办 |
 | T2.2 | 基线词表导入 | T2.1, S4 | S | 待办 |
 | T2.3 | KnownModel v0 | T2.2, T1.2 | S | 待办 |
@@ -36,6 +37,10 @@
 | T6.2 | experiment 报告脚本 | T3.2, T1.4 | S | 待办 |
 | T6.3 | `/stats` | T1.4, T6.2 | S | 待办 |
 
+## 规格索引
+
+每个任务的 spec 在 `docs/specs/` 下,文件名以任务 ID 开头,例如 `docs/specs/T0.1-monorepo-scaffold.md`。所有 spec 共用的约定(时间与日界、事件类型、服务层位置等)见 `docs/specs/README.md`。
+
 ## 里程碑与验收
 
 ### M0 脚手架(S)
@@ -48,7 +53,7 @@
 ### M1 词库与复习闭环(M)
 
 - S2 .apkg 格式 spike(新旧格式、字段结构)
-- T1.1 CSV 与基础 .apkg 导入;T1.2 FSRS 复习队列与评分;T1.3 `/review`、`/library`;T1.4 review\_logs 与 events 写入
+- T1.1 CSV 与基础 .apkg 导入;T1.2 FSRS 复习队列与评分;T1.3 `/review`、`/library`(含缺释义时的 AI 释义);T1.4 review\_logs 与 events 写入;T1.5 `/settings`
 - 验收:导入 100 词 CSV 后可完成一轮复习;4 档评分对应的 due 变化有单测;每次评分产生 1 条 review\_log 和 1 条 event;重启后数据仍在。
 
 ### M2 分析器与已知词(M,可与 M1 并行)

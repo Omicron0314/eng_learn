@@ -30,6 +30,8 @@
 ├─ docs/spikes/              # spike 结论: Sx.md
 ├─ prompts/                  # 版本化提示词: article.v1.md ...
 ├─ fixtures/                 # 测试样本、LLM 录制回放
+├─ spikes/                   # spike 一次性代码,不进入产品
+├─ tools/                    # 评测与报告脚本(eval:generation、report:experiment)
 ├─ packages/
 │  ├─ core/                  # 纯逻辑,禁止 IO
 │  │  ├─ lexicon/            # 分词、词形还原、词表
@@ -40,7 +42,12 @@
 │  ├─ providers/             # LLM / TTS / BlobStore 接口与实现
 │  └─ db/                    # Drizzle schema、迁移、仓储层
 └─ apps/web/                 # Next.js: 页面 + API 路由
+   └─ src/server/
+      ├─ services/           # 编排层:仓储 + providers + core,处理事务与事件
+      └─ import/             # 文件解析(.apkg 解压与读取等需要 IO 的部分)
 ```
+
+服务层(`apps/web/src/server/services`)是唯一把 `core`、`db`、`providers` 组装在一起的地方。API 路由和 Server Actions 只调用服务层。
 
 ## 3. 边界规则
 
@@ -49,6 +56,7 @@
 - 所有写操作同时写 `events`(复习另写 `review_logs`)。
 - 所有 LLM/TTS 调用必须经 `packages/providers`;测试默认使用 Fake 实现(FakeLLM / FakeTTS / MemoryBlob)。
 - 模型名、音色名、服务商端点只出现在配置(`.env` / 设置)里。
+- `core` 中依赖当前时间或随机数的函数,一律通过参数接收 `now: Date` 与 `rng: () => number`,保证测试可复现。
 
 ## 4. 产品内 AI 是工作流,不是自主 agent
 
