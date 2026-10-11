@@ -52,6 +52,8 @@ settings(user_id PRIMARY KEY, json, updated_at)
 **对草案的调整**
 
 - `lexemes.pos`:`NOT NULL DEFAULT ''`,避免 SQLite 中 NULL 绕过唯一约束。`lexemes` 是全局词标识,不带 `user_id`。
+- `cards` 补齐 ts-fsrs `Card` 的全部字段(以 T0.1 锁定的 ts-fsrs 版本为准,如 `scheduled_days`、`learning_steps`),并增加 `origin`(`import` | `lookup` | `inbox` | `autoAdd`)与 `created_at`;`UNIQUE(user_id, lexeme_id)`,一个词只有一张卡。
+- `llm_calls` 增加 `status`(`ok` | `invalid_output` | `error`)与 `error`(TEXT,可空),失败调用也要落库。
 - `audios` 增加 `chars`、`created_at`,用于每日 TTS 字符上限统计;`text_hash` 唯一。
 - `gloss_cache` 为全局缓存,不带 `user_id`;增加 `created_at`;主键 `(lexeme_id, context_hash)`。
 - `user_id` 规则:用户拥有的数据都带 `user_id`(cards、review_logs、events、articles、inbox、llm_calls、word_lists、word_list_items、lexeme_marks、settings);从属于文章的表(article_targets、audios)通过 `article_id` 归属,不重复存 `user_id`;全局表(lexemes、gloss_cache)不带。
