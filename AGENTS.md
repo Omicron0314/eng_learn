@@ -6,7 +6,10 @@ articles that reuse today's words -> tap-to-mark words -> TTS audio -> event log
 `docs/plan.md` is the single source of truth. Read the relevant split doc and the task spec in
 `docs/specs/` before starting any task. Pick tasks from `docs/BACKLOG.md` in dependency order.
 
-Status: pre-scaffold, commands below exist after T0.1. No product code before M0 specs are approved.
+Status: MVP implementation authorized. The user approved all existing M0–M6 specs and delegated
+pending decisions to the agent for a no-interruption one-shot build. See `docs/MVP-EXECUTION.md`.
+This supersedes the stop-and-ask rules for implementation choices, dependencies, new migrations,
+and prompt implementation. Do not alter merged migrations, use secrets, make paid calls, or publish.
 
 ## Commands
 

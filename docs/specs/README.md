@@ -59,10 +59,11 @@
 | `DATABASE_PATH` | 否,默认 `./data/app.sqlite` | SQLite 文件 |
 | `BLOB_DIR` | 否,默认 `./data/blobs` | 本地文件存储 |
 | `APP_PASSWORD` | 否 | 设置后整站需要密码 |
+| `APP_ORIGIN` | 反向代理须设置 | 公开 http/https origin，无账号/路径/查询；启动校验，HTTPS 启用 Secure cookie；不信任 forwarded headers |
 | `LLM_PROVIDER` | 否,默认 `openai-compatible` | `openai-compatible` 或 `fake`(测试 / e2e) |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | `openai-compatible` 时必填 | 缺失时启动报错,不用任何默认值 |
 | `LLM_PRICE_INPUT_PER_MTOK` / `LLM_PRICE_OUTPUT_PER_MTOK` | 否 | 每百万 token 美元单价,用于计算 `llm_calls.cost_usd`;未配置时记为 NULL |
-| `TTS_PROVIDER` | 否,默认 `none` | `none`(前端用浏览器 SpeechSynthesis)、`fake`;真实服务商待定 |
+| `TTS_PROVIDER` | 否,默认 `none` | `none`(前端用浏览器 SpeechSynthesis)、`fake`、`openai-compatible`（已授权，见 MVP-EXECUTION） |
 | `TTS_BASE_URL` / `TTS_API_KEY` / `TTS_MODEL` / `TTS_VOICE` | 视服务商 | 全部走配置 |
 | `EVAL_MAX_COST_USD` | 否,默认 1 | `pnpm eval:generation` 的费用上限 |
 
@@ -79,13 +80,14 @@
 | `settings_update` | `{ changed: string[] }` | T1.5 |
 | `article_generate` | `{ articleId, attempts, coverage, belowTier, missingTargets: string[] }` | T3.2 |
 | `article_open` | `{ articleId }` | T3.3 |
-| `article_complete` | `{ articleId, via: "button" \| "scroll" }` | T3.3 |
+| `article_complete` | `{ articleId, via: "button" \| "scroll", openId? }`（可选 openId 用于一次打开内的服务端去重） | T3.3 |
 | `lookup` | `{ lexemeId, lemma, surface, sentence, articleId?, cacheHit }` | T4.1 |
 | `mark_known` | `{ lexemeId, articleId? }` | T4.2 |
 | `mark_unknown` | `{ lexemeId, articleId?, inboxId?, cardId? }` | T4.2 |
 | `add_to_review` | `{ lexemeId, cardId, from: "lookup" \| "inbox" \| "autoAdd", articleId? }` | T4.2、T4.3 |
 | `inbox_ignore` | `{ inboxId, lexemeId }` | T4.3 |
-| `audio_generate` | `{ articleId, audioId, chars }` | T5.1 |
+| `audio_reserve` | `{ articleId, chars }`（调用前独立提交、失败不退款） | T5.3 |
+| `audio_generate` | `{ articleId, audioId, chars, reservationId? }`（兼容旧记录） | T5.1 |
 | `audio_play` | `{ articleId, rate, via: "server" \| "browser" }` | T5.2 |
 | `difficulty_feedback` | `{ articleId, value: "too_hard" \| "just_right" \| "too_easy", after: "reading" \| "listening" }` | T6.1 |
 | `unnatural_flag` | `{ articleId, sentenceIndex?, note? }` | T6.1 |

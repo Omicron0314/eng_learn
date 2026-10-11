@@ -53,3 +53,7 @@ function renderArticlePrompt(template: string, vars: ArticlePromptVars): LLMMess
 - 依赖 T0.3、T2.1。
 - **待确认(停下来问人)**:真实评测会产生费用,每次运行前须作者确认;`EVAL_BASELINE_PATH` 指向的词表由作者提供。
 - 风险:FakeLLM 回复无法反映真实质量,AC4 必须真实运行一次才算 S3 完成。
+
+## Web 阶段实施证据与限制
+
+假评测 30 组已运行、拒绝分支与每调用前预算预留已测。真实 AC4 / AC5 未运行；见 docs/spikes/S3.md，不标为完整完成。 全栈命令与剩余证据缺口见 `docs/WEB-VALIDATION.md`。
