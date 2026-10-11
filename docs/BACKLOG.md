@@ -8,7 +8,7 @@
 
 | ID | 任务 | 依赖 | 规模 | 状态 |
 | --- | --- | --- | --- | --- |
-| T0.1 | monorepo、lint、测试、CI、AGENTS.md | — | S | 实现完成；容器 / CI 待验 |
+| T0.1 | monorepo、lint、测试、CI、AGENTS.md | — | S | 远程 CI / 镜像构建通过；compose 待验 |
 | T0.2 | Drizzle schema、迁移、仓储层 | T0.1 | S | 完成（自动化验证） |
 | T0.3 | providers 接口与 Fake 实现 | T0.1 | S | 完成（自动化验证） |
 | S1 | 词形还原 spike | — | S | 有限实测；待完整验证 |
@@ -43,7 +43,7 @@ M0–M6 的仓储/provider/core 与服务编排已补齐，自动验证与 API �
 
 ## Web 阶段进度
 
-七页面、API、安全门禁、PWA、部署文件、工具与端到端闭环已实现。实测为 237 单元 / 集成测试、4 Chromium E2E、生产构建、standalone 临时文件库重启持久化与配置 fail-fast；详情见 `docs/WEB-VALIDATION.md`。Docker 本机不可用、远程 CI 未运行、真实 provider / 完整 spike / 长期自用证据不标完成。表中的“完成（自动化验证）”只表示对应可运行功能与离线测试，不代表全部里程碑的真实质量或人工验收。
+七页面、API、安全门禁、PWA、部署文件、工具与端到端闭环已实现。实测为 237 单元 / 集成测试、4 Chromium E2E、生产构建、standalone 临时文件库重启持久化与配置 fail-fast；详情见 `docs/WEB-VALIDATION.md`。Docker 本机不可用；修复首次冷启动 E2E 失败后，远程 CI / Docker 镜像构建已通过（run 38135610501，239 单测 / 4 E2E）。compose / 容器重启、真实 provider / 完整 spike / 长期自用证据不标完成。表中的“完成（自动化验证）”只表示对应可运行功能与离线测试，不代表全部里程碑的真实质量或人工验收。
 
 ## 规格索引
 

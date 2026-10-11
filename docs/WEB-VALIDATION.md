@@ -65,7 +65,7 @@ E2E 覆盖：页面 / API / 音频密码保护、错误密码、manifest、导�
 
 修复：CI 使用既有生产构建的 standalone 服务，启动前复制 public / .next/static；本地保留 dev 模式。保留原断言超时与四项 E2E，不增加重试、不跳过测试。失败时上传 Playwright trace / error context，保留 7 天。
 
-本地先新增配置回归并见到 CI command 断言失败，修复后 lint、typecheck、24 文件 / 239 单测、build、standalone 4 E2E 与 dev 4 E2E 均通过。远程全流程（包括 Docker）仍需本次推送后的 Actions 结果确认。
+本地先新增配置回归并见到 CI command 断言失败，修复后 lint、typecheck、24 文件 / 239 单测、build、standalone 4 E2E 与 dev 4 E2E 均通过。修复提交 `04914b7` 的 [远程 Actions run 38135610501](https://github.com/Omicron0314/eng_learn/actions/runs/38135610501) 全流程通过，包括 239 单测、生产构建、standalone Origin 检查、4 E2E、30 组 fake 评测与 Docker 镜像构建。此结果补齐上文历史记录中“远程 CI 未运行 / 镜像构建未验证”的缺口；`docker compose config`、容器重启和真实 provider / 长期验证仍未执行。
 
 ## 复核入口
 
