@@ -15,7 +15,7 @@
 | 复习调度 | ts-fsrs | 开源 FSRS 实现 |
 | 词形还原 | 接口 `Lemmatizer`;候选 wink-lemmatizer 或离线词形表 | 由 spike S1 决定 |
 | LLM | `LLMProvider` 接口;适配器基于 openai SDK;`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 全部来自环境变量 | 当前填 DeepSeek 的取值;代码和文档里不写死任何模型名;见 `docs/SPEC-CORE.md` §5.1 |
-| TTS | `TTSProvider` 接口;服务商、模型、音色全部来自配置;浏览器 SpeechSynthesis 作零成本兜底 | 待定:服务商由 spike S5 决定 |
+| TTS | `TTSProvider` 接口;服务商、模型、音色全部来自配置;浏览器 SpeechSynthesis 作零成本兜底 | 待定:不做盲听选型,到 M5 时由作者直接指定一家接入 |
 | 文件存储 | `BlobStore` 接口,MVP 用本地文件 | 以后换对象存储 |
 | 测试 | Vitest(单元)、Playwright(端到端)、固定样本评测脚本 | 见 `docs/BACKLOG.md` |
 | 质量与 CI | Biome 或 ESLint+Prettier、GitHub Actions | 默认;T0.1 选定后记入 `docs/DECISIONS.md` |

@@ -23,14 +23,14 @@
 | 复习 | 自研复习流程,调度直接用开源 FSRS 库;Anki 只作导入来源 | 已定 |
 | 基线已知词 | 用户自行导入词表(作者:高中 3500 词作基线,四级词书作学习词书),MVP 不内置词表 | 默认 |
 | MVP 不做 | 外刊匹配、词汇量初测、多端同步、原生 App、账号体系、SaaS | 已定 |
-| TTS 服务商 | M5 前通过盲听选型(S5);服务商、模型、音色全部走配置 | 待定 |
+| TTS 服务商 | 不做盲听选型;到 M5 时由作者直接指定一家接入;服务商、模型、音色全部走配置 | 待定 |
 | 开源许可证 | MVP 期间仓库保持私有,不添加 LICENSE 文件,也不在 package.json 里声明许可证 | 暂缓 |
 | 模型配置 | LLM 与 TTS 的模型名都不写死(见 `docs/SPEC-CORE.md` §5.1) | 已定 |
 | agent 工具与仓库托管 | 由执行的 agent 按所用工具自行适配,记入本文件 | 默认(不阻塞) |
 
 ## 待确认
 
-1. **TTS 服务商(待定,M5 前确定,不阻塞 M0–M4)**:做 spike S5 盲听后由作者选定。候选只作参考(OpenAI、ElevenLabs、Azure、Google 等)。面向中国大陆的 SaaS 阶段需另行核实各家的可用性与合规。
+1. **TTS 服务商(待定,M5 前确定,不阻塞 M0–M4)**:不做盲听 spike,到时由作者直接指定一家接入。候选只作参考(OpenAI、ElevenLabs、Azure、Google 等)。面向中国大陆的 SaaS 阶段需另行核实各家的可用性与合规。
 2. **开源许可证(暂缓)**:公开仓库前再决定。
 
 ## 变更日志
@@ -40,5 +40,9 @@
 - 执行 agent 为 Cursor agent。Cursor 原生读取根目录 `AGENTS.md`,因此不另建 `.cursor/rules`。
 - CI 按 `docs/ARCHITECTURE.md` 使用 GitHub Actions;仓库托管尚未确定(当前目录还不是 git 仓库),T0.1 时确认。
 - 完整方案的文件名为 `docs/plan.md`(plan §0.1 里写的是 `docs/PLAN.md`),各文档统一引用 `docs/plan.md`。
-- plan §9.2 写 spike 产出范围为 S1–S4,但 S5 同样写入 `docs/spikes/S5.md`;BACKLOG 中统一为 S1–S5。
 - lint 工具(Biome 或 ESLint+Prettier)尚未选定,留到 T0.1 spec 中决定并记入本文件。
+
+### 2026-10-11 取消 TTS 盲听 spike(作者决定)
+
+- 删除任务 S5;T5.1 不再依赖 S5。plan.md 与各拆分文档已同步。
+- TTS 服务商仍为待定:到 M5 时由作者直接指定一家,agent 按 `TTSProvider` 接口接入。
