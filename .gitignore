@@ -28,6 +28,7 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+.playwright-cli/
 
 # logs
 *.log
@@ -41,3 +42,6 @@ pnpm-debug.log*
 !.vscode/extensions.json
 !.vscode/settings.json
 *.apkg
+
+# manual evaluation outputs (may contain model configuration)
+tools/eval/results/

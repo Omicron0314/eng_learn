@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+**/.next
+.git
+.env
+.env.*
+**/.env*
+data
+blank.apkg
+**/*.apkg
+**/test-results
+**/playwright-report
+**/*.tsbuildinfo
+tools/eval/results

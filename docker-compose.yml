@@ -1,0 +1,13 @@
+services:
+  web:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file: .env
+    environment:
+      APP_PASSWORD: ${APP_PASSWORD:?Set APP_PASSWORD in .env}
+      DATABASE_PATH: /app/data/app.sqlite
+      BLOB_DIR: /app/data/blobs
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
