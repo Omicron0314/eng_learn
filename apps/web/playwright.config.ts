@@ -6,7 +6,8 @@ export default defineConfig({
   timeout: 90000,
   use: { baseURL: "http://localhost:3100", trace: "retain-on-failure" },
   webServer: {
-    command: "pnpm dev --port 3100",
+    // CI already runs pnpm build; avoid route compilation during 5-second assertions.
+    command: process.env.CI ? "pnpm exec tsx ../../tools/start-e2e.ts" : "pnpm dev --port 3100",
     url: "http://localhost:3100/login",
     reuseExistingServer: false,
     timeout: 120000,

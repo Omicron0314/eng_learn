@@ -59,6 +59,14 @@ E2E 覆盖：页面 / API / 音频密码保护、错误密码、manifest、导�
 - 本地 `pnpm dev:demo --hostname 127.0.0.1` 已启动，浏览器访问 `/` 正确跳到 `/today`，标题“词间 · 英语学习”，控制台无 error/warning。已查看全页截图 `/tmp/eng-learn-mvp/today.png`；演示标识清楚。
 - 演示仅绑定本机；使用 fake LLM + 浏览器朗读，无密码/真实密钥/付费调用。日志与 launcher PID 在 `/tmp/eng-learn-mvp/`，演示数据仍使用 README 的 `data/demo.sqlite`。
 
+## 首次远程 CI 失败与修复
+
+2026-10-11 的 main（run `38134890695`）和重做分支（run `38134891516`）均在第一个 Chromium E2E 失败：前者生成后的文章跳转超过 5 秒，后者错误密码提示超过 5 秒；lint、typecheck、237 单测、生产构建与 standalone Origin 检查已通过。首次流程使用 `next dev`，冷启动按需编译是优先排查的环境差异；旧流程未上传 trace，不能仅凭断言日志确定所有交互时序。
+
+修复：CI 使用既有生产构建的 standalone 服务，启动前复制 public / .next/static；本地保留 dev 模式。保留原断言超时与四项 E2E，不增加重试、不跳过测试。失败时上传 Playwright trace / error context，保留 7 天。
+
+本地先新增配置回归并见到 CI command 断言失败，修复后 lint、typecheck、24 文件 / 239 单测、build、standalone 4 E2E 与 dev 4 E2E 均通过。远程全流程（包括 Docker）仍需本次推送后的 Actions 结果确认。
+
 ## 复核入口
 
 `apps/web/src/server/routes.test.ts`、`http.test.ts`、`apps/web/e2e/mvp.spec.ts`、`tools/check-boundaries.test.ts`、`tools/scripts.test.ts`、`tools/eval/budget.test.ts`。后端领域证据见 `docs/SERVICES-HANDOFF.md` 与各服务测试。
