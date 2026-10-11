@@ -55,6 +55,9 @@
 - plan §1 的 H1 要统计文章阅读完成率,但事件类型里没有“读完”;新增事件 `article_complete`,在 T3.3 实现。
 - 部署相关(`.env.example`、`APP_PASSWORD` 访问保护、PWA manifest、Dockerfile 与 docker compose)没有对应任务,归入 T0.1。
 - schema 补充(词表、标记状态、设置等)见 `docs/DATA_MODEL.md` §3,需要人工确认后才能写迁移。
+- 编写 spec 时补充的依赖:T1.3 依赖 T1.1(导入表单)、T1.5 依赖 T1.2(上限生效测试)、T2.2 依赖 T1.1(学习词书建卡)、T5.2 依赖 T6.1(听完后的难度反馈)、T6.3 依赖 T6.1(H2 数据)。
+- 目标词缺失时不额外重试(要求补词需要修改提示词);只记录到 `missingTargets`。
+- 新提示词 `json-repair.v1`(T0.3)、`definition.v1`(T1.3)、`gloss.v1`(T4.1)的草稿写在对应 spec 中,实现前需人审。
 
 ### 2026-10-11 取消 TTS 盲听 spike(作者决定)
 
