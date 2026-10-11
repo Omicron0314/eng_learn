@@ -1,0 +1,23 @@
+[
+  { "rule": "plain headword", "input": "abandon", "expected": { "headword": "abandon", "variants": [], "isPhrase": false } },
+  { "rule": "uppercase normalized", "input": "Abandon", "expected": { "headword": "abandon", "variants": [], "isPhrase": false } },
+  { "rule": "pos and chinese meaning", "input": "abandon v. 放弃", "expected": { "headword": "abandon", "pos": "v.", "meaning": "放弃", "variants": [], "isPhrase": false } },
+  { "rule": "compound pos", "input": "abandon vt.&n. 放弃;放纵", "expected": { "headword": "abandon", "pos": "vt.&n.", "meaning": "放弃;放纵", "variants": [], "isPhrase": false } },
+  { "rule": "slash phonetics", "input": "abandon /əˈbændən/ v. 放弃", "expected": { "headword": "abandon", "pos": "v.", "meaning": "放弃", "variants": [], "isPhrase": false } },
+  { "rule": "bracket phonetics", "input": "abandon [əˈbændən] vt. 放弃", "expected": { "headword": "abandon", "pos": "vt.", "meaning": "放弃", "variants": [], "isPhrase": false } },
+  { "rule": "numbered line", "input": "12. ability n. 能力", "expected": { "headword": "ability", "pos": "n.", "meaning": "能力", "variants": [], "isPhrase": false } },
+  { "rule": "tab separated", "input": "able\t能够的", "expected": { "headword": "able", "meaning": "能够的", "variants": [], "isPhrase": false } },
+  { "rule": "csv columns", "input": "about,关于", "expected": { "headword": "about", "meaning": "关于", "variants": [], "isPhrase": false } },
+  { "rule": "parenthesized variant", "input": "a (an) art. 一", "expected": { "headword": "a", "pos": "art.", "meaning": "一", "variants": ["an"], "isPhrase": false } },
+  { "rule": "british/american variant in parens", "input": "colour (color) n. 颜色", "expected": { "headword": "colour", "pos": "n.", "meaning": "颜色", "variants": ["color"], "isPhrase": false } },
+  { "rule": "slash variant", "input": "color/colour", "expected": { "headword": "color", "variants": ["colour"], "isPhrase": false } },
+  { "rule": "phrase", "input": "be able to 能够", "expected": { "headword": "be able to", "meaning": "能够", "variants": [], "isPhrase": true } },
+  { "rule": "phrase csv", "input": "according to,根据", "expected": { "headword": "according to", "meaning": "根据", "variants": [], "isPhrase": true } },
+  { "rule": "hyphenated", "input": "well-known adj. 著名的", "expected": { "headword": "well-known", "pos": "adj.", "meaning": "著名的", "variants": [], "isPhrase": false } },
+  { "rule": "plural headword kept", "input": "glasses n. 眼镜", "expected": { "headword": "glasses", "pos": "n.", "meaning": "眼镜", "variants": [], "isPhrase": false } },
+  { "rule": "abbreviation", "input": "TV n. 电视", "expected": { "headword": "tv", "pos": "n.", "meaning": "电视", "variants": [], "isPhrase": false } },
+  { "rule": "heading letter skipped", "input": "A", "expected": null },
+  { "rule": "unit heading skipped", "input": "Unit 3", "expected": null },
+  { "rule": "blank skipped", "input": "   ", "expected": null },
+  { "rule": "chinese only skipped", "input": "第一课", "expected": null }
+]
