@@ -270,6 +270,9 @@ importers:
 
   packages/providers:
     dependencies:
+      '@eng-learn/core':
+        specifier: workspace:*
+        version: link:../core
       openai:
         specifier: ^7.32.0
         version: 7.32.0(zod@4.6.5)

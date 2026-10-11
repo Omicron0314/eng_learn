@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@eng-learn/core": "workspace:*",
     "openai": "^7.32.0",
     "zod": "^4.6.5"
   }
