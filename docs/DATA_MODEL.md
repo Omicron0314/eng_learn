@@ -31,9 +31,9 @@ llm_calls(id, user_id, purpose, provider, model, tokens_in, tokens_out,
 - `events` 和 `review_logs` 只追加。
 - 文章记录来源与许可字段(`articles.source`、`articles.license`)。
 
-## 3. 补充提议(待人工确认,T0.2 实施)
+## 3. 补充(已确认,T0.2 实施)
 
-plan §5 的草案缺了几处功能需要的存储,且“所有表有 `user_id` 与 `updated_at`”与草案本身不一致。以下为 agent 提议,确认后由 T0.2 写入首个迁移,并记入 `docs/DECISIONS.md`。
+plan §5 的草案缺了几处功能需要的存储,且“所有表有 `user_id` 与 `updated_at`”与草案本身不一致。以下补充已由作者确认(2026-10-11),由 T0.2 写入首个迁移。
 
 **新增表**
 

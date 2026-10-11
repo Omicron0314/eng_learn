@@ -59,6 +59,13 @@
 - 目标词缺失时不额外重试(要求补词需要修改提示词);只记录到 `missingTargets`。
 - 新提示词 `json-repair.v1`(T0.3)、`definition.v1`(T1.3)、`gloss.v1`(T4.1)的草稿写在对应 spec 中,实现前需人审。
 
+### 2026-10-11 T0.1 / T0.2 前置确认(作者决定)
+
+- lint 与格式化工具:Biome。
+- pnpm 安装方式:`npm i -g pnpm`。
+- `docs/DATA_MODEL.md` §3 的 schema 补充:同意,T0.2 按此写首个迁移。
+- T0.1 依赖清单:作者尚未批准,等待答复。
+
 ### 2026-10-11 取消 TTS 盲听 spike(作者决定)
 
 - 删除任务 S5;T5.1 不再依赖 S5。plan.md 与各拆分文档已同步。
