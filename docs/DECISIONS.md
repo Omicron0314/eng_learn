@@ -42,6 +42,12 @@
 - 完整方案的文件名为 `docs/plan.md`(plan §0.1 里写的是 `docs/PLAN.md`),各文档统一引用 `docs/plan.md`。
 - lint 工具(Biome 或 ESLint+Prettier)尚未选定,留到 T0.1 spec 中决定并记入本文件。
 
+### 2026-10-11 git 与提交规范(作者决定)
+
+- 仓库已 `git init`,默认分支 `main`;远程托管仍未确定。
+- 要求原子化提交(作者决定):每个提交一个逻辑变更,且单独通过 lint / typecheck / test。
+- 提交信息格式采用 Conventional Commits(默认,agent 提议)。
+
 ### 2026-10-11 取消 TTS 盲听 spike(作者决定)
 
 - 删除任务 S5;T5.1 不再依赖 S5。plan.md 与各拆分文档已同步。

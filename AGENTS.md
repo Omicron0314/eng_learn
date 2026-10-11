@@ -6,10 +6,7 @@ articles that reuse today's words -> tap-to-mark words -> TTS audio -> event log
 `docs/plan.md` is the single source of truth. Read the relevant split doc and the task spec in
 `docs/specs/` before starting any task. Pick tasks from `docs/BACKLOG.md` in dependency order.
 
-## Status
-
-Pre-scaffold: no product code yet. Commands below become available after T0.1.
-Do not write product code before the M0 specs (T0.1-T0.3) are approved.
+Status: pre-scaffold, commands below exist after T0.1. No product code before M0 specs are approved.
 
 ## Commands
 
@@ -63,12 +60,19 @@ docs/specs/         one spec per task (Txx-*.md); docs/spikes/ spike results (Sx
 - English for AGENTS.md, identifiers and commit messages; Chinese for product docs and UI copy.
 - Prompts live in `prompts/` with a version suffix; the version goes into `articles.prompt_version`.
   Prompt changes must include a before/after eval.
-- Spec first: write the spec and failing tests, then implement. One task per PR, small diffs.
+- Spec first: write the spec and failing tests, then implement. One task per branch/PR, small diffs.
 - Spike code never goes into the product; results go to `docs/spikes/Sx.md`.
-- Only one task may change the schema at a time.
-- Never commit secrets. Never modify merged migrations.
+- Only one task may change the schema at a time. Never modify merged migrations.
 - Do not add a LICENSE file or a `license` field in package.json (deferred).
 - When a task is done, set its status in `docs/BACKLOG.md`.
+
+## Commits (atomic)
+
+- One logical change per commit. Each commit must pass `pnpm lint`, `pnpm typecheck`, `pnpm test`.
+- Never mix unrelated changes (feature, refactor, formatting, deps) in one commit; split them.
+- Dependency changes, schema migrations and prompt changes each go in their own commit.
+- Conventional Commits in English: `type(scope): summary` (feat, fix, test, refactor, docs,
+  chore, build, ci). Add `Task: Txx` in the body. Never commit secrets.
 
 ## Stop and ask the human when
 
