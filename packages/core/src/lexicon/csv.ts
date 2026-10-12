@@ -48,7 +48,14 @@ export function parseCsv(text: string): { cells: string[]; line: number }[] {
   return rows.filter((r) => r.cells.some((c) => c.trim() !== ""));
 }
 
-export type CardImportRow = { word: string; meaning?: string; example?: string; line: number };
+export type CardImportRow = {
+  word: string;
+  /** Displayed card front; defaults to `word` (apkg Front field). */
+  front?: string;
+  meaning?: string;
+  example?: string;
+  line: number;
+};
 
 export type CardCsvResult = {
   rows: CardImportRow[];

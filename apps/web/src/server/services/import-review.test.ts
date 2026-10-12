@@ -7,7 +7,7 @@ import { zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { createAppDeps } from "../deps";
 import { readApkgNotes, stripAnkiHtml } from "../import/apkg";
-import { ensureMeaning, listCards, setSuspended, updateCardText } from "./card";
+import { deleteDeck, ensureMeaning, listCards, setSuspended, updateCardText } from "./card";
 import { importCards, importWordList } from "./import";
 import { getKnownSet } from "./knowledge";
 import { markKnown, markUnknown } from "./mark";
@@ -100,7 +100,7 @@ describe("T1.1 imports", () => {
   it("AC8: imports synthetic legacy SQLite notes and ignores media/scheduling", async () => {
     const db = openDb(":memory:");
     db.$client.exec(
-      "CREATE TABLE notes(id INTEGER PRIMARY KEY, flds TEXT, tags TEXT); INSERT INTO notes VALUES(1, '<b>Apple</b>' || char(31) || 'fruit<br>&amp; {{c1::red::hint}} [sound:x.mp3]<img src=x>', 'a b')",
+      "CREATE TABLE notes(id INTEGER PRIMARY KEY, mid INTEGER, flds TEXT, tags TEXT); INSERT INTO notes VALUES(1, 0, '<b>Apple</b>' || char(31) || 'fruit<br>&amp; {{c1::red::hint}} [sound:x.mp3]<img src=x>', 'a b')",
     );
     const archive = zipSync({
       "collection.anki2": db.$client.serialize(),
@@ -117,6 +117,51 @@ describe("T1.1 imports", () => {
       srs: newSrsCard(deps.clock()),
     });
     expect(stripAnkiHtml("<script>bad</script>A&nbsp;&lt;B&gt;&#x21;")).toBe("A <B>!");
+  });
+  it("AC8b: named Front/Back fields drive card faces regardless of position", async () => {
+    const db = openDb(":memory:");
+    db.$client.exec(`
+      CREATE TABLE col(id INTEGER PRIMARY KEY, models TEXT);
+      INSERT INTO col VALUES(1, '{"100":{"flds":[{"name":"Word"},{"name":"Front"},{"name":"Back"},{"name":"Notes"}]}}');
+      CREATE TABLE notes(id INTEGER PRIMARY KEY, mid INTEGER, flds TEXT, tags TEXT);
+      INSERT INTO notes VALUES(1, 100,
+        'abnormal' || char(31)
+        || '<h1>abnormal</h1><br>[æbˈnɔ:ml]' || char(31)
+        || '<div>adj. 反常的，异常的</div>' || char(31)
+        || 'a private note', '');
+    `);
+    const archive = zipSync({ "collection.anki2": db.$client.serialize() });
+    closeDb(db);
+    const { deps } = setup();
+    expect(
+      await importCards(deps, { fileName: "named.apkg", bytes: archive, deck: "anki" }),
+    ).toMatchObject({ added: 1 });
+    const card = deps.repos.cards.listAll(deps.userId)[0];
+    expect(card).toMatchObject({ lemma: "abnormal" });
+    expect(card?.front).toBe("abnormal\n[æbˈnɔ:ml]");
+    expect(card?.back.meaning).toBe("adj. 反常的，异常的");
+    expect(card?.back.meaning).not.toContain("private note");
+  });
+  it("deleteDeck: removes cards without history, suspends logged cards, writes event", () => {
+    const { deps } = setup();
+    const apple = seedCard(deps, "apple");
+    seedCard(deps, "banana");
+    const cherry = seedCard(deps, "cherry");
+    rate(deps, { cardId: cherry, rating: "good", durationMs: 10 });
+    expect(() => deleteDeck(deps, { deck: "missing" })).toThrow(/不存在/);
+    expect(deps.repos.events.listByType(deps.userId, "deck_delete")).toHaveLength(0);
+    expect(deleteDeck(deps, { deck: "test" })).toEqual({
+      deck: "test",
+      deleted: 2,
+      keptWithHistory: 1,
+    });
+    expect(deps.repos.cards.get(apple)).toBeUndefined();
+    expect(deps.repos.cards.get(cherry)?.suspended).toBe(true);
+    expect(deps.repos.events.listByType(deps.userId, "deck_delete")[0]?.payload).toEqual({
+      deck: "test",
+      deleted: 2,
+      keptWithHistory: 1,
+    });
   });
   it("AC9: new-format marker wins over legacy stub", async () => {
     const archive = zipSync({

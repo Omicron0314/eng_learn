@@ -42,7 +42,7 @@ function addImportedCard(
   repos.cards.insert({
     userId: deps.userId,
     lexemeId,
-    front: row.word.trim(),
+    front: row.front ?? row.word.trim(),
     back,
     deck,
     origin: "import",
@@ -88,7 +88,15 @@ export async function importCards(
         return;
       }
       seen.add(key);
-      rows.push({ word, meaning: note.fields[1] ?? "", line: i + 1 });
+      // Fixed field mapping (作者决定): cards use the model's Front/Back fields by
+      // name; decks without field names fall back to the first/second field.
+      const names = note.fieldNames.map((n) => n.trim().toLowerCase());
+      const frontIdx = names.indexOf("front");
+      const backIdx = names.indexOf("back");
+      const front =
+        frontIdx >= 1 && note.fields[frontIdx]?.trim() ? note.fields[frontIdx] : undefined;
+      const meaning = (backIdx >= 0 ? note.fields[backIdx] : note.fields[1]) ?? "";
+      rows.push({ word, ...(front ? { front } : {}), meaning, line: i + 1 });
     });
     parsed = { rows, errors, duplicates };
   }
