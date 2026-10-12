@@ -232,6 +232,11 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
             .strict(),
         );
         result = services.updateSettings(deps, patch);
+      } else if (key === "cards/delete-deck") {
+        result = services.deleteDeck(
+          deps,
+          await jsonInput(request, z.object({ deck: z.string().min(1).max(1000) }).strict()),
+        );
       } else if (path[0] === "cards" && path.length === 3) {
         const cardId = id.parse(path[1]);
         if (path[2] === "meaning") result = await services.ensureMeaning(deps, cardId);

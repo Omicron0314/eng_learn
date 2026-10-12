@@ -14,6 +14,7 @@ const valid: Record<EventType, unknown> = {
   import: { source: "csv", fileName: "x.csv", kind: "cards", added: 1, skipped: 0, duplicates: 0 },
   card_edit: { cardId: "c", fields: ["meaning"] },
   card_suspend: { cardId: "c", suspended: true },
+  deck_delete: { deck: "d", deleted: 2, keptWithHistory: 1 },
   settings_update: { changed: ["dailyNewLimit"] },
   article_generate: {
     articleId: "a",
@@ -47,7 +48,9 @@ describe("T1.4 typed events", () => {
             ? { rating: "invalid" }
             : type === "import"
               ? { source: "invalid" }
-              : { articleId: 1, lexemeId: 1, cardId: 1, changed: [], fields: [] }),
+              : type === "deck_delete"
+                ? { deleted: -1 }
+                : { articleId: 1, lexemeId: 1, cardId: 1, changed: [], fields: [] }),
         }),
       ).toThrow();
     });

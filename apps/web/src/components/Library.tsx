@@ -29,6 +29,33 @@ export function Library() {
   const [message, setMessage] = useState("");
   const [actionError, setError] = useState("");
   const [editing, setEditing] = useState<Cards["rows"][number]>();
+  async function removeDeck() {
+    const name = deck.trim();
+    if (!name) return;
+    if (
+      !window.confirm(
+        `确定删除牌组「${name}」中的全部词卡？已有复习记录的卡片将改为永久暂停，复习历史保留。`,
+      )
+    )
+      return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await api<{ deleted: number; keptWithHistory: number }>("cards/delete-deck", {
+        deck: name,
+      });
+      setMessage(
+        `已删除 ${result.deleted} 张词卡` +
+          (result.keptWithHistory ? `，${result.keptWithHistory} 张有复习记录，已改为暂停` : ""),
+      );
+      reload();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function upload(form: FormData) {
     setBusy(true);
     setError("");
@@ -197,6 +224,11 @@ export function Library() {
           <button type="submit" className="secondary">
             筛选
           </button>
+          {deck.trim() && (
+            <button type="button" className="text-button" disabled={busy} onClick={removeDeck}>
+              删除牌组「{deck.trim()}」
+            </button>
+          )}
         </form>
         <Notice error={error} />
         {!data ? (

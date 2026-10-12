@@ -1,5 +1,5 @@
 import { CARD_STATES, renderPrompt } from "@eng-learn/core";
-import { loadPrompt } from "@eng-learn/providers";
+import { AppError, loadPrompt } from "@eng-learn/providers";
 import { z } from "zod";
 import type { AppDeps } from "../deps";
 import { jsonCompletion, nonempty, requireCard, singleFlight, validate } from "./shared";
@@ -104,4 +104,36 @@ export function listCards(
   );
   return deps.repos.cards.search(deps.userId, filter);
 }
-export const cardService = { ensureMeaning, updateCardText, setSuspended, listCards };
+export function deleteDeck(
+  deps: AppDeps,
+  input: { deck: string },
+): { deck: string; deleted: number; keptWithHistory: number } {
+  const { deck } = validate(z.object({ deck: nonempty }).strict(), input);
+  return deps.tx((repos) => {
+    const ids = repos.cards.idsByDeck(deps.userId, deck);
+    if (!ids.length) throw new AppError("NOT_FOUND", `牌组不存在：${deck}`, 404);
+    const now = deps.clock().getTime();
+    let deleted = 0;
+    let keptWithHistory = 0;
+    for (const cardId of ids) {
+      // review_logs are append-only with an FK to cards: cards that have review
+      // history cannot be hard-deleted, so they are suspended instead.
+      if (repos.reviewLogs.countByCard(cardId) > 0) {
+        repos.cards.setSuspended(cardId, true, now);
+        keptWithHistory++;
+      } else {
+        repos.cards.delete(cardId);
+        deleted++;
+      }
+    }
+    repos.events.append(deps.userId, "deck_delete", { deck, deleted, keptWithHistory }, now);
+    return { deck, deleted, keptWithHistory };
+  });
+}
+export const cardService = {
+  ensureMeaning,
+  updateCardText,
+  setSuspended,
+  deleteDeck,
+  listCards,
+};

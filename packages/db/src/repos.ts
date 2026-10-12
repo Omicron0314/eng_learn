@@ -335,9 +335,27 @@ export function createRepos(db: Conn) {
         db.select({ n: count() }).from(t.cards).where(eq(t.cards.userId, userId)).get()?.n ?? 0
       );
     },
+    idsByDeck(userId: string, deck: string): string[] {
+      return db
+        .select({ id: t.cards.id })
+        .from(t.cards)
+        .where(and(eq(t.cards.userId, userId), eq(t.cards.deck, deck)))
+        .all()
+        .map((r) => r.id);
+    },
+    /** Hard delete. review_logs hold an FK to cards, so callers must not delete logged cards. */
+    delete(id: string): void {
+      db.delete(t.cards).where(eq(t.cards.id, id)).run();
+    },
   };
 
   const reviewLogs = {
+    countByCard(cardId: string): number {
+      return (
+        db.select({ n: count() }).from(t.reviewLogs).where(eq(t.reviewLogs.cardId, cardId)).get()
+          ?.n ?? 0
+      );
+    },
     insert(input: {
       userId: string;
       cardId: string;

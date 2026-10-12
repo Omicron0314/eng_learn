@@ -26,6 +26,11 @@ export const eventSchemas = {
   }),
   card_edit: z.object({ cardId: id, fields: z.array(z.string()).min(1) }),
   card_suspend: z.object({ cardId: id, suspended: z.boolean() }),
+  deck_delete: z.object({
+    deck: z.string(),
+    deleted: z.number().int().min(0),
+    keptWithHistory: z.number().int().min(0),
+  }),
   settings_update: z.object({ changed: z.array(z.string()).min(1) }),
   article_generate: z.object({
     articleId: id,
