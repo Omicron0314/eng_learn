@@ -4,6 +4,7 @@ extern crate gpui_kit as gpui;
 mod audio;
 mod library;
 mod reader_flags;
+mod reader_text;
 mod settings;
 mod stats;
 mod study;
@@ -37,6 +38,9 @@ struct Shell {
     rendered_dark: bool,
     backend: Option<Arc<dyn CommandBus>>,
     loading: bool,
+    compact: bool,
+    lookup_loading: bool,
+    reader_text: Option<reader_text::ReaderText>,
     error: Option<String>,
     request_id: u64,
     library_ui: library::LibraryState,
@@ -113,6 +117,9 @@ impl Shell {
             rendered_dark: false,
             backend: None,
             loading: false,
+            compact: false,
+            lookup_loading: false,
+            reader_text: None,
             error: None,
             request_id: 0,
             library_ui: Default::default(),
@@ -167,6 +174,7 @@ impl Shell {
             return;
         };
         self.loading = true;
+        self.lookup_loading = matches!(command, Command::Lookup { .. });
         self.error = None;
         self.request_id += 1;
         let request_id = self.request_id;
@@ -180,6 +188,7 @@ impl Shell {
                     return;
                 }
                 this.loading = false;
+                this.lookup_loading = false;
                 match response {
                     Err(error) => this.error = Some(error.message),
                     Ok(Response::Preferences(value)) => {
@@ -870,7 +879,9 @@ impl Shell {
         }
         self.prepare_settings(window, cx);
         self.prepare_flag(window, cx);
+        self.prepare_reader(window, cx);
         let compact = window.viewport_size().width < px(600.);
+        self.compact = compact;
         let selected = self.navigation.current().section();
         let entity = cx.entity().downgrade();
         let on_change = move |value: &gpui_kit::SharedString, _: &mut Window, cx: &mut App| {

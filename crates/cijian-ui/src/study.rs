@@ -1,15 +1,13 @@
 use super::*;
 use cijian_domain::{
-    analysis::{TokenKind, tokenize},
-    reading::{Difficulty, FeedbackMode, TextRange},
+    reading::{Difficulty, FeedbackMode},
     settings::{Genre, Tier},
 };
 use cijian_ports::{
     articles::{GenerationJob, JobStatus},
     inbox::{InboxAction, MarkAction},
 };
-use gpui_kit::{InteractiveText, StyledText};
-use gpui_kit_material::components::MaterialSideSheet;
+use gpui_kit_material::components::{MaterialBottomSheet, MaterialSideSheet};
 impl Shell {
     pub(super) fn operation(&self, purpose: &str) -> String {
         format!(
@@ -159,7 +157,9 @@ impl Shell {
     }
     pub(super) fn reader_body(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         let mut body = div().flex().flex_col().gap_4();
-        let Some(article) = &self.article else {
+        let Some(article) = self.article.as_ref().filter(
+            |article| matches!(self.navigation.current(),Route::Article{id,..} if id==&article.id),
+        ) else {
             return body
                 .child("文章未加载，可返回文章列表。")
                 .into_any_element();
@@ -181,34 +181,7 @@ impl Shell {
             }
         );
         if !listening || self.show_listening_text {
-            let ranges = tokenize(&article.body)
-                .into_iter()
-                .filter(|t| t.kind == TokenKind::Word)
-                .map(|t| t.start..t.end)
-                .collect::<Vec<_>>();
-            let click_ranges = ranges.clone();
-            let article_id = article.id.clone();
-            let body_hash = article.body_hash.clone();
-            let weak = cx.entity().downgrade();
-            body = body.child(
-                InteractiveText::new("article-body", StyledText::new(article.body.clone()))
-                    .on_click(ranges, move |index, _, cx| {
-                        let range = click_ranges[index].clone();
-                        let _ = weak.update(cx, |this, cx| {
-                            this.request(
-                                Command::Lookup {
-                                    article: article_id.clone(),
-                                    body_hash: body_hash.clone(),
-                                    range: TextRange {
-                                        start: range.start,
-                                        end: range.end,
-                                    },
-                                },
-                                cx,
-                            )
-                        });
-                    }),
-            );
+            body = body.child(self.reader_text_body(cx));
         }
         let completed = self
             .reading_session
@@ -313,10 +286,10 @@ impl Shell {
             )
             .child(self.flag_dialog(cx));
         if let Some((context, _, meaning)) = &self.lookup {
-            let mut sheet = MaterialSideSheet::new("word-sheet")
-                .open(true)
-                .modal(true)
-                .headline(context.selection.surface.clone())
+            let mut sheet = div()
+                .flex()
+                .flex_col()
+                .gap_3()
                 .child(format!("词元：{}", context.selection.lemma))
                 .child(context.selection.sentence.clone())
                 .child(if meaning.is_empty() {
@@ -352,12 +325,36 @@ impl Shell {
                 );
             }
             let weak = cx.entity().downgrade();
-            body = body.child(sheet.on_dismiss(move |_, cx| {
+            let dismiss = move |window: &mut Window, cx: &mut App| {
                 let _ = weak.update(cx, |this, cx| {
                     this.lookup = None;
+                    this.focus_reader(window, cx);
                     cx.notify();
                 });
-            }));
+            };
+            body = body.child(if self.compact {
+                MaterialBottomSheet::new("word-sheet")
+                    .open(true)
+                    .modal(true)
+                    .label(context.selection.surface.clone())
+                    .drag_handle("展开词语面板")
+                    .child(
+                        div()
+                            .p_4()
+                            .child(context.selection.surface.clone())
+                            .child(sheet),
+                    )
+                    .on_dismiss(dismiss)
+                    .into_any_element()
+            } else {
+                MaterialSideSheet::new("word-sheet")
+                    .open(true)
+                    .modal(true)
+                    .headline(context.selection.surface.clone())
+                    .child(sheet)
+                    .on_dismiss(dismiss)
+                    .into_any_element()
+            });
         }
         body.into_any_element()
     }
