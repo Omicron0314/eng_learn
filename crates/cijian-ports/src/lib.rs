@@ -74,6 +74,17 @@ pub trait SettingsRepository {
     ) -> impl std::future::Future<Output = Result<u64>>;
 }
 #[derive(Debug, Clone)]
+pub struct SaveDevicePreferences {
+    pub profile: String,
+    pub device: String,
+    pub operation: String,
+    pub event: String,
+    pub expected_revision: u64,
+    pub value: cijian_domain::settings::DevicePreferences,
+    pub now: i64,
+}
+
+#[derive(Debug, Clone)]
 pub struct SaveSettings {
     pub profile_id: String,
     pub operation_id: String,

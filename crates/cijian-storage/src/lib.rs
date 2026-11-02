@@ -7,6 +7,7 @@ mod calls;
 mod inbox;
 mod knowledge;
 mod library;
+mod preferences;
 mod providers;
 mod reading;
 mod stats;
@@ -20,6 +21,7 @@ const INITIAL: &str = include_str!("../migrations/0001_initial.sql");
 const MIGRATIONS: &[&str] = &[
     INITIAL,
     include_str!("../migrations/0002_generation_snapshots.sql"),
+    include_str!("../migrations/0003_device_preferences.sql"),
 ];
 fn unavailable(_: impl std::fmt::Display) -> AppError {
     AppError::new(ErrorCode::StorageUnavailable, "本地数据库操作失败")
@@ -113,10 +115,7 @@ impl Store {
         if inserted > 0 {
             tx.execute(
                 "INSERT INTO settings VALUES (?1,1,?2,1)",
-                params![
-                    id,
-                    serde_json::to_string(&Settings::default()).map_err(unavailable)?
-                ],
+                params![id, serde_json::to_string(&Settings::default()).map_err(unavailable)?],
             )
             .map_err(unavailable)?;
             tx.execute(

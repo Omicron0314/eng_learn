@@ -64,9 +64,50 @@ pub struct Settings {
     pub tts_daily_char_limit: u32,
     pub timezone: String,
     pub day_start_hour: u32,
+    #[serde(default = "default_playback_rate")]
     pub playback_rate: f64,
+    #[serde(default = "default_theme")]
     pub theme: Theme,
 }
+fn default_playback_rate() -> f64 {
+    1.
+}
+fn default_theme() -> Theme {
+    Theme::System
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DevicePreferences {
+    pub theme: Theme,
+    pub playback_rate: f64,
+    pub system_voice: Option<String>,
+}
+impl Default for DevicePreferences {
+    fn default() -> Self {
+        Self {
+            theme: Theme::System,
+            playback_rate: 1.,
+            system_voice: None,
+        }
+    }
+}
+impl DevicePreferences {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if ![0.75, 1., 1.25, 1.5, 2.].contains(&self.playback_rate) {
+            return Err(ValidationError::new(
+                "playbackRate",
+                "播放速度必须为0.75、1、1.25、1.5或2倍",
+            ));
+        }
+        if self.system_voice.as_ref().is_some_and(|voice| {
+            voice.is_empty() || voice.len() > 256 || voice.chars().any(char::is_control)
+        }) {
+            return Err(ValidationError::new("systemVoice", "本机语音标识无效"));
+        }
+        Ok(())
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
