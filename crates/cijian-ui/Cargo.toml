@@ -1,0 +1,16 @@
+[package]
+name = "cijian-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+cijian-app.workspace = true
+cijian-ports.workspace = true
+cijian-domain.workspace = true
+gpui-kit.workspace = true
+gpui-kit-material.workspace = true
+
+[dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }

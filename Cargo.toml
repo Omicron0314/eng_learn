@@ -1,0 +1,42 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/desktop"]
+exclude = ["spikes/r00", "spikes/r00/fsrs", "spikes/r00/native"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+publish = false
+
+[workspace.dependencies]
+cijian-domain = { path = "crates/cijian-domain" }
+cijian-ports = { path = "crates/cijian-ports" }
+cijian-app = { path = "crates/cijian-app" }
+cijian-storage = { path = "crates/cijian-storage" }
+cijian-platform = { path = "crates/cijian-platform" }
+cijian-providers = { path = "crates/cijian-providers" }
+cijian-ui = { path = "crates/cijian-ui" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+thiserror = "=2.0.21"
+chrono = { version = "0.4", default-features = false, features = ["std", "serde"] }
+chrono-tz = "0.10"
+fsrs = "=6.6.2"
+rusqlite = { version = "=0.38.0", features = ["bundled"] }
+tempfile = "3"
+gpui-kit = { git = "https://github.com/longbridge/gpui-kit", rev = "bb85882e1faab845d9e7be33b69a152879a90f69", features = ["gpui-fast"] }
+gpui-kit-material = { git = "https://github.com/mizorewww/gpui-kit-material", rev = "2e13169fceb4ac328e1361aa143632025598872f" }
+
+[patch.crates-io]
+gpui-base = { git = "https://github.com/mizorewww/gpui-kit-material", rev = "2e13169fceb4ac328e1361aa143632025598872f" }
+gpui-pre = { git = "https://github.com/mizorewww/gpui-kit-material", rev = "2e13169fceb4ac328e1361aa143632025598872f" }
+gpui-pre-apple = { git = "https://github.com/mizorewww/gpui-kit-material", rev = "2e13169fceb4ac328e1361aa143632025598872f" }
+gpui-pre-web = { git = "https://github.com/mizorewww/gpui-kit-material", rev = "2e13169fceb4ac328e1361aa143632025598872f" }
+gpui-fast = { git = "https://github.com/mizorewww/gpui-kit-material", rev = "2e13169fceb4ac328e1361aa143632025598872f" }
+gpui-fast-apple = { git = "https://github.com/mizorewww/gpui-kit-material", rev = "2e13169fceb4ac328e1361aa143632025598872f" }
+gpui-fast-web = { git = "https://github.com/mizorewww/gpui-kit-material", rev = "2e13169fceb4ac328e1361aa143632025598872f" }
+
+[patch."https://github.com/longbridge/gpui-kit"]
+gpui-kit = { git = "https://github.com/mizorewww/gpui-kit-material", rev = "2e13169fceb4ac328e1361aa143632025598872f" }
+gpui-base = { git = "https://github.com/mizorewww/gpui-kit-material", rev = "2e13169fceb4ac328e1361aa143632025598872f" }

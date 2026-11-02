@@ -3,6 +3,8 @@ node_modules/
 .pnpm-store/
 
 # build output
+/target/
+**/target/
 .next/
 out/
 dist/
