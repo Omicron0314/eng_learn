@@ -1,0 +1,902 @@
+{
+  "candidate": "fsrs 6.6.2",
+  "limitation": "Memory transition comparison only. Learning steps, interval constraints, due time, repetitions and lapses require the application scheduler; this is not full scheduler equivalence.",
+  "results": [
+    {
+      "case": "new",
+      "difficultyDelta": 3.738403364650367e-8,
+      "legacyDue": "2026-11-02T04:01:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 6.413300037384033,
+        "stability": 0.21199999749660492
+      },
+      "rustRawIntervalDays": 0.21199999749660492,
+      "stabilityDelta": 2.503395074571202e-9
+    },
+    {
+      "case": "new",
+      "difficultyDelta": 1.3741455084925747e-8,
+      "legacyDue": "2026-11-02T04:06:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 5.112170696258545,
+        "stability": 1.2930999994277954
+      },
+      "rustRawIntervalDays": 1.2930999994277954,
+      "stabilityDelta": 5.722045059997072e-10
+    },
+    {
+      "case": "new",
+      "difficultyDelta": 1.1018066459200782e-8,
+      "legacyDue": "2026-11-02T04:10:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 2.1181039810180664,
+        "stability": 2.30649995803833
+      },
+      "rustRawIntervalDays": 2.30649995803833,
+      "stabilityDelta": 4.1961670138590534e-8
+    },
+    {
+      "case": "new",
+      "difficultyDelta": 0.0,
+      "legacyDue": "2026-11-10T04:00:00.000Z",
+      "legacyScheduledDays": 8,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 1.0,
+        "stability": 8.295599937438965
+      },
+      "rustRawIntervalDays": 8.295599937438965,
+      "stabilityDelta": 6.256103546320446e-8
+    },
+    {
+      "case": "learning",
+      "difficultyDelta": 1.727246097260604e-7,
+      "legacyDue": "2026-11-02T04:01:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 8.34176254272461,
+        "stability": 1.1529189348220825
+      },
+      "rustRawIntervalDays": 1.1529189348220825,
+      "stabilityDelta": 2.4822082611564156e-8
+    },
+    {
+      "case": "learning",
+      "difficultyDelta": 2.378393553215119e-7,
+      "legacyDue": "2026-11-02T04:06:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 6.6659955978393555,
+        "stability": 16.840532302856445
+      },
+      "rustRawIntervalDays": 16.840532302856445,
+      "stabilityDelta": 0.000010032856444297522
+    },
+    {
+      "case": "learning",
+      "difficultyDelta": 1.9388305627643376e-7,
+      "legacyDue": "2026-11-02T04:10:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 4.990228176116943,
+        "stability": 23.36270523071289
+      },
+      "rustRawIntervalDays": 23.36270523071289,
+      "stabilityDelta": 0.000014400712892381762
+    },
+    {
+      "case": "learning",
+      "difficultyDelta": 9.965026848135494e-8,
+      "legacyDue": "2026-12-10T04:00:00.000Z",
+      "legacyScheduledDays": 38,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 3.3144614696502686,
+        "stability": 37.64570999145508
+      },
+      "rustRawIntervalDays": 37.64570999145508,
+      "stabilityDelta": 0.00002633145507502377
+    },
+    {
+      "case": "review",
+      "difficultyDelta": 1.727246097260604e-7,
+      "legacyDue": "2026-11-02T04:10:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 8.34176254272461,
+        "stability": 1.1529189348220825
+      },
+      "rustRawIntervalDays": 1.1529189348220825,
+      "stabilityDelta": 2.4822082611564156e-8
+    },
+    {
+      "case": "review",
+      "difficultyDelta": 2.378393553215119e-7,
+      "legacyDue": "2026-11-19T04:00:00.000Z",
+      "legacyScheduledDays": 17,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 6.6659955978393555,
+        "stability": 16.840532302856445
+      },
+      "rustRawIntervalDays": 16.840532302856445,
+      "stabilityDelta": 0.000010032856444297522
+    },
+    {
+      "case": "review",
+      "difficultyDelta": 1.9388305627643376e-7,
+      "legacyDue": "2026-11-25T04:00:00.000Z",
+      "legacyScheduledDays": 23,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 4.990228176116943,
+        "stability": 23.36270523071289
+      },
+      "rustRawIntervalDays": 23.36270523071289,
+      "stabilityDelta": 0.000014400712892381762
+    },
+    {
+      "case": "review",
+      "difficultyDelta": 9.965026848135494e-8,
+      "legacyDue": "2026-12-10T04:00:00.000Z",
+      "legacyScheduledDays": 38,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 3.3144614696502686,
+        "stability": 37.64570999145508
+      },
+      "rustRawIntervalDays": 37.64570999145508,
+      "stabilityDelta": 0.00002633145507502377
+    },
+    {
+      "case": "relearning",
+      "difficultyDelta": 1.727246097260604e-7,
+      "legacyDue": "2026-11-02T04:10:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 8.34176254272461,
+        "stability": 1.1529189348220825
+      },
+      "rustRawIntervalDays": 1.1529189348220825,
+      "stabilityDelta": 2.4822082611564156e-8
+    },
+    {
+      "case": "relearning",
+      "difficultyDelta": 2.378393553215119e-7,
+      "legacyDue": "2026-11-02T04:15:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 6.6659955978393555,
+        "stability": 16.840532302856445
+      },
+      "rustRawIntervalDays": 16.840532302856445,
+      "stabilityDelta": 0.000010032856444297522
+    },
+    {
+      "case": "relearning",
+      "difficultyDelta": 1.9388305627643376e-7,
+      "legacyDue": "2026-11-25T04:00:00.000Z",
+      "legacyScheduledDays": 23,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 4.990228176116943,
+        "stability": 23.36270523071289
+      },
+      "rustRawIntervalDays": 23.36270523071289,
+      "stabilityDelta": 0.000014400712892381762
+    },
+    {
+      "case": "relearning",
+      "difficultyDelta": 9.965026848135494e-8,
+      "legacyDue": "2026-12-10T04:00:00.000Z",
+      "legacyScheduledDays": 38,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 3.3144614696502686,
+        "stability": 37.64570999145508
+      },
+      "rustRawIntervalDays": 37.64570999145508,
+      "stabilityDelta": 0.00002633145507502377
+    },
+    {
+      "case": "learning-0d",
+      "difficultyDelta": 4.188134763438711e-7,
+      "legacyDue": "2026-11-02T04:01:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 9.039709091186523,
+        "stability": 5.043098449707031
+      },
+      "rustRawIntervalDays": 5.043098449707031,
+      "stabilityDelta": 2.997070316368422e-7
+    },
+    {
+      "case": "learning-0d",
+      "difficultyDelta": 5.980468742450284e-8,
+      "legacyDue": "2026-11-02T04:06:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 8.075607299804688,
+        "stability": 17.12339973449707
+      },
+      "rustRawIntervalDays": 17.12339973449707,
+      "stabilityDelta": 2.655029298637146e-7
+    },
+    {
+      "case": "learning-0d",
+      "difficultyDelta": 6.15856929897518e-8,
+      "legacyDue": "2026-11-19T04:00:00.000Z",
+      "legacyScheduledDays": 17,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 7.111505031585693,
+        "stability": 17.12339973449707
+      },
+      "rustRawIntervalDays": 17.12339973449707,
+      "stabilityDelta": 2.655029298637146e-7
+    },
+    {
+      "case": "learning-0d",
+      "difficultyDelta": 6.336669944317919e-8,
+      "legacyDue": "2026-11-28T04:00:00.000Z",
+      "legacyScheduledDays": 26,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 6.147402763366699,
+        "stability": 25.67507553100586
+      },
+      "rustRawIntervalDays": 25.67507553100586,
+      "stabilityDelta": 2.36100585837562e-6
+    },
+    {
+      "case": "review-0d",
+      "difficultyDelta": 4.188134763438711e-7,
+      "legacyDue": "2026-11-02T04:10:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 9.039709091186523,
+        "stability": 5.043098449707031
+      },
+      "rustRawIntervalDays": 5.043098449707031,
+      "stabilityDelta": 2.997070316368422e-7
+    },
+    {
+      "case": "review-0d",
+      "difficultyDelta": 5.980468742450284e-8,
+      "legacyDue": "2026-11-19T04:00:00.000Z",
+      "legacyScheduledDays": 17,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 8.075607299804688,
+        "stability": 17.12339973449707
+      },
+      "rustRawIntervalDays": 17.12339973449707,
+      "stabilityDelta": 2.655029298637146e-7
+    },
+    {
+      "case": "review-0d",
+      "difficultyDelta": 6.15856929897518e-8,
+      "legacyDue": "2026-11-20T04:00:00.000Z",
+      "legacyScheduledDays": 18,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 7.111505031585693,
+        "stability": 17.12339973449707
+      },
+      "rustRawIntervalDays": 17.12339973449707,
+      "stabilityDelta": 2.655029298637146e-7
+    },
+    {
+      "case": "review-0d",
+      "difficultyDelta": 6.336669944317919e-8,
+      "legacyDue": "2026-11-28T04:00:00.000Z",
+      "legacyScheduledDays": 26,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 6.147402763366699,
+        "stability": 25.67507553100586
+      },
+      "rustRawIntervalDays": 25.67507553100586,
+      "stabilityDelta": 2.36100585837562e-6
+    },
+    {
+      "case": "relearning-0d",
+      "difficultyDelta": 4.188134763438711e-7,
+      "legacyDue": "2026-11-02T04:10:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 9.039709091186523,
+        "stability": 5.043098449707031
+      },
+      "rustRawIntervalDays": 5.043098449707031,
+      "stabilityDelta": 2.997070316368422e-7
+    },
+    {
+      "case": "relearning-0d",
+      "difficultyDelta": 5.980468742450284e-8,
+      "legacyDue": "2026-11-02T04:15:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 8.075607299804688,
+        "stability": 17.12339973449707
+      },
+      "rustRawIntervalDays": 17.12339973449707,
+      "stabilityDelta": 2.655029298637146e-7
+    },
+    {
+      "case": "relearning-0d",
+      "difficultyDelta": 6.15856929897518e-8,
+      "legacyDue": "2026-11-19T04:00:00.000Z",
+      "legacyScheduledDays": 17,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 7.111505031585693,
+        "stability": 17.12339973449707
+      },
+      "rustRawIntervalDays": 17.12339973449707,
+      "stabilityDelta": 2.655029298637146e-7
+    },
+    {
+      "case": "relearning-0d",
+      "difficultyDelta": 6.336669944317919e-8,
+      "legacyDue": "2026-11-28T04:00:00.000Z",
+      "legacyScheduledDays": 26,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 6.147402763366699,
+        "stability": 25.67507553100586
+      },
+      "rustRawIntervalDays": 25.67507553100586,
+      "stabilityDelta": 2.36100585837562e-6
+    },
+    {
+      "case": "learning-1d",
+      "difficultyDelta": 4.188134763438711e-7,
+      "legacyDue": "2026-11-02T04:01:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 9.039709091186523,
+        "stability": 1.522876501083374
+      },
+      "rustRawIntervalDays": 1.522876501083374,
+      "stabilityDelta": 1.889166258983721e-7
+    },
+    {
+      "case": "learning-1d",
+      "difficultyDelta": 5.980468742450284e-8,
+      "legacyDue": "2026-11-02T04:06:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 8.075607299804688,
+        "stability": 18.22756576538086
+      },
+      "rustRawIntervalDays": 18.22756576538086,
+      "stabilityDelta": 6.005380861040521e-6
+    },
+    {
+      "case": "learning-1d",
+      "difficultyDelta": 6.15856929897518e-8,
+      "legacyDue": "2026-11-21T04:00:00.000Z",
+      "legacyScheduledDays": 19,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 7.111505031585693,
+        "stability": 18.959392547607422
+      },
+      "rustRawIntervalDays": 18.959392547607422,
+      "stabilityDelta": 0.000010237607423135842
+    },
+    {
+      "case": "learning-1d",
+      "difficultyDelta": 6.336669944317919e-8,
+      "legacyDue": "2026-11-23T04:00:00.000Z",
+      "legacyScheduledDays": 21,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 6.147402763366699,
+        "stability": 20.562030792236328
+      },
+      "rustRawIntervalDays": 20.562030792236328,
+      "stabilityDelta": 0.00001953223632966683
+    },
+    {
+      "case": "review-1d",
+      "difficultyDelta": 4.188134763438711e-7,
+      "legacyDue": "2026-11-02T04:10:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 9.039709091186523,
+        "stability": 1.522876501083374
+      },
+      "rustRawIntervalDays": 1.522876501083374,
+      "stabilityDelta": 1.889166258983721e-7
+    },
+    {
+      "case": "review-1d",
+      "difficultyDelta": 5.980468742450284e-8,
+      "legacyDue": "2026-11-20T04:00:00.000Z",
+      "legacyScheduledDays": 18,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 8.075607299804688,
+        "stability": 18.22756576538086
+      },
+      "rustRawIntervalDays": 18.22756576538086,
+      "stabilityDelta": 6.005380861040521e-6
+    },
+    {
+      "case": "review-1d",
+      "difficultyDelta": 6.15856929897518e-8,
+      "legacyDue": "2026-11-21T04:00:00.000Z",
+      "legacyScheduledDays": 19,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 7.111505031585693,
+        "stability": 18.959392547607422
+      },
+      "rustRawIntervalDays": 18.959392547607422,
+      "stabilityDelta": 0.000010237607423135842
+    },
+    {
+      "case": "review-1d",
+      "difficultyDelta": 6.336669944317919e-8,
+      "legacyDue": "2026-11-23T04:00:00.000Z",
+      "legacyScheduledDays": 21,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 6.147402763366699,
+        "stability": 20.562030792236328
+      },
+      "rustRawIntervalDays": 20.562030792236328,
+      "stabilityDelta": 0.00001953223632966683
+    },
+    {
+      "case": "relearning-1d",
+      "difficultyDelta": 4.188134763438711e-7,
+      "legacyDue": "2026-11-02T04:10:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 9.039709091186523,
+        "stability": 1.522876501083374
+      },
+      "rustRawIntervalDays": 1.522876501083374,
+      "stabilityDelta": 1.889166258983721e-7
+    },
+    {
+      "case": "relearning-1d",
+      "difficultyDelta": 5.980468742450284e-8,
+      "legacyDue": "2026-11-02T04:15:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 8.075607299804688,
+        "stability": 18.22756576538086
+      },
+      "rustRawIntervalDays": 18.22756576538086,
+      "stabilityDelta": 6.005380861040521e-6
+    },
+    {
+      "case": "relearning-1d",
+      "difficultyDelta": 6.15856929897518e-8,
+      "legacyDue": "2026-11-21T04:00:00.000Z",
+      "legacyScheduledDays": 19,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 7.111505031585693,
+        "stability": 18.959392547607422
+      },
+      "rustRawIntervalDays": 18.959392547607422,
+      "stabilityDelta": 0.000010237607423135842
+    },
+    {
+      "case": "relearning-1d",
+      "difficultyDelta": 6.336669944317919e-8,
+      "legacyDue": "2026-11-23T04:00:00.000Z",
+      "legacyScheduledDays": 21,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 6.147402763366699,
+        "stability": 20.562030792236328
+      },
+      "rustRawIntervalDays": 20.562030792236328,
+      "stabilityDelta": 0.00001953223632966683
+    },
+    {
+      "case": "learning-30d",
+      "difficultyDelta": 4.188134763438711e-7,
+      "legacyDue": "2026-11-02T04:01:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 9.039709091186523,
+        "stability": 1.9002666473388672
+      },
+      "rustRawIntervalDays": 1.9002666473388672,
+      "stabilityDelta": 1.6266113278540217e-7
+    },
+    {
+      "case": "learning-30d",
+      "difficultyDelta": 5.980468742450284e-8,
+      "legacyDue": "2026-11-02T04:06:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 8.075607299804688,
+        "stability": 36.60115051269531
+      },
+      "rustRawIntervalDays": 36.60115051269531,
+      "stabilityDelta": 9.00269531456388e-6
+    },
+    {
+      "case": "learning-30d",
+      "difficultyDelta": 6.15856929897518e-8,
+      "legacyDue": "2026-12-22T04:00:00.000Z",
+      "legacyScheduledDays": 50,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 7.111505031585693,
+        "stability": 49.5107421875
+      },
+      "rustRawIntervalDays": 49.5107421875,
+      "stabilityDelta": 0.000010117499996908919
+    },
+    {
+      "case": "learning-30d",
+      "difficultyDelta": 6.336669944317919e-8,
+      "legacyDue": "2027-01-19T04:00:00.000Z",
+      "legacyScheduledDays": 78,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 6.147402763366699,
+        "stability": 77.78166198730469
+      },
+      "rustRawIntervalDays": 77.78166198730469,
+      "stabilityDelta": 0.000027757304692954676
+    },
+    {
+      "case": "review-30d",
+      "difficultyDelta": 4.188134763438711e-7,
+      "legacyDue": "2026-11-02T04:10:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 9.039709091186523,
+        "stability": 1.9002666473388672
+      },
+      "rustRawIntervalDays": 1.9002666473388672,
+      "stabilityDelta": 1.6266113278540217e-7
+    },
+    {
+      "case": "review-30d",
+      "difficultyDelta": 5.980468742450284e-8,
+      "legacyDue": "2026-12-09T04:00:00.000Z",
+      "legacyScheduledDays": 37,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 8.075607299804688,
+        "stability": 36.60115051269531
+      },
+      "rustRawIntervalDays": 36.60115051269531,
+      "stabilityDelta": 9.00269531456388e-6
+    },
+    {
+      "case": "review-30d",
+      "difficultyDelta": 6.15856929897518e-8,
+      "legacyDue": "2026-12-22T04:00:00.000Z",
+      "legacyScheduledDays": 50,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 7.111505031585693,
+        "stability": 49.5107421875
+      },
+      "rustRawIntervalDays": 49.5107421875,
+      "stabilityDelta": 0.000010117499996908919
+    },
+    {
+      "case": "review-30d",
+      "difficultyDelta": 6.336669944317919e-8,
+      "legacyDue": "2027-01-19T04:00:00.000Z",
+      "legacyScheduledDays": 78,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 6.147402763366699,
+        "stability": 77.78166198730469
+      },
+      "rustRawIntervalDays": 77.78166198730469,
+      "stabilityDelta": 0.000027757304692954676
+    },
+    {
+      "case": "relearning-30d",
+      "difficultyDelta": 4.188134763438711e-7,
+      "legacyDue": "2026-11-02T04:10:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 9.039709091186523,
+        "stability": 1.9002666473388672
+      },
+      "rustRawIntervalDays": 1.9002666473388672,
+      "stabilityDelta": 1.6266113278540217e-7
+    },
+    {
+      "case": "relearning-30d",
+      "difficultyDelta": 5.980468742450284e-8,
+      "legacyDue": "2026-11-02T04:15:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 8.075607299804688,
+        "stability": 36.60115051269531
+      },
+      "rustRawIntervalDays": 36.60115051269531,
+      "stabilityDelta": 9.00269531456388e-6
+    },
+    {
+      "case": "relearning-30d",
+      "difficultyDelta": 6.15856929897518e-8,
+      "legacyDue": "2026-12-22T04:00:00.000Z",
+      "legacyScheduledDays": 50,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 7.111505031585693,
+        "stability": 49.5107421875
+      },
+      "rustRawIntervalDays": 49.5107421875,
+      "stabilityDelta": 0.000010117499996908919
+    },
+    {
+      "case": "relearning-30d",
+      "difficultyDelta": 6.336669944317919e-8,
+      "legacyDue": "2027-01-19T04:00:00.000Z",
+      "legacyScheduledDays": 78,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 6.147402763366699,
+        "stability": 77.78166198730469
+      },
+      "rustRawIntervalDays": 77.78166198730469,
+      "stabilityDelta": 0.000027757304692954676
+    },
+    {
+      "case": "learning-365d",
+      "difficultyDelta": 4.188134763438711e-7,
+      "legacyDue": "2026-11-02T04:01:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 9.039709091186523,
+        "stability": 2.803014039993286
+      },
+      "rustRawIntervalDays": 2.803014039993286,
+      "stabilityDelta": 2.0000671385744795e-7
+    },
+    {
+      "case": "learning-365d",
+      "difficultyDelta": 5.980468742450284e-8,
+      "legacyDue": "2026-11-02T04:06:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 8.075607299804688,
+        "stability": 74.01681518554688
+      },
+      "rustRawIntervalDays": 74.01681518554688,
+      "stabilityDelta": 7.075546875512373e-6
+    },
+    {
+      "case": "learning-365d",
+      "difficultyDelta": 6.15856929897518e-8,
+      "legacyDue": "2027-02-22T04:00:00.000Z",
+      "legacyScheduledDays": 112,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 7.111505031585693,
+        "stability": 111.72502136230469
+      },
+      "rustRawIntervalDays": 111.72502136230469,
+      "stabilityDelta": 0.000011602304681446185
+    },
+    {
+      "case": "learning-365d",
+      "difficultyDelta": 6.336669944317919e-8,
+      "legacyDue": "2027-05-15T04:00:00.000Z",
+      "legacyScheduledDays": 194,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 6.147402763366699,
+        "stability": 194.3027801513672
+      },
+      "rustRawIntervalDays": 194.3027801513672,
+      "stabilityDelta": 0.000025231367175138075
+    },
+    {
+      "case": "review-365d",
+      "difficultyDelta": 4.188134763438711e-7,
+      "legacyDue": "2026-11-02T04:10:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 9.039709091186523,
+        "stability": 2.803014039993286
+      },
+      "rustRawIntervalDays": 2.803014039993286,
+      "stabilityDelta": 2.0000671385744795e-7
+    },
+    {
+      "case": "review-365d",
+      "difficultyDelta": 5.980468742450284e-8,
+      "legacyDue": "2027-01-15T04:00:00.000Z",
+      "legacyScheduledDays": 74,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 8.075607299804688,
+        "stability": 74.01681518554688
+      },
+      "rustRawIntervalDays": 74.01681518554688,
+      "stabilityDelta": 7.075546875512373e-6
+    },
+    {
+      "case": "review-365d",
+      "difficultyDelta": 6.15856929897518e-8,
+      "legacyDue": "2027-02-22T04:00:00.000Z",
+      "legacyScheduledDays": 112,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 7.111505031585693,
+        "stability": 111.72502136230469
+      },
+      "rustRawIntervalDays": 111.72502136230469,
+      "stabilityDelta": 0.000011602304681446185
+    },
+    {
+      "case": "review-365d",
+      "difficultyDelta": 6.336669944317919e-8,
+      "legacyDue": "2027-05-15T04:00:00.000Z",
+      "legacyScheduledDays": 194,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 6.147402763366699,
+        "stability": 194.3027801513672
+      },
+      "rustRawIntervalDays": 194.3027801513672,
+      "stabilityDelta": 0.000025231367175138075
+    },
+    {
+      "case": "relearning-365d",
+      "difficultyDelta": 4.188134763438711e-7,
+      "legacyDue": "2026-11-02T04:10:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 1,
+      "rustMemory": {
+        "difficulty": 9.039709091186523,
+        "stability": 2.803014039993286
+      },
+      "rustRawIntervalDays": 2.803014039993286,
+      "stabilityDelta": 2.0000671385744795e-7
+    },
+    {
+      "case": "relearning-365d",
+      "difficultyDelta": 5.980468742450284e-8,
+      "legacyDue": "2026-11-02T04:15:00.000Z",
+      "legacyScheduledDays": 0,
+      "memoryMatches": true,
+      "rating": 2,
+      "rustMemory": {
+        "difficulty": 8.075607299804688,
+        "stability": 74.01681518554688
+      },
+      "rustRawIntervalDays": 74.01681518554688,
+      "stabilityDelta": 7.075546875512373e-6
+    },
+    {
+      "case": "relearning-365d",
+      "difficultyDelta": 6.15856929897518e-8,
+      "legacyDue": "2027-02-22T04:00:00.000Z",
+      "legacyScheduledDays": 112,
+      "memoryMatches": true,
+      "rating": 3,
+      "rustMemory": {
+        "difficulty": 7.111505031585693,
+        "stability": 111.72502136230469
+      },
+      "rustRawIntervalDays": 111.72502136230469,
+      "stabilityDelta": 0.000011602304681446185
+    },
+    {
+      "case": "relearning-365d",
+      "difficultyDelta": 6.336669944317919e-8,
+      "legacyDue": "2027-05-15T04:00:00.000Z",
+      "legacyScheduledDays": 194,
+      "memoryMatches": true,
+      "rating": 4,
+      "rustMemory": {
+        "difficulty": 6.147402763366699,
+        "stability": 194.3027801513672
+      },
+      "rustRawIntervalDays": 194.3027801513672,
+      "stabilityDelta": 0.000025231367175138075
+    }
+  ]
+}

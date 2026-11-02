@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>词间 R00 浏览器能力验证</title>
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden}canvas{display:block}#status{position:absolute;bottom:0;background:white;color:black;padding:4px;font:12px sans-serif;z-index:10}</style>
+<div id="status" role="status">正在加载原型…</div>
+<script type="module">
+import init, {run_web} from './pkg/cijian_platform_spike.js';
+try {
+  await init();
+  run_web();
+  document.querySelector('#status').textContent = '原型已启动；浏览器能力尚需验证';
+} catch (error) {
+  document.querySelector('#status').textContent = `启动失败：${error.message}`;
+  console.error(error);
+}
+</script>
+</html>
