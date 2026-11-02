@@ -1,4 +1,7 @@
 //! Pure learning rules; all time and randomness supplied by callers.
+pub mod analysis;
+pub mod knowledge;
+pub mod lexicon;
 pub mod import;
 pub mod wordlist;
 pub mod provider;
