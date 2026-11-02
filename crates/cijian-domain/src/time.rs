@@ -58,6 +58,30 @@ pub fn study_week_start(now_ms: i64, zone: Tz, hour: u32) -> Result<i64, Validat
     boundary(monday, hour, zone)
 }
 
+pub fn heatmap_days(now_ms: i64, zone: Tz, hour: u32) -> Result<Vec<StudyDay>, ValidationError> {
+    let today = study_day(now_ms, zone, hour)?;
+    let back = u64::from(today.date.weekday().num_days_from_monday()) + 12 * 7;
+    let first = today
+        .date
+        .checked_sub_days(Days::new(back))
+        .ok_or(ValidationError::new("date", "时间超出范围"))?;
+    (0..91)
+        .map(|index| {
+            let date = first
+                .checked_add_days(Days::new(index))
+                .ok_or(ValidationError::new("date", "时间超出范围"))?;
+            let next = date
+                .succ_opt()
+                .ok_or(ValidationError::new("date", "时间超出范围"))?;
+            Ok(StudyDay {
+                date,
+                start_ms: boundary(date, hour, zone)?,
+                end_ms: boundary(next, hour, zone)?,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

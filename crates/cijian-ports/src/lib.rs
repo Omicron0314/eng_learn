@@ -5,6 +5,7 @@ pub mod inbox;
 pub mod library;
 pub mod provider;
 pub mod reading;
+pub mod stats;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
