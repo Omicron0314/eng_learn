@@ -1,4 +1,5 @@
 //! Pure learning rules; all time and randomness supplied by callers.
+pub mod provider;
 pub mod settings;
 pub mod srs;
 pub mod time;
