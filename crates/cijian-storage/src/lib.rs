@@ -157,9 +157,12 @@ impl Store {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(unavailable)?;
         let previous:Option<(String,String,String)>=tx.query_row("SELECT command_type,request_hash,result_json FROM command_receipts WHERE profile_id=?1 AND operation_id=?2",params![profile,operation],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(unavailable)?;
-        let request_hash = hash(request);
+        let request_value: serde_json::Value =
+            serde_json::from_str(request).map_err(unavailable)?;
+        let request_hash = hash(&cijian_domain::json::canonical_json(&request_value));
+        let legacy_hash = hash(request);
         if let Some((old_kind, old_hash, value)) = previous {
-            if old_kind != kind || old_hash != request_hash {
+            if old_kind != kind || (old_hash != request_hash && old_hash != legacy_hash) {
                 return Err(invalid("操作标识已被不同命令使用"));
             }
             return serde_json::from_str(&value).map_err(unavailable);
@@ -274,6 +277,42 @@ mod tests {
             .try_into()
             .unwrap(),
         }
+    }
+    #[test]
+    fn operation_hash_ignores_json_object_order() {
+        let store = Store::memory().unwrap();
+        store.create_profile("p", "原创", 0).unwrap();
+        let value = store
+            .command(
+                "p",
+                "original-op",
+                "original-command",
+                r#"{"z":2,"a":1}"#,
+                1,
+                |_| {
+                    Ok((
+                        serde_json::json!(7),
+                        vec![Event {
+                            id: "original-event".into(),
+                            kind: "original-command".into(),
+                            schema_version: 1,
+                            payload: serde_json::json!({}),
+                        }],
+                    ))
+                },
+            )
+            .unwrap();
+        let replay = store
+            .command(
+                "p",
+                "original-op",
+                "original-command",
+                r#"{"a":1,"z":2}"#,
+                2,
+                |_| panic!("reordered replay must not execute"),
+            )
+            .unwrap();
+        assert_eq!(value, replay);
     }
     #[test]
     fn duplicate_replay_and_stale_command_do_not_repeat_events() {

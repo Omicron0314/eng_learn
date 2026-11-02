@@ -3,6 +3,7 @@ pub mod analysis;
 pub mod audio;
 pub mod gloss;
 pub mod import;
+pub mod json;
 pub mod knowledge;
 pub mod lexicon;
 pub mod provider;
