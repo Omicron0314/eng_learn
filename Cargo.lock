@@ -953,6 +953,7 @@ dependencies = [
  "cijian-providers",
  "cijian-storage",
  "cijian-ui",
+ "csv",
  "directories",
  "futures",
  "gpui-kit",
