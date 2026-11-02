@@ -7,6 +7,10 @@ publish.workspace = true
 
 [dependencies]
 cijian-ports.workspace = true
+cijian-domain.workspace = true
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+rodio = "=0.21.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "=3.6.3", features = ["sync-secret-service", "crypto-rust"] }
@@ -16,4 +20,5 @@ keyring = { version = "=3.6.3", features = ["apple-native"] }
 keyring = { version = "=3.6.3", features = ["windows-native"] }
 
 [dev-dependencies]
+tempfile.workspace = true
 tokio = { version = "1", features = ["macros", "rt"] }
