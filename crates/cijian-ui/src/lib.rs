@@ -2,6 +2,7 @@
 #[cfg(test)]
 extern crate gpui_kit as gpui;
 mod audio;
+mod library;
 mod settings;
 mod stats;
 mod study;
@@ -35,6 +36,7 @@ struct Shell {
     loading: bool,
     error: Option<String>,
     request_id: u64,
+    library_ui: library::LibraryState,
     library: Option<CardPage>,
     selected: Option<SelectedFile>,
     word_list: bool,
@@ -104,6 +106,7 @@ impl Shell {
             loading: false,
             error: None,
             request_id: 0,
+            library_ui: Default::default(),
             library: None,
             selected: None,
             word_list: false,
@@ -304,13 +307,62 @@ impl Shell {
                             this.request(Command::LoadReview, cx);
                         }
                     }
-                    Ok(Response::Library(page)) => this.library = Some(page),
+                    Ok(Response::Library {
+                        page,
+                        books,
+                        entries,
+                        latest_import,
+                    }) => {
+                        if let Some((source, report)) = latest_import {
+                            this.library_ui.import_source = Some(source);
+                            this.report = Some(report);
+                        }
+                        this.library = Some(page);
+                        this.library_ui.books = books;
+                        this.library_ui.entries = entries;
+                    }
+                    Ok(Response::LibraryCardEdited(_)) => {
+                        this.library_ui.editor = None;
+                        this.library_ui.discard = false;
+                        this.notice = Some("词卡已保存".into());
+                        this.request(
+                            Command::LoadLibrary {
+                                filter: this.library_filter(),
+                            },
+                            cx,
+                        );
+                    }
+                    Ok(Response::DeleteBookPreview(preview)) => {
+                        this.library_ui.deletion = Some(preview)
+                    }
+                    Ok(Response::BookDeleted(preview)) => {
+                        this.library_ui.deletion = None;
+                        if this.library_ui.target.as_ref() == Some(&preview.book_id) {
+                            this.library_ui.target = None;
+                        }
+                        this.library_ui.page = 0;
+                        this.notice = Some(format!(
+                            "词书已删除；保留共享卡 {}，归档历史卡 {}",
+                            preview.shared_cards, preview.archived_cards
+                        ));
+                        this.navigate(
+                            Route::Library {
+                                book: None,
+                                search: String::new(),
+                            },
+                            cx,
+                        );
+                    }
                     Ok(Response::Selected(selected)) => {
                         if selected.is_some() {
                             this.selected = selected;
                         }
                     }
                     Ok(Response::Imported(report)) => {
+                        this.library_ui.import_source = None;
+                        this.library_ui.error_page = 0;
+                        this.library_ui.import_open = false;
+                        this.library_ui.report_open = true;
                         this.report = Some(report);
                         this.selected = None;
                         this.request(
@@ -353,11 +405,47 @@ impl Shell {
         cijian_ports::library::CardFilter {
             book_id,
             search,
-            page_size: 100,
-            ..Default::default()
+            page_size: 30,
+            page: self.library_ui.page,
+            state: self.library_ui.state,
+            suspended: self.library_ui.suspended,
         }
     }
     fn navigate(&mut self, route: Route, cx: &mut Context<Self>) {
+        if self.navigation.current() != &route
+            && self
+                .library_ui
+                .editor
+                .as_ref()
+                .is_some_and(|editor| editor.dirty(cx))
+        {
+            self.library_ui.pending_route = Some(route);
+            self.library_ui.pending_back = false;
+            self.library_ui.discard = true;
+            cx.notify();
+            return;
+        }
+        if self.navigation.current() != &route {
+            self.library_ui.editor = None;
+            self.library_ui.deletion = None;
+        }
+        if let Route::Library { book, search } = &route {
+            let scope = (book.clone(), search.clone());
+            if self.library_ui.scope.as_ref() != Some(&scope) {
+                self.library_ui.page = 0;
+                self.library_ui.scope = Some(scope);
+                self.library = None;
+                self.library_ui.entries = None;
+            }
+            if book
+                .as_ref()
+                .and_then(|id| self.library_ui.books.iter().find(|book| &book.id == id))
+                .is_some_and(|book| book.kind == BookKind::Baseline)
+            {
+                self.library_ui.state = None;
+                self.library_ui.suspended = None;
+            }
+        }
         if matches!(self.navigation.current(), Route::Article { .. })
             && self.navigation.current() != &route
         {
@@ -441,150 +529,158 @@ impl Shell {
                     );
             }
             Route::Library { .. } => {
-                body = body.child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(
-                            material_button(
-                                "mode-cards",
-                                if self.word_list {
-                                    ButtonVariant::Tonal
-                                } else {
-                                    ButtonVariant::Filled
-                                },
-                            )
-                            .child("词卡")
-                            .disabled(self.loading)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.word_list = false;
-                                this.import_kind = BookKind::Study;
-                                this.selected = None;
-                                cx.notify();
-                            })),
-                        )
-                        .child(
-                            material_button(
-                                "mode-wordlist",
-                                if self.word_list {
-                                    ButtonVariant::Filled
-                                } else {
-                                    ButtonVariant::Tonal
-                                },
-                            )
-                            .child("词表")
-                            .disabled(self.loading)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.word_list = true;
-                                this.selected = None;
-                                cx.notify();
-                            })),
-                        ),
-                );
-                if self.word_list {
+                body = body.child(self.library_controls(cx));
+                if self.library_ui.import_open {
                     body = body.child(
                         div()
                             .flex()
                             .gap_2()
                             .child(
                                 material_button(
-                                    "kind-baseline",
-                                    if self.import_kind == BookKind::Baseline {
-                                        ButtonVariant::Filled
-                                    } else {
+                                    "mode-cards",
+                                    if self.word_list {
                                         ButtonVariant::Tonal
+                                    } else {
+                                        ButtonVariant::Filled
                                     },
                                 )
-                                .child("基线：作为已知词")
+                                .child("词卡")
                                 .disabled(self.loading)
                                 .on_click(cx.listener(
                                     |this, _, _, cx| {
-                                        this.import_kind = BookKind::Baseline;
+                                        this.word_list = false;
+                                        this.import_kind = BookKind::Study;
+                                        this.library_ui.target = None;
+                                        this.selected = None;
                                         cx.notify();
                                     },
                                 )),
                             )
                             .child(
                                 material_button(
-                                    "kind-study",
-                                    if self.import_kind == BookKind::Study {
+                                    "mode-wordlist",
+                                    if self.word_list {
                                         ButtonVariant::Filled
                                     } else {
                                         ButtonVariant::Tonal
                                     },
                                 )
-                                .child("学习：加入复习")
+                                .child("词表")
                                 .disabled(self.loading)
                                 .on_click(cx.listener(
                                     |this, _, _, cx| {
-                                        this.import_kind = BookKind::Study;
+                                        this.word_list = true;
+                                        this.selected = None;
                                         cx.notify();
                                     },
                                 )),
                             ),
                     );
-                }
-                body = body.child(
-                    material_button("choose-file", ButtonVariant::Tonal)
-                        .child(if self.word_list {
-                            "选择词表 CSV / TXT"
-                        } else {
-                            "选择词卡 CSV / APKG"
-                        })
-                        .disabled(self.loading)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.request(
-                                Command::ChooseImport {
-                                    word_list: this.word_list,
-                                },
-                                cx,
-                            )
-                        })),
-                );
-                if let Some(selected) = &self.selected {
-                    body = body.child(format!("词书：{}", selected.name));
-                }
-                body = body.child(
-                    material_button("import-file", ButtonVariant::Filled)
-                        .child("开始导入")
-                        .disabled(self.loading || self.selected.is_none())
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            if let Some(file) = this.selected.clone() {
-                                this.request(
-                                    Command::ImportSelected {
-                                        handle: file.handle,
-                                        name: file.name,
-                                        kind: this.import_kind,
-                                        word_list: this.word_list,
-                                    },
-                                    cx,
-                                );
-                            }
-                        })),
-                );
-                if let Some(report) = &self.report {
-                    body = body.child(format!(
-                        "新增 {} 个词、{} 张词卡；重复 {}，跳过 {}",
-                        report.words_added, report.cards_added, report.duplicates, report.skipped
-                    ));
-                }
-                if let Some(page) = &self.library {
-                    body = body.child(format!("共 {} 张词卡", page.total));
-                    for card in &page.cards {
+                    if self.word_list {
                         body = body.child(
                             div()
-                                .rounded(px(16.))
-                                .p_4()
-                                .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
-                                .child(card.front.clone())
+                                .flex()
+                                .gap_2()
                                 .child(
-                                    div()
-                                        .text_color(color(ColorRole::ON_SURFACE_VARIANT))
-                                        .child(card.meaning.clone()),
+                                    material_button(
+                                        "kind-baseline",
+                                        if self.import_kind == BookKind::Baseline {
+                                            ButtonVariant::Filled
+                                        } else {
+                                            ButtonVariant::Tonal
+                                        },
+                                    )
+                                    .child("基线：作为已知词")
+                                    .disabled(self.loading)
+                                    .on_click(cx.listener(
+                                        |this, _, _, cx| {
+                                            this.import_kind = BookKind::Baseline;
+                                            this.library_ui.target = None;
+                                            cx.notify();
+                                        },
+                                    )),
+                                )
+                                .child(
+                                    material_button(
+                                        "kind-study",
+                                        if self.import_kind == BookKind::Study {
+                                            ButtonVariant::Filled
+                                        } else {
+                                            ButtonVariant::Tonal
+                                        },
+                                    )
+                                    .child("学习：加入复习")
+                                    .disabled(self.loading)
+                                    .on_click(cx.listener(
+                                        |this, _, _, cx| {
+                                            this.import_kind = BookKind::Study;
+                                            this.library_ui.target = None;
+                                            cx.notify();
+                                        },
+                                    )),
                                 ),
                         );
                     }
+                    body = body.child(self.import_controls(cx));
+                    body = body.child(
+                        material_button("choose-file", ButtonVariant::Tonal)
+                            .child(if self.word_list {
+                                "选择词表 CSV / TXT"
+                            } else {
+                                "选择词卡 CSV / APKG"
+                            })
+                            .disabled(self.loading)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.request(
+                                    Command::ChooseImport {
+                                        word_list: this.word_list,
+                                    },
+                                    cx,
+                                )
+                            })),
+                    );
+                    if let Some(selected) = &self.selected {
+                        body = body.child(format!("词书：{}", selected.name));
+                    }
+                    body = body.child(
+                        material_button("import-file", ButtonVariant::Filled)
+                            .child("开始导入")
+                            .disabled(self.loading || self.selected.is_none())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                if let Some(file) = this.selected.clone() {
+                                    this.request(
+                                        Command::ImportSelected {
+                                            target_book: this.library_ui.target.clone(),
+                                            handle: file.handle,
+                                            name: this
+                                                .library_ui
+                                                .import_name
+                                                .as_ref()
+                                                .map(|input| {
+                                                    input.read(cx).value().trim().to_owned()
+                                                })
+                                                .unwrap_or(file.name),
+                                            kind: this.import_kind,
+                                            word_list: this.word_list,
+                                        },
+                                        cx,
+                                    );
+                                }
+                            })),
+                    );
                 }
+                if self.report.is_some() && self.library_ui.report_open {
+                    body = body.child(self.import_report(cx));
+                }
+                if self.library_ui.entries.is_some() {
+                    body = body.child(self.baseline_entries(cx));
+                } else if let Some(page) = &self.library {
+                    body = body.child(format!("共 {} 张词卡", page.total));
+                    for card in &page.cards {
+                        body = body.child(self.library_card(card, cx));
+                    }
+                }
+                body = body.child(self.library_dialogs(cx));
             }
             Route::Review => {
                 if let Some(card) = self.review.first() {
@@ -673,6 +769,7 @@ impl Render for Shell {
                 }));
         }
         self.apply_theme(window, cx);
+        self.prepare_library_inputs(window, cx);
         if self.focus.is_none() {
             let focus = cx.focus_handle();
             window.focus(&focus, cx);
@@ -738,11 +835,7 @@ impl Render for Shell {
             content = content.child(
                 material_button("back", ButtonVariant::Text)
                     .child("返回")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.navigation.back();
-                        let route = this.navigation.current().clone();
-                        this.navigate(route, cx);
-                    })),
+                    .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
             )
         }
         if let Some(notice) = &self.notice {

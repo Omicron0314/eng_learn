@@ -1,4 +1,6 @@
 #[cfg(test)]
+mod library_tests;
+#[cfg(test)]
 mod tests;
 use cijian_app::commands::{Command, CommandBus, Response, SelectedFile};
 use cijian_domain::import::book_name;
@@ -394,8 +396,68 @@ impl DesktopBackend {
                 futures::executor::block_on(self.secrets.write(&reference, secret))?;
                 self.settings_response()
             }
+            Command::EditLibraryCard {
+                card,
+                revision,
+                meaning,
+                example,
+                suspended,
+                operation,
+            } => Ok(Response::LibraryCardEdited(self.store.edit_card(
+                cijian_ports::library::EditCard {
+                    profile_id: self.profile.clone(),
+                    operation_id: operation,
+                    event_id: id(),
+                    card_id: card,
+                    expected_revision: revision,
+                    meaning,
+                    example,
+                    suspended,
+                    now: now(),
+                },
+            )?)),
+            Command::PreviewDeleteBook { book } => Ok(Response::DeleteBookPreview(
+                self.store.preview_delete_book(&self.profile, &book)?,
+            )),
+            Command::DeleteBook {
+                book,
+                fingerprint,
+                operation,
+            } => Ok(Response::BookDeleted(self.store.delete_book(
+                cijian_ports::library::DeleteBook {
+                    profile_id: self.profile.clone(),
+                    operation_id: operation,
+                    event_id: id(),
+                    book_id: book,
+                    fingerprint,
+                    now: now(),
+                },
+            )?)),
             Command::LoadLibrary { filter } => {
-                Ok(Response::Library(self.store.cards(&self.profile, filter)?))
+                let books = self.store.books(&self.profile)?;
+                let selected = if let Some(book) = &filter.book_id {
+                    Some(
+                        books
+                            .iter()
+                            .find(|value| &value.id == book)
+                            .ok_or(AppError::new(ErrorCode::NotFound, "词书不存在或已归档"))?,
+                    )
+                } else {
+                    None
+                };
+                let entries = if selected
+                    .is_some_and(|book| book.kind == cijian_domain::import::BookKind::Baseline)
+                {
+                    Some(self.store.book_entries(&self.profile, &filter)?)
+                } else {
+                    None
+                };
+                Ok(Response::Library {
+                    latest_import: self.store.latest_import_report(&self.profile)?,
+                    page: self.store.cards(&self.profile, filter)?,
+                    books,
+                    entries,
+                })
             }
             Command::ChooseImport { word_list } => {
                 let selected = rfd::FileDialog::new()
@@ -431,6 +493,7 @@ impl DesktopBackend {
                 }
             }
             Command::ImportSelected {
+                target_book,
                 handle,
                 name,
                 kind,
@@ -449,6 +512,19 @@ impl DesktopBackend {
                     .get(&handle)
                     .cloned()
                     .ok_or(AppError::new(ErrorCode::InvalidInput, "请先选择文件"))?;
+                let (name, book_id) = if let Some(target) = &target_book {
+                    let books = self.store.books(&self.profile)?;
+                    let book = books
+                        .into_iter()
+                        .find(|book| &book.id == target && book.kind == kind)
+                        .ok_or(AppError::new(
+                            ErrorCode::InvalidInput,
+                            "目标词书不存在或用途不匹配",
+                        ))?;
+                    (book.name, book.id)
+                } else {
+                    (name, id())
+                };
                 let parsed = crate::import_file::read(&path, word_list)?;
                 let mut source = std::fs::File::open(&path).map_err(|_| failure())?;
                 let mut hasher = Sha256::new();
@@ -470,9 +546,12 @@ impl DesktopBackend {
                     .collect();
                 let report = self.store.import(ImportWords {
                     profile_id: self.profile.clone(),
-                    operation_id: format!("import-{handle}"),
+                    operation_id: format!(
+                        "import-{handle}-{}",
+                        target_book.as_deref().unwrap_or("new")
+                    ),
                     event_id: id(),
-                    book_id: id(),
+                    book_id,
                     import_id: id(),
                     name,
                     kind,

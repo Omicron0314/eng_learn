@@ -113,6 +113,22 @@ pub enum Command {
         secret: cijian_ports::provider::SecretPatch,
         operation: String,
     },
+    EditLibraryCard {
+        card: String,
+        revision: u64,
+        meaning: String,
+        example: String,
+        suspended: bool,
+        operation: String,
+    },
+    PreviewDeleteBook {
+        book: String,
+    },
+    DeleteBook {
+        book: String,
+        fingerprint: String,
+        operation: String,
+    },
     LoadLibrary {
         filter: cijian_ports::library::CardFilter,
     },
@@ -120,6 +136,7 @@ pub enum Command {
         word_list: bool,
     },
     ImportSelected {
+        target_book: Option<String>,
         handle: String,
         name: String,
         kind: BookKind,
@@ -189,7 +206,15 @@ pub enum Response {
         voices: Vec<cijian_ports::audio::SystemVoice>,
         system_voice: Option<String>,
     },
-    Library(CardPage),
+    Library {
+        page: CardPage,
+        books: Vec<cijian_ports::library::BookView>,
+        latest_import: Option<(String, ImportReport)>,
+        entries: Option<cijian_ports::library::BookEntryPage>,
+    },
+    LibraryCardEdited(CardView),
+    DeleteBookPreview(cijian_ports::library::DeletePreview),
+    BookDeleted(cijian_ports::library::DeletePreview),
     Selected(Option<SelectedFile>),
     Imported(ImportReport),
     Review {

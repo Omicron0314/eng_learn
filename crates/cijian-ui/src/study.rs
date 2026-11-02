@@ -11,7 +11,7 @@ use cijian_ports::{
 use gpui_kit::{InteractiveText, StyledText};
 use gpui_kit_material::components::MaterialSideSheet;
 impl Shell {
-    fn operation(&self, purpose: &str) -> String {
+    pub(super) fn operation(&self, purpose: &str) -> String {
         format!(
             "{purpose}-{}-{}",
             self.request_id,

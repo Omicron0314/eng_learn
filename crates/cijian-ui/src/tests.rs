@@ -1,3 +1,4 @@
+mod library;
 use super::*;
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{Bounds, TestAppContext, size};
