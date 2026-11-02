@@ -20,7 +20,7 @@ fn state_name(state: State) -> &'static str {
         State::Relearning => "relearning",
     }
 }
-fn read_card(row: &Row<'_>) -> rusqlite::Result<CardView> {
+pub(super) fn read_card(row: &Row<'_>) -> rusqlite::Result<CardView> {
     let state: String = row.get("state")?;
     let state = match state.as_str() {
         "new" => State::New,

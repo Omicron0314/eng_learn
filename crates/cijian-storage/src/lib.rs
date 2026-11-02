@@ -4,6 +4,7 @@ mod articles;
 mod audio;
 mod calls;
 mod inbox;
+mod knowledge;
 mod library;
 mod providers;
 mod reading;

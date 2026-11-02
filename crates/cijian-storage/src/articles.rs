@@ -65,6 +65,22 @@ impl Store {
             value.as_str().ok_or_else(|| unavailable("receipt"))?,
         )
     }
+    pub fn generation_job_for_operation(
+        &self,
+        profile: &str,
+        operation: &str,
+    ) -> Result<Option<GenerationJob>> {
+        let db = self.connection.lock().map_err(unavailable)?;
+        let id: Option<String> = db
+            .query_row(
+                "SELECT id FROM jobs WHERE profile_id=?1 AND operation_id=?2",
+                params![profile, operation],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(unavailable)?;
+        id.map(|id| job(&db, profile, &id)).transpose()
+    }
     pub fn generation_job(&self, profile: &str, id: &str) -> Result<GenerationJob> {
         let db = self.connection.lock().map_err(unavailable)?;
         job(&db, profile, id)
