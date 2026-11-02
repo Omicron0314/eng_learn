@@ -4,6 +4,7 @@ mod audio;
 mod backend;
 mod backup;
 mod import_file;
+mod legacy;
 use std::{path::PathBuf, sync::Arc};
 fn main() {
     let mut arguments = std::env::args().skip(1);

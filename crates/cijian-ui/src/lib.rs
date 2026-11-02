@@ -47,6 +47,10 @@ struct Shell {
     review_started: Instant,
     settings: cijian_domain::settings::Settings,
     settings_revision: u64,
+    legacy_selection: Option<String>,
+    legacy_profiles: Vec<cijian_ports::legacy::LegacyProfile>,
+    legacy_report: Option<cijian_ports::legacy::LegacyReport>,
+    stored_audio: Vec<cijian_ports::audio::AudioAsset>,
     audio_poll_epoch: u64,
     appearance_subscription: Option<gpui_kit::Subscription>,
     system_voices: Vec<cijian_ports::audio::SystemVoice>,
@@ -112,6 +116,10 @@ impl Shell {
             review_started: Instant::now(),
             settings: Default::default(),
             settings_revision: 1,
+            legacy_selection: None,
+            legacy_profiles: Vec::new(),
+            legacy_report: None,
+            stored_audio: Vec::new(),
             audio_poll_epoch: 0,
             appearance_subscription: None,
             system_voices: Vec::new(),
@@ -172,6 +180,31 @@ impl Shell {
                         }
                     }
                     Ok(Response::Audio(state)) => this.receive_audio(state, cx),
+                    Ok(Response::LegacyProfiles {
+                        selection,
+                        profiles,
+                    }) => {
+                        this.legacy_selection = Some(selection);
+                        this.legacy_profiles = profiles;
+                        this.legacy_report = None;
+                    }
+                    Ok(Response::LegacyPreview { selection, report }) => {
+                        this.legacy_selection = Some(selection);
+                        this.legacy_profiles.clear();
+                        this.legacy_report = Some(*report);
+                    }
+                    Ok(Response::LegacyImported {
+                        already_present,
+                        directory,
+                    }) => {
+                        this.notice = Some(if already_present {
+                            format!("相同快照已迁入，没有重复创建学习记录。位置：{directory}")
+                        } else {
+                            format!(
+                                "迁入完成，新学习库已打开。原 Web 数据未改动。位置：{directory}"
+                            )
+                        });
+                    }
                     Ok(Response::BackupSaved) => {
                         this.notice = Some("学习备份已保存，不包含密钥和音频缓存".into())
                     }
@@ -182,7 +215,12 @@ impl Shell {
                     Ok(Response::FileCancelled) => {}
                     Ok(Response::Stats(stats)) => this.stats = Some(*stats),
                     Ok(Response::Articles(articles)) => this.articles = articles,
-                    Ok(Response::Article { article, session }) => {
+                    Ok(Response::Article {
+                        article,
+                        session,
+                        audio,
+                    }) => {
+                        this.stored_audio = audio;
                         this.navigation.navigate(Route::Article {
                             id: article.id.clone(),
                             listening: false,

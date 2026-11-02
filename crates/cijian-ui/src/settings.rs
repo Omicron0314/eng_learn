@@ -313,6 +313,88 @@ impl Shell {
                         cx.listener(|this, _, _, cx| this.request(Command::RestoreBackup, cx)),
                     ),
             );
+        body = body
+            .child("旧版学习库迁入")
+            .child("先只读预检，再确认迁入新的学习库。密钥不会迁入，新库增量不会回写旧 Web。")
+            .child(
+                material_button("inspect-legacy", ButtonVariant::Tonal)
+                    .child("选择旧库并预检")
+                    .disabled(self.loading)
+                    .on_click(
+                        cx.listener(|this, _, _, cx| this.request(Command::InspectLegacy, cx)),
+                    ),
+            );
+        if let Some(selection) = &self.legacy_selection {
+            for (index, profile) in self.legacy_profiles.iter().enumerate() {
+                let selection = selection.clone();
+                let profile_id = profile.id.clone();
+                body = body.child(
+                    material_button(
+                        gpui_kit::SharedString::from(format!("legacy-profile-{index}")),
+                        ButtonVariant::Tonal,
+                    )
+                    .child(format!(
+                        "档案 {}：{} 张卡 / {} 篇文章",
+                        index + 1,
+                        profile.cards,
+                        profile.articles
+                    ))
+                    .disabled(self.loading)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.request(
+                            Command::SelectLegacyProfile {
+                                selection: selection.clone(),
+                                profile: profile_id.clone(),
+                            },
+                            cx,
+                        )
+                    })),
+                );
+            }
+        }
+        if let Some(report) = &self.legacy_report {
+            body = body.child(format!(
+                "预检：{} 张旧词卡，{} 条旧评分，{} 篇旧文章，{} 字节音频",
+                report.source_counts.get("cards").copied().unwrap_or(0),
+                report
+                    .source_counts
+                    .get("review_logs")
+                    .copied()
+                    .unwrap_or(0),
+                report.source_counts.get("articles").copied().unwrap_or(0),
+                report.audio_bytes
+            ));
+            for message in report.blockers.iter().chain(&report.warnings).take(20) {
+                body = body.child(message.clone());
+            }
+            if report.blockers.len() + report.warnings.len() > 20 {
+                body = body.child("更多提示可复制完整预检报告查看。");
+            }
+            body = body
+                .child(
+                    material_button("copy-legacy-report", ButtonVariant::Text)
+                        .child("复制完整预检报告")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            if let Some(report) = &this.legacy_report
+                                && let Ok(text) = serde_json::to_string_pretty(report)
+                            {
+                                cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
+                                this.notice = Some("预检报告已复制，不包含密钥".into());
+                                cx.notify();
+                            }
+                        })),
+                )
+                .child(
+                    material_button("confirm-legacy-import", ButtonVariant::Filled)
+                        .child("确认迁入预览快照并打开新库")
+                        .disabled(self.loading || !report.blockers.is_empty())
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            if let Some(selection) = this.legacy_selection.clone() {
+                                this.request(Command::ImportLegacy { selection }, cx);
+                            }
+                        })),
+                );
+        }
         body.into_any_element()
     }
     fn save_provider(&mut self, clear: bool, cx: &mut Context<Self>) {

@@ -79,6 +79,9 @@ impl DesktopBackend {
             &id(),
         )?;
         Ok(Response::Article {
+            audio: self
+                .store
+                .article_audio_assets(&self.profile, &article.id)?,
             article: Box::new(article),
             session,
         })

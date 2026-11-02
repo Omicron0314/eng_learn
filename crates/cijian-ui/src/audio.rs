@@ -133,6 +133,37 @@ impl Shell {
                         })),
                 );
         }
+        if let Some(article) = &self.article {
+            for (index, asset) in self.stored_audio.iter().enumerate() {
+                let article = article.id.clone();
+                let audio = asset.id.clone();
+                body = body.child(
+                    material_button(
+                        gpui_kit::SharedString::from(format!("stored-audio-{index}")),
+                        ButtonVariant::Tonal,
+                    )
+                    .child(format!(
+                        "播放{}音频 · {}",
+                        if asset.provider_fingerprint.starts_with("legacy:") {
+                            "旧版"
+                        } else {
+                            "已有"
+                        },
+                        asset.voice
+                    ))
+                    .disabled(self.loading)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.request(
+                            Command::PlayStoredAudio {
+                                article: article.clone(),
+                                audio: audio.clone(),
+                            },
+                            cx,
+                        )
+                    })),
+                );
+            }
+        }
         if listening {
             body = body.child(
                 material_button("show-listening-text", ButtonVariant::Text)

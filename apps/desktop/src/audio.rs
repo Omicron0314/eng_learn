@@ -8,11 +8,80 @@ use cijian_platform::audio::AudioCommand;
 use cijian_ports::{AppError, ErrorCode, Result, audio::*, provider::*};
 use cijian_providers::{NativeHttp, OpenAiCompatible};
 use sha2::{Digest, Sha256};
-use std::io::Write;
+use std::io::{Read, Write};
 fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 impl DesktopBackend {
+    fn verified_audio_path(&self, asset: &AudioAsset) -> Result<std::path::PathBuf> {
+        let invalid = || {
+            AppError::new(
+                ErrorCode::StorageUnavailable,
+                "音频文件缺失或损坏，可重新合成或使用本机朗读",
+            )
+        };
+        let (stem, extension) = asset.blob_key.rsplit_once('.').ok_or_else(invalid)?;
+        if stem.len() != 64
+            || !stem.bytes().all(|b| b.is_ascii_hexdigit())
+            || !["wav", "mp3"].contains(&extension)
+        {
+            return Err(invalid());
+        }
+        let path = self.directory.join("audio").join(&asset.blob_key);
+        let mut file = std::fs::File::open(&path).map_err(|_| invalid())?;
+        let mut hasher = Sha256::new();
+        let mut buffer = [0; 65536];
+        loop {
+            let read = file.read(&mut buffer).map_err(|_| invalid())?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+        }
+        if format!("{:x}", hasher.finalize()) != stem {
+            return Err(invalid());
+        }
+        Ok(path)
+    }
+    pub(super) fn play_stored_audio(&self, article: &str, audio: &str) -> Result<Response> {
+        let ticket = self
+            .audio_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
+        let asset = self
+            .store
+            .article_audio_assets(&self.profile, article)?
+            .into_iter()
+            .find(|asset| asset.id == audio)
+            .ok_or(AppError::new(ErrorCode::NotFound, "当前文章没有这段音频"))?;
+        let path = self.verified_audio_path(&asset)?;
+        let _gate = self
+            .playback_gate
+            .lock()
+            .map_err(|_| AppError::new(ErrorCode::StorageUnavailable, "播放器暂不可用"))?;
+        if self.audio_epoch.load(std::sync::atomic::Ordering::SeqCst) != ticket {
+            return Err(AppError::new(ErrorCode::Cancelled, "播放已取消"));
+        }
+        let session = id();
+        let (preferences, _) = self.store.device_preferences(&self.profile, &self.device)?;
+        self.store.open_audio_session(AudioSessionCommand {
+            profile: self.profile.clone(),
+            operation: format!("play-{session}"),
+            event: id(),
+            session: session.clone(),
+            article: article.into(),
+            audio: Some(asset.id),
+            source: "remote".into(),
+            rate: preferences.playback_rate,
+            now: now(),
+        })?;
+        self.audio_command(AudioCommand::Play {
+            path,
+            session,
+            article: article.into(),
+            rate: preferences.playback_rate,
+        })
+    }
     pub(super) fn ensure_system_audio(&self, article_id: &str, voice: &str) -> Result<Response> {
         let ticket = self
             .audio_epoch
@@ -123,15 +192,7 @@ impl DesktopBackend {
         std::fs::create_dir_all(&cache)
             .map_err(|_| AppError::new(ErrorCode::StorageUnavailable, "无法创建音频缓存"))?;
         let existing = self.store.audio_asset(&self.profile, &cache_key)?;
-        let cached = existing.filter(|asset| {
-            let Some(stem) = asset.blob_key.strip_suffix(".wav") else {
-                return false;
-            };
-            if stem.len() != 64 || !stem.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return false;
-            }
-            std::fs::read(cache.join(&asset.blob_key)).is_ok_and(|bytes| digest(&bytes) == stem)
-        });
+        let cached = existing.filter(|asset| self.verified_audio_path(asset).is_ok());
         let asset = if let Some(asset) = cached {
             self.store
                 .link_cached_audio(&self.profile, &article.id, &asset.id)?;

@@ -16,6 +16,10 @@ pub enum Command {
     SetSystemVoice {
         voice: String,
     },
+    PlayStoredAudio {
+        article: String,
+        audio: String,
+    },
     EnsureSystemAudio {
         article: String,
         voice: String,
@@ -34,6 +38,14 @@ pub enum Command {
         rate: f64,
     },
     AudioStatus,
+    InspectLegacy,
+    SelectLegacyProfile {
+        selection: String,
+        profile: String,
+    },
+    ImportLegacy {
+        selection: String,
+    },
     ExportBackup,
     RestoreBackup,
     LoadStats {
@@ -131,6 +143,18 @@ pub struct SelectedFile {
 pub enum Response {
     Preferences(cijian_domain::settings::DevicePreferences),
     Audio(cijian_domain::audio::Playback),
+    LegacyProfiles {
+        selection: String,
+        profiles: Vec<cijian_ports::legacy::LegacyProfile>,
+    },
+    LegacyPreview {
+        selection: String,
+        report: Box<cijian_ports::legacy::LegacyReport>,
+    },
+    LegacyImported {
+        already_present: bool,
+        directory: String,
+    },
     BackupSaved,
     RestoreOpened,
     FileCancelled,
@@ -139,6 +163,7 @@ pub enum Response {
     Article {
         article: Box<cijian_ports::articles::Article>,
         session: cijian_ports::reading::ReadingSession,
+        audio: Vec<cijian_ports::audio::AudioAsset>,
     },
     Lookup {
         context: cijian_ports::reading::LookupContext,

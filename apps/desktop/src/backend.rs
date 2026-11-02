@@ -42,6 +42,9 @@ pub struct DesktopBackend {
     pub(super) store: Arc<Store>,
     pub(super) device: String,
     pub(super) profile: String,
+    pub(super) legacy_files: Mutex<HashMap<String, PathBuf>>,
+    pub(super) legacy_snapshots:
+        Mutex<HashMap<String, Arc<cijian_storage::legacy::LegacySnapshot>>>,
     files: Mutex<HashMap<String, PathBuf>>,
     pub(super) secrets: SessionSecrets,
     pub(super) config_lock: Mutex<()>,
@@ -125,6 +128,8 @@ impl DesktopBackend {
             store,
             device,
             profile,
+            legacy_files: Mutex::new(HashMap::new()),
+            legacy_snapshots: Mutex::new(HashMap::new()),
             files: Mutex::new(HashMap::new()),
             secrets: SessionSecrets::default(),
             config_lock: Mutex::new(()),
@@ -205,6 +210,7 @@ impl DesktopBackend {
                 preferences.system_voice = Some(voice);
                 Ok(())
             }),
+            Command::PlayStoredAudio { article, audio } => self.play_stored_audio(&article, &audio),
             Command::EnsureSystemAudio { article, voice } => {
                 self.ensure_system_audio(&article, &voice)
             }
@@ -223,6 +229,11 @@ impl DesktopBackend {
             Command::AudioStatus => {
                 self.audio_command(cijian_platform::audio::AudioCommand::Status)
             }
+            Command::InspectLegacy => self.inspect_legacy(),
+            Command::SelectLegacyProfile { selection, profile } => {
+                self.select_legacy_profile(&selection, &profile)
+            }
+            Command::ImportLegacy { selection } => self.import_legacy(&selection),
             Command::ExportBackup => self.export_backup(),
             Command::RestoreBackup => self.restore_backup(),
             Command::LoadStats { page } => Ok(Response::Stats(Box::new(self.store.stats(
