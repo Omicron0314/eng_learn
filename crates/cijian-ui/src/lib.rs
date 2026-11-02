@@ -1,6 +1,8 @@
 //! GPUI views issue application commands; all IO runs on the background executor.
 #[cfg(test)]
 extern crate gpui_kit as gpui;
+mod settings;
+mod study;
 #[cfg(test)]
 mod tests;
 mod theme;
@@ -40,6 +42,20 @@ struct Shell {
     intervals: Option<[i64; 4]>,
     revealed: bool,
     review_started: Instant,
+    settings: cijian_domain::settings::Settings,
+    settings_revision: u64,
+    provider_config: Option<cijian_domain::provider::ProviderConfig>,
+    has_session_key: bool,
+    settings_editor: Option<settings::Editor>,
+    articles: Vec<cijian_ports::articles::Article>,
+    article: Option<cijian_ports::articles::Article>,
+    reading_session: Option<cijian_ports::reading::ReadingSession>,
+    lookup: Option<(cijian_ports::reading::LookupContext, u64, String)>,
+    generation_job: Option<cijian_ports::articles::GenerationJob>,
+    inbox: Vec<cijian_ports::inbox::InboxItem>,
+    inbox_total: u64,
+    inbox_selected: std::collections::BTreeSet<String>,
+    notice: Option<String>,
 }
 impl Shell {
     fn new() -> Self {
@@ -78,6 +94,20 @@ impl Shell {
             intervals: None,
             revealed: false,
             review_started: Instant::now(),
+            settings: Default::default(),
+            settings_revision: 1,
+            provider_config: None,
+            has_session_key: false,
+            settings_editor: None,
+            articles: Vec::new(),
+            article: None,
+            reading_session: None,
+            lookup: None,
+            generation_job: None,
+            inbox: Vec::new(),
+            inbox_total: 0,
+            inbox_selected: Default::default(),
+            notice: None,
         }
     }
     fn request(&mut self, command: Command, cx: &mut Context<Self>) {
@@ -100,6 +130,74 @@ impl Shell {
                 this.loading = false;
                 match response {
                     Err(error) => this.error = Some(error.message),
+                    Ok(Response::Articles(articles)) => this.articles = articles,
+                    Ok(Response::Article { article, session }) => {
+                        this.navigation.navigate(Route::Article {
+                            id: article.id.clone(),
+                            listening: false,
+                        });
+                        this.article = Some(*article);
+                        this.reading_session = Some(session);
+                        this.lookup = None;
+                    }
+                    Ok(Response::Lookup {
+                        context,
+                        revision,
+                        meaning,
+                    }) => this.lookup = Some((context, revision, meaning)),
+                    Ok(Response::Marked(result)) => {
+                        if let Some((_, revision, _)) = &mut this.lookup {
+                            *revision = result.revision;
+                        }
+                        this.notice = Some(
+                            if result.archived {
+                                "词卡已归档，未自动恢复"
+                            } else if result.paused {
+                                "词卡已暂停，可在词库恢复"
+                            } else if result.card_id.is_some() {
+                                "已加入复习"
+                            } else if result.inbox_id.is_some() {
+                                "已放入生词箱"
+                            } else {
+                                "已标记认识"
+                            }
+                            .into(),
+                        );
+                    }
+                    Ok(Response::Inbox { items, total }) => {
+                        this.inbox = items;
+                        this.inbox_total = total;
+                        this.inbox_selected.clear();
+                    }
+                    Ok(Response::InboxProcessed(_)) => {
+                        this.request(Command::LoadInbox { page: 0 }, cx)
+                    }
+                    Ok(Response::Completed) => {
+                        if let Some(session) = &mut this.reading_session {
+                            session.completed_at = Some(0);
+                        }
+                        this.notice = Some("已记录本次阅读完成".into());
+                    }
+                    Ok(Response::FeedbackSaved) => this.notice = Some("反馈已保存".into()),
+                    Ok(Response::Job(job)) => this.receive_job(job, cx),
+                    Ok(Response::Settings {
+                        value,
+                        revision,
+                        provider,
+                        has_session_key,
+                    }) => {
+                        this.settings = value;
+                        this.settings_revision = revision;
+                        this.provider_config = provider;
+                        this.has_session_key = has_session_key;
+                        this.settings_editor = None;
+                        this.dark =
+                            matches!(this.settings.theme, cijian_domain::settings::Theme::Dark);
+                        init_component_theme(theme::scheme(this.dark), 1.0, cx);
+                        if this.navigation.current() == &Route::Today {
+                            this.request(Command::LoadReview, cx);
+                        }
+                    }
                     Ok(Response::Library(page)) => this.library = Some(page),
                     Ok(Response::Selected(selected)) => {
                         if selected.is_some() {
@@ -133,6 +231,10 @@ impl Shell {
     fn navigate(&mut self, route: Route, cx: &mut Context<Self>) {
         self.navigation.navigate(route);
         match self.navigation.current() {
+            Route::Articles => self.request(Command::LoadArticles { page: 0 }, cx),
+            Route::Article { id, .. } => self.request(Command::OpenArticle { id: id.clone() }, cx),
+            Route::Inbox => self.request(Command::LoadInbox { page: 0 }, cx),
+            Route::Settings => self.request(Command::LoadSettings, cx),
             Route::Today | Route::Review => self.request(Command::LoadReview, cx),
             Route::Library { .. } => self.request(Command::LoadLibrary, cx),
             _ => {
@@ -399,25 +501,10 @@ impl Shell {
                     });
                 }
             }
-            Route::Settings => {
-                body = body.child("外观").child(
-                    material_button("theme", ButtonVariant::Tonal)
-                        .child(if self.dark {
-                            "切换浅色"
-                        } else {
-                            "切换深色"
-                        })
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.dark = !this.dark;
-                            init_component_theme(theme::scheme(this.dark), 1.0, cx);
-                            cx.notify();
-                        })),
-                );
-            }
-            Route::Articles | Route::Article { .. } => {
-                body = body.child("把复习过的词，放回故事里。")
-            }
-            Route::Inbox => body = body.child("在这里整理阅读中遇到的生词。"),
+            Route::Settings => return self.settings_body(cx),
+            Route::Articles => return self.articles_body(cx),
+            Route::Article { .. } => return self.reader_body(cx),
+            Route::Inbox => return self.inbox_body(cx),
             Route::Stats => body = body.child("在学习记录中观察自己的进步。"),
         }
         body.into_any_element()
@@ -435,6 +522,14 @@ fn format_interval(ms: i64) -> String {
 }
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.navigation.current() == &Route::Settings && self.settings_editor.is_none() {
+            self.settings_editor = Some(settings::Editor::new(
+                &self.settings,
+                self.provider_config.as_ref(),
+                window,
+                cx,
+            ));
+        }
         let compact = window.viewport_size().width < px(600.);
         let selected = self.navigation.current().section();
         let entity = cx.entity().downgrade();
@@ -489,6 +584,9 @@ impl Render for Shell {
                         this.navigate(route, cx);
                     })),
             )
+        }
+        if let Some(notice) = &self.notice {
+            content = content.child(notice.clone());
         }
         if self.loading {
             content = content.child("正在处理，请稍候…");
@@ -570,7 +668,7 @@ pub fn run(application: gpui_kit::Application, backend: Result<Arc<dyn CommandBu
                     }
                     shell
                 });
-                view.update(cx, |shell, cx| shell.request(Command::LoadReview, cx));
+                view.update(cx, |shell, cx| shell.request(Command::LoadSettings, cx));
                 view
             })
             .expect("无法创建词间窗口");

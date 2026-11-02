@@ -1,4 +1,5 @@
 //! Desktop composition root. Optional --data-dir permits isolated acceptance runs.
+mod articles;
 mod backend;
 mod import_file;
 use std::{path::PathBuf, sync::Arc};

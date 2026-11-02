@@ -1,6 +1,14 @@
+#[cfg(test)]
+mod tests;
 use cijian_app::commands::{Command, CommandBus, Response, SelectedFile};
 use cijian_domain::import::book_name;
+use cijian_domain::provider::ProviderKind;
+use cijian_platform::SessionSecrets;
 use cijian_ports::{AppError, ErrorCode, Result, library::*};
+use cijian_ports::{
+    SaveSettings,
+    provider::{SaveProviderConfig, SecretStore},
+};
 use cijian_storage::Store;
 use futures::future::BoxFuture;
 use sha2::{Digest, Sha256};
@@ -8,30 +16,47 @@ use std::io::Read;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-fn now() -> i64 {
+pub(super) fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
 }
-fn id() -> String {
+pub(super) fn id() -> String {
     uuid::Uuid::now_v7().to_string()
 }
 fn failure() -> AppError {
     AppError::new(ErrorCode::StorageUnavailable, "无法读取本地文件或数据库")
 }
 pub struct DesktopBackend {
-    store: Store,
-    profile: String,
+    _directory_lock: std::fs::File,
+    pub(super) store: Arc<Store>,
+    pub(super) profile: String,
     files: Mutex<HashMap<String, PathBuf>>,
+    pub(super) secrets: SessionSecrets,
+    pub(super) config_lock: Mutex<()>,
+    pub(super) runtime: tokio::runtime::Runtime,
 }
 impl DesktopBackend {
     pub fn open(directory: &Path) -> Result<Self> {
         std::fs::create_dir_all(directory).map_err(|_| failure())?;
+        let directory_lock = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(directory.join("instance.lock"))
+            .map_err(|_| failure())?;
+        directory_lock.try_lock().map_err(|_| {
+            AppError::new(
+                ErrorCode::StorageUnavailable,
+                "此学习目录正由另一个词间实例使用",
+            )
+        })?;
         let store = Store::open(directory.join("cijian.sqlite"))?;
         let profile = match store.first_profile()? {
             Some(p) => p,
@@ -41,14 +66,187 @@ impl DesktopBackend {
                 p
             }
         };
+        store.interrupt_generation_jobs(&profile, now())?;
         Ok(Self {
-            store,
+            _directory_lock: directory_lock,
+            store: Arc::new(store),
             profile,
             files: Mutex::new(HashMap::new()),
+            secrets: SessionSecrets::default(),
+            config_lock: Mutex::new(()),
+            runtime: tokio::runtime::Runtime::new().map_err(|_| failure())?,
+        })
+    }
+    fn settings_response(&self) -> Result<Response> {
+        let (value, revision) = self.store.settings(&self.profile)?;
+        let provider = self
+            .store
+            .provider_config(&self.profile, ProviderKind::Llm)?;
+        let has_session_key =
+            futures::executor::block_on(self.secrets.read(&format!("{}/llm", self.profile)))?
+                .is_some();
+        Ok(Response::Settings {
+            value,
+            revision,
+            provider,
+            has_session_key,
         })
     }
     fn execute(&self, command: Command) -> Result<Response> {
         match command {
+            Command::LoadArticles { page } => Ok(Response::Articles(self.store.articles(
+                &self.profile,
+                None,
+                None,
+                page,
+            )?)),
+            Command::GenerateArticle {
+                tier,
+                genre,
+                operation,
+            } => self.generate_article(tier, genre, operation),
+            Command::ObserveJob { job } => Ok(Response::Job(
+                self.store.generation_job(&self.profile, &job)?,
+            )),
+            Command::CancelGeneration { job } => Ok(Response::Job(self.store.stop_generation(
+                &self.profile,
+                &job,
+                cijian_ports::articles::JobStatus::Cancelled,
+                now(),
+            )?)),
+            Command::OpenArticle { id } => self.open_article(&id),
+            Command::Lookup {
+                article,
+                body_hash,
+                range,
+            } => self.lookup(&article, &body_hash, range),
+            Command::CompleteReading {
+                article,
+                body_hash,
+                session,
+            } => {
+                self.store.complete_reading(
+                    self.reader_command(article, body_hash, format!("complete-{session}")),
+                    &session,
+                )?;
+                Ok(Response::Completed)
+            }
+            Command::Feedback {
+                article,
+                body_hash,
+                value,
+                mode,
+                operation,
+            } => {
+                self.store.submit_feedback(
+                    self.reader_command(article, body_hash, operation),
+                    cijian_ports::reading::Feedback { mode, value },
+                )?;
+                Ok(Response::FeedbackSaved)
+            }
+            Command::Mark {
+                article,
+                body_hash,
+                range,
+                action,
+                revision,
+                operation,
+            } => Ok(Response::Marked(self.store.mark_word(
+                cijian_ports::inbox::MarkWord {
+                    context: self.reader_command(article, body_hash, operation),
+                    range,
+                    action,
+                    expected_revision: revision,
+                    lexeme_id: id(),
+                    card_id: id(),
+                    inbox_id: id(),
+                    meaning: String::new(),
+                },
+            )?)),
+            Command::LoadInbox { page } => Ok(Response::Inbox {
+                items: self.store.inbox(&self.profile, page)?,
+                total: self.store.pending_inbox_count(&self.profile)?,
+            }),
+            Command::BatchInbox {
+                action,
+                selections,
+                operation,
+            } => Ok(Response::InboxProcessed(
+                self.store.batch_inbox(cijian_ports::inbox::BatchInbox {
+                    profile: self.profile.clone(),
+                    operation,
+                    action,
+                    selections: selections
+                        .into_iter()
+                        .map(|(item, revision)| cijian_ports::inbox::InboxSelection {
+                            id: item,
+                            revision,
+                            card_id: id(),
+                            event_id: id(),
+                        })
+                        .collect(),
+                    now: now(),
+                })?,
+            )),
+            Command::LoadSettings => self.settings_response(),
+            Command::SaveSettings {
+                value,
+                revision,
+                operation,
+            } => {
+                let value = value
+                    .try_into()
+                    .map_err(|e: cijian_domain::ValidationError| {
+                        AppError::new(ErrorCode::InvalidInput, e.to_string())
+                    })?;
+                self.store.update_settings(SaveSettings {
+                    profile_id: self.profile.clone(),
+                    operation_id: operation,
+                    event_id: id(),
+                    expected_revision: revision,
+                    now: now(),
+                    value,
+                })?;
+                self.settings_response()
+            }
+            Command::SaveProvider {
+                config,
+                revision,
+                secret,
+                operation,
+            } => {
+                let _guard = self.config_lock.lock().map_err(|_| failure())?;
+                let kind = config.kind;
+                self.store.save_provider_config(SaveProviderConfig {
+                    profile: self.profile.clone(),
+                    operation,
+                    event: id(),
+                    config,
+                    expected_revision: revision,
+                    now: now(),
+                })?;
+                let current = self
+                    .store
+                    .provider_config(&self.profile, kind)?
+                    .ok_or_else(failure)?;
+                if current.revision != revision + 1 {
+                    return Err(AppError::new(
+                        ErrorCode::StaleState,
+                        "配置已更新，旧密钥操作未重放",
+                    ));
+                }
+                let reference = format!(
+                    "{}/{}",
+                    self.profile,
+                    if kind == ProviderKind::Llm {
+                        "llm"
+                    } else {
+                        "tts"
+                    }
+                );
+                futures::executor::block_on(self.secrets.write(&reference, secret))?;
+                self.settings_response()
+            }
             Command::LoadLibrary => Ok(Response::Library(self.store.cards(
                 &self.profile,
                 CardFilter {

@@ -7,6 +7,68 @@ use cijian_ports::{
 use futures::future::BoxFuture;
 #[derive(Debug, Clone)]
 pub enum Command {
+    LoadArticles {
+        page: u32,
+    },
+    GenerateArticle {
+        tier: cijian_domain::settings::Tier,
+        genre: cijian_domain::settings::Genre,
+        operation: String,
+    },
+    ObserveJob {
+        job: String,
+    },
+    CancelGeneration {
+        job: String,
+    },
+    OpenArticle {
+        id: String,
+    },
+    Lookup {
+        article: String,
+        body_hash: String,
+        range: cijian_domain::reading::TextRange,
+    },
+    CompleteReading {
+        article: String,
+        body_hash: String,
+        session: String,
+    },
+    Feedback {
+        article: String,
+        body_hash: String,
+        value: cijian_domain::reading::Difficulty,
+        mode: cijian_domain::reading::FeedbackMode,
+        operation: String,
+    },
+    Mark {
+        article: String,
+        body_hash: String,
+        range: cijian_domain::reading::TextRange,
+        action: cijian_ports::inbox::MarkAction,
+        revision: u64,
+        operation: String,
+    },
+    LoadInbox {
+        page: u32,
+    },
+    BatchInbox {
+        action: cijian_ports::inbox::InboxAction,
+        selections: Vec<(String, u64)>,
+        operation: String,
+    },
+    LoadSettings,
+    SaveSettings {
+        value: cijian_domain::settings::Settings,
+        revision: u64,
+        operation: String,
+    },
+    SaveProvider {
+        config: cijian_domain::provider::ProviderConfig,
+        revision: u64,
+        secret: cijian_ports::provider::SecretPatch,
+        operation: String,
+    },
     LoadLibrary,
     ChooseImport {
         word_list: bool,
@@ -33,6 +95,31 @@ pub struct SelectedFile {
 }
 #[derive(Debug, Clone)]
 pub enum Response {
+    Articles(Vec<cijian_ports::articles::Article>),
+    Article {
+        article: Box<cijian_ports::articles::Article>,
+        session: cijian_ports::reading::ReadingSession,
+    },
+    Lookup {
+        context: cijian_ports::reading::LookupContext,
+        revision: u64,
+        meaning: String,
+    },
+    Marked(cijian_ports::inbox::MarkResult),
+    Inbox {
+        items: Vec<cijian_ports::inbox::InboxItem>,
+        total: u64,
+    },
+    Job(cijian_ports::articles::GenerationJob),
+    Completed,
+    FeedbackSaved,
+    InboxProcessed(cijian_ports::inbox::BatchResult),
+    Settings {
+        value: cijian_domain::settings::Settings,
+        revision: u64,
+        provider: Option<cijian_domain::provider::ProviderConfig>,
+        has_session_key: bool,
+    },
     Library(CardPage),
     Selected(Option<SelectedFile>),
     Imported(ImportReport),
