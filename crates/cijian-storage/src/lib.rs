@@ -2,6 +2,7 @@
 //! callers execute native IO on a background worker, never in GPUI render.
 mod articles;
 mod audio;
+mod backup;
 mod calls;
 mod inbox;
 mod knowledge;
