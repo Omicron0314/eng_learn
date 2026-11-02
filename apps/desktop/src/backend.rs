@@ -267,6 +267,25 @@ impl DesktopBackend {
                 body_hash,
                 range,
             } => self.lookup(&article, &body_hash, range),
+            Command::SaveReadingPosition {
+                article,
+                body_hash,
+                session,
+                position,
+                revision,
+            } => {
+                self.store.save_reading_position(
+                    &self.reader_command(article, body_hash, id()),
+                    &session,
+                    position,
+                    revision,
+                )?;
+                Ok(Response::ReadingPositionSaved {
+                    session,
+                    position,
+                    revision,
+                })
+            }
             Command::CompleteReading {
                 article,
                 body_hash,

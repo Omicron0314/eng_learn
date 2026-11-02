@@ -23,7 +23,43 @@ fn positions_completion_and_separate_last_feedback() {
     let store = setup();
     let open = command(&store, "open");
     store.open_reading(open.clone(), "session").unwrap();
-    store.save_reading_position(&open, "session", 6).unwrap();
+    let events_before: i64 = store
+        .connection
+        .lock()
+        .unwrap()
+        .query_row("SELECT count(*) FROM events", [], |row| row.get(0))
+        .unwrap();
+    store.save_reading_position(&open, "session", 6, 1).unwrap();
+    store.save_reading_position(&open, "session", 6, 1).unwrap();
+    assert!(store.save_reading_position(&open, "session", 0, 1).is_err());
+    assert!(store.save_reading_position(&open, "session", 0, 0).is_err());
+    assert!(
+        store
+            .save_reading_position(&open, "session", 0, u64::MAX)
+            .is_err()
+    );
+    assert!(
+        store
+            .save_reading_position(&open, "session", usize::MAX, 2)
+            .is_err()
+    );
+    store.save_reading_position(&open, "session", 6, 2).unwrap();
+    assert!(store.save_reading_position(&open, "session", 0, 1).is_err());
+    store.connection.lock().unwrap().execute_batch("CREATE TRIGGER fail_position_revision BEFORE INSERT ON reading_position_revisions BEGIN SELECT RAISE(ABORT,'original fault'); END;").unwrap();
+    assert!(store.save_reading_position(&open, "session", 0, 3).is_err());
+    {
+        let db = store.connection.lock().unwrap();
+        assert_eq!(session(&db, "p", "session").unwrap().position, 6);
+        assert_eq!(
+            db.query_row("SELECT count(*) FROM events", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            events_before
+        );
+        db.execute_batch("DROP TRIGGER fail_position_revision")
+            .unwrap();
+    }
+    store.save_reading_position(&open, "session", 6, 3).unwrap();
     assert_eq!(
         store
             .open_reading(command(&store, "reopen"), "session2")

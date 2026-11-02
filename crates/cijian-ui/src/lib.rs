@@ -292,6 +292,7 @@ impl Shell {
                     Ok(Response::InboxProcessed(_)) => {
                         this.request(Command::LoadInbox { page: 0 }, cx)
                     }
+                    Ok(Response::ReadingPositionSaved {..}) => {}
                     Ok(Response::Completed(session)) => {
                         this.reading_session = Some(session);
                         this.notice = Some("已记录本次阅读完成".into());

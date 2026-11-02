@@ -73,6 +73,13 @@ pub enum Command {
         body_hash: String,
         range: cijian_domain::reading::TextRange,
     },
+    SaveReadingPosition {
+        article: String,
+        body_hash: String,
+        session: String,
+        position: usize,
+        revision: u64,
+    },
     CompleteReading {
         article: String,
         body_hash: String,
@@ -200,6 +207,11 @@ pub enum Response {
         total: u64,
     },
     Job(cijian_ports::articles::GenerationJob),
+    ReadingPositionSaved {
+        session: String,
+        position: usize,
+        revision: u64,
+    },
     Completed(cijian_ports::reading::ReadingSession),
     FeedbackSaved(cijian_ports::reading::Feedback),
     SentencesFlagged {

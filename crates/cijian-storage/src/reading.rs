@@ -80,13 +80,19 @@ impl Store {
         })?;
         serde_json::from_value(result).map_err(unavailable)
     }
-    /// Position is a recoverable projection, so it has no recursively generated event.
+    /// Position and ordering are recoverable projections, without recursively generated events.
+    /// Each new reading session starts at revision zero; late writes cannot move it backwards.
     pub fn save_reading_position(
         &self,
         c: &ReaderCommand,
         id: &str,
         position: usize,
+        revision: u64,
     ) -> Result<()> {
+        let revision = i64::try_from(revision)
+            .ok()
+            .filter(|revision| *revision > 0)
+            .ok_or(invalid("阅读位置版本无效"))?;
         let mut db = self.connection.lock().map_err(unavailable)?;
         let tx = db
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -95,10 +101,21 @@ impl Store {
         if position > text.len() || !text.is_char_boundary(position) {
             return Err(invalid("阅读位置无效"));
         }
+        let previous:Option<(i64,i64)>=tx.query_row("SELECT s.position,COALESCE(r.revision,0) FROM reading_sessions s LEFT JOIN reading_position_revisions r ON r.session_id=s.id WHERE s.profile_id=?1 AND s.id=?2 AND s.article_id=?3",params![c.profile,id,c.article],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(unavailable)?;
+        let Some((previous_position, previous_revision)) = previous else {
+            return Err(AppError::new(ErrorCode::NotFound, "阅读会话不存在"));
+        };
+        if revision < previous_revision
+            || (revision == previous_revision
+                && usize::try_from(previous_position).ok() != Some(position))
+        {
+            return Err(AppError::new(ErrorCode::StaleState, "阅读位置已更新"));
+        }
         let changed=tx.execute("UPDATE reading_sessions SET position=?1 WHERE profile_id=?2 AND id=?3 AND article_id=?4",params![i64::try_from(position).map_err(|_|invalid("位置超出范围"))?,c.profile,id,c.article]).map_err(unavailable)?;
         if changed != 1 {
             return Err(AppError::new(ErrorCode::NotFound, "阅读会话不存在"));
         }
+        tx.execute("INSERT INTO reading_position_revisions(session_id,revision) VALUES(?1,?2) ON CONFLICT(session_id) DO UPDATE SET revision=excluded.revision",params![id,revision]).map_err(unavailable)?;
         tx.commit().map_err(unavailable)
     }
     pub fn complete_reading(&self, c: ReaderCommand, id: &str) -> Result<ReadingSession> {
