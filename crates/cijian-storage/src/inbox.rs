@@ -42,6 +42,12 @@ fn add_card(
     })
 }
 impl Store {
+    pub fn lookup_mark(&self, profile: &str, lemma: &str) -> Result<(u64, String)> {
+        let db = self.connection.lock().map_err(unavailable)?;
+        let revision:i64=db.query_row("SELECT COALESCE(m.revision,0) FROM lexemes l LEFT JOIN lexeme_marks m ON m.lexeme_id=l.id AND m.profile_id=?1 WHERE l.lemma=?2 AND l.pos='' AND l.kind='word'",params![profile,lemma],|r|r.get(0)).optional().map_err(unavailable)?.unwrap_or(0);
+        let meaning:String=db.query_row("SELECT c.meaning FROM cards c JOIN lexemes l ON l.id=c.lexeme_id WHERE c.profile_id=?1 AND l.lemma=?2 AND l.kind='word' AND l.pos=''",params![profile,lemma],|r|r.get(0)).optional().map_err(unavailable)?.unwrap_or_default();
+        Ok((u64::try_from(revision).map_err(unavailable)?, meaning))
+    }
     pub fn mark_word(&self, c: MarkWord) -> Result<MarkResult> {
         if c.meaning.chars().count() > 1000 {
             return Err(invalid("释义最多1000字符"));

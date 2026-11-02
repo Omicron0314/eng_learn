@@ -26,6 +26,39 @@ fn session(db: &Connection, profile: &str, id: &str) -> Result<ReadingSession> {
     db.query_row("SELECT id,article_id,position,opened_at,completed_at FROM reading_sessions WHERE profile_id=?1 AND id=?2",params![profile,id],|r|Ok(ReadingSession{id:r.get(0)?,article_id:r.get(1)?,position:usize::try_from(r.get::<_,i64>(2)?).map_err(|_|rusqlite::Error::IntegralValueOutOfRange(2,-1))?,opened_at:r.get(3)?,completed_at:r.get(4)?})).optional().map_err(unavailable)?.ok_or(AppError::new(ErrorCode::NotFound,"阅读会话不存在"))
 }
 impl Store {
+    pub fn cached_gloss(
+        &self,
+        profile: &str,
+        lemma: &str,
+        context_hash: &str,
+        fingerprint: &str,
+    ) -> Result<Option<cijian_domain::gloss::Gloss>> {
+        let db = self.connection.lock().map_err(unavailable)?;
+        let value:Option<String>=db.query_row("SELECT g.gloss_json FROM gloss_cache g JOIN lexemes l ON l.id=g.lexeme_id WHERE g.profile_id=?1 AND l.lemma=?2 AND l.pos='' AND l.kind='word' AND g.context_hash=?3 AND g.prompt_version='gloss.v1' AND g.provider_fingerprint=?4",params![profile,lemma,context_hash,fingerprint],|r|r.get(0)).optional().map_err(unavailable)?;
+        value
+            .map(|v| cijian_domain::gloss::Gloss::parse(&v, lemma).map_err(unavailable))
+            .transpose()
+    }
+    pub fn cache_gloss(
+        &self,
+        c: &ReaderCommand,
+        range: TextRange,
+        fingerprint: &str,
+        gloss: &cijian_domain::gloss::Gloss,
+        lexeme_id: &str,
+    ) -> Result<()> {
+        let request=json!({"article":c.article,"hash":c.body_hash,"range":range,"fingerprint":fingerprint,"gloss":gloss}).to_string();
+        self.command(&c.profile,&c.operation,"cache_gloss",&request,c.now,|tx|{
+            let text=body(tx,c)?;let selection=reading::select(&text,range).map_err(|e|invalid(&e.to_string()))?;
+            let serialized=serde_json::to_string(gloss).map_err(unavailable)?;
+            cijian_domain::gloss::Gloss::parse(&serialized,&selection.lemma).map_err(|e|invalid(&e.to_string()))?;
+            tx.execute("INSERT INTO lexemes VALUES (?1,?2,'','word') ON CONFLICT(lemma,pos,kind) DO NOTHING",params![lexeme_id,selection.lemma]).map_err(unavailable)?;
+            let lexeme:String=tx.query_row("SELECT id FROM lexemes WHERE lemma=?1 AND pos='' AND kind='word'",[&selection.lemma],|r|r.get(0)).map_err(unavailable)?;
+            tx.execute("INSERT INTO gloss_cache VALUES (?1,?2,?3,'gloss.v1',?4,?5,?6) ON CONFLICT(profile_id,lexeme_id,context_hash,prompt_version,provider_fingerprint) DO UPDATE SET gloss_json=excluded.gloss_json,created_at=excluded.created_at",params![c.profile,lexeme,hash(&selection.sentence),fingerprint,serialized,c.now]).map_err(unavailable)?;
+            Ok((json!(true),vec![Event{id:c.event.clone(),kind:"lookup".into(),schema_version:1,payload:json!({"articleId":c.article,"lexemeId":lexeme,"bodyHash":c.body_hash,"range":range,"cacheHit":false,"status":"success"})}]))
+        })?;
+        Ok(())
+    }
     pub fn lookup_context(&self, c: &ReaderCommand, range: TextRange) -> Result<LookupContext> {
         let db = self.connection.lock().map_err(unavailable)?;
         let text = body(&db, c)?;
