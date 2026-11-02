@@ -1,13 +1,14 @@
 //! Pure learning rules; all time and randomness supplied by callers.
 pub mod analysis;
+pub mod import;
 pub mod knowledge;
 pub mod lexicon;
-pub mod import;
-pub mod wordlist;
 pub mod provider;
+pub mod reading;
 pub mod settings;
 pub mod srs;
 pub mod time;
+pub mod wordlist;
 
 use serde::{Deserialize, Serialize};
 

@@ -3,6 +3,7 @@
 mod articles;
 mod calls;
 mod library;
+mod reading;
 use cijian_domain::settings::{Settings, ValidatedSettings};
 use cijian_ports::{AppError, ErrorCode, Event, Result, SaveSettings, SettingsRepository};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};

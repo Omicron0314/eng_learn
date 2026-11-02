@@ -2,6 +2,7 @@
 pub mod articles;
 pub mod library;
 pub mod provider;
+pub mod reading;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
