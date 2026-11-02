@@ -5,6 +5,15 @@ use cijian_domain::time::study_day;
 use cijian_ports::audio::*;
 use serde_json::json;
 impl Store {
+    pub fn article_audio_assets(&self, profile: &str, article: &str) -> Result<Vec<AudioAsset>> {
+        let db = self.connection.lock().map_err(unavailable)?;
+        let mut statement=db.prepare("SELECT json_object('id',s.id,'cache_key',s.cache_key,'text_hash',s.text_hash,'provider_fingerprint',s.provider_fingerprint,'model',s.model,'voice',s.voice,'format',s.format,'blob_key',s.blob_key,'duration',s.duration,'chars',s.chars) FROM audio_assets s JOIN article_audio_links l ON l.audio_id=s.id AND l.profile_id=s.profile_id WHERE l.profile_id=?1 AND l.article_id=?2 ORDER BY s.created_at DESC,s.id").map_err(unavailable)?;
+        statement
+            .query_map(params![profile, article], |r| r.get::<_, String>(0))
+            .map_err(unavailable)?
+            .map(|value| serde_json::from_str(&value.map_err(unavailable)?).map_err(unavailable))
+            .collect()
+    }
     pub fn audio_asset(&self, profile: &str, cache_key: &str) -> Result<Option<AudioAsset>> {
         let db = self.connection.lock().map_err(unavailable)?;
         let value:Option<String>=db.query_row("SELECT json_object('id',id,'cache_key',cache_key,'text_hash',text_hash,'provider_fingerprint',provider_fingerprint,'model',model,'voice',voice,'format',format,'blob_key',blob_key,'duration',duration,'chars',chars) FROM audio_assets WHERE profile_id=?1 AND cache_key=?2",params![profile,cache_key],|r|r.get(0)).optional().map_err(unavailable)?;

@@ -3,6 +3,7 @@ pub mod articles;
 pub mod audio;
 pub mod backup;
 pub mod inbox;
+pub mod legacy;
 pub mod library;
 pub mod provider;
 pub mod reading;

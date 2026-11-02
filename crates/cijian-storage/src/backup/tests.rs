@@ -60,7 +60,7 @@ fn corrupted_unknown_and_nonempty_restores_leave_destination_unchanged() {
             .is_err()
     );
     assert!(target.first_profile().unwrap().is_none());
-    corrupt.checksum = hash(&corrupt.payload.to_string());
+    corrupt.checksum = hash(&cijian_domain::json::canonical_json(&corrupt.payload));
     assert!(
         target
             .restore_profile(corrupt, "new", "event", "op", 1)
@@ -82,6 +82,33 @@ fn corrupted_unknown_and_nonempty_restores_leave_destination_unchanged() {
     );
     assert_eq!(target.first_profile().unwrap().as_deref(), Some("existing"));
 }
+#[test]
+fn restores_v1_packages_without_losing_new_archive_validation() {
+    let source = Store::memory().unwrap();
+    source.create_profile("p", "原创", 0).unwrap();
+    let mut package = source.export_profile("p").unwrap();
+    package.version = 1;
+    let tables = package.payload["tables"].as_object_mut().unwrap();
+    tables.remove("legacy_records");
+    tables.remove("legacy_imports");
+    package.checksum = hash(&package.payload.to_string());
+    Store::memory()
+        .unwrap()
+        .restore_profile(package, "new", "restore-event", "restore", 1)
+        .unwrap();
+    let payload = json!({"json":json!({"llm":{"apiKey":"ORIGINAL-NESTED-SECRET"}}).to_string()});
+    source
+        .connection
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO legacy_records VALUES ('p','source','provider_config','original',?1)",
+            [payload.to_string()],
+        )
+        .unwrap();
+    assert!(source.export_profile("p").is_err());
+}
+
 #[test]
 fn sensitive_event_payload_refuses_export() {
     let source = populated();

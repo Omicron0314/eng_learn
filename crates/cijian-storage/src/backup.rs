@@ -24,6 +24,8 @@ const TABLES: &[&str] = &[
     "review_logs",
     "events",
     "llm_calls",
+    "legacy_records",
+    "legacy_imports",
 ];
 fn secret_fields(value: &Value) -> bool {
     match value {
@@ -45,7 +47,7 @@ fn secret_fields(value: &Value) -> bool {
         _ => false,
     }
 }
-fn sql_value(value: &Value) -> Result<SqlValue> {
+pub(super) fn sql_value(value: &Value) -> Result<SqlValue> {
     match value {
         Value::Null => Ok(SqlValue::Null),
         Value::String(value) => Ok(SqlValue::Text(value.clone())),
@@ -139,16 +141,19 @@ impl Store {
                         return Err(invalid("事件含凭据字段，拒绝导出"));
                     }
                 }
+                if *table == "legacy_records" {
+                    crate::legacy::validate_archive(&Value::Object(object.clone()))?;
+                }
                 rows.push(Value::Object(object));
             }
             tables.insert((*table).into(), Value::Array(rows));
         }
         let payload = json!({"profile":profile,"tables":tables,"audioIncluded":false,"credentialsIncluded":false});
-        let checksum = hash(&payload.to_string());
+        let checksum = hash(&cijian_domain::json::canonical_json(&payload));
         tx.commit().map_err(unavailable)?;
         Ok(BackupPackage {
             format: "cijian-profile".into(),
-            version: 1,
+            version: 2,
             checksum,
             payload,
         })
@@ -163,8 +168,12 @@ impl Store {
         now: i64,
     ) -> Result<RestoreReport> {
         if package.format != "cijian-profile"
-            || package.version != 1
-            || hash(&package.payload.to_string()) != package.checksum
+            || ![1, 2].contains(&package.version)
+            || hash(&if package.version == 1 {
+                package.payload.to_string()
+            } else {
+                cijian_domain::json::canonical_json(&package.payload)
+            }) != package.checksum
         {
             return Err(invalid("备份格式、版本或校验和无效"));
         }
@@ -174,9 +183,20 @@ impl Store {
         let source = package.payload["profile"]
             .as_str()
             .ok_or(invalid("备份档案标识缺失"))?;
-        let tables = package.payload["tables"]
+        if new_profile == source {
+            return Err(invalid("恢复必须使用新的档案标识"));
+        }
+        let mut tables = package.payload["tables"]
             .as_object()
+            .cloned()
             .ok_or(invalid("备份表结构无效"))?;
+        if package.version == 1 {
+            if tables.contains_key("legacy_records") || tables.contains_key("legacy_imports") {
+                return Err(invalid("v1备份包含未声明的迁移档案"));
+            }
+            tables.insert("legacy_records".into(), json!([]));
+            tables.insert("legacy_imports".into(), json!([]));
+        }
         if tables.len() != TABLES.len()
             || TABLES.iter().any(|t| !tables.contains_key(*t))
             || package.payload["audioIncluded"] != false
@@ -206,6 +226,9 @@ impl Store {
                 let object = row.as_object().ok_or(invalid("备份行不是对象"))?;
                 if object.len() != names.len() || names.iter().any(|n| !object.contains_key(n)) {
                     return Err(invalid("备份含未知或缺失的列"));
+                }
+                if *table == "legacy_records" {
+                    crate::legacy::validate_archive(row)?;
                 }
                 let mut object = object.clone();
                 if *table == "profiles" {
@@ -281,7 +304,7 @@ impl Store {
         {
             return Err(invalid("恢复数据的引用不完整"));
         }
-        tx.execute("INSERT INTO events VALUES (?1,?2,NULL,?3,0,'backup_restore',1,?4,?5)",params![event,new_profile,operation,json!({"sourceFingerprint":package.checksum,"mappingVersion":"backup.v1","summary":counts}).to_string(),now]).map_err(unavailable)?;
+        tx.execute("INSERT INTO events VALUES (?1,?2,NULL,?3,0,'backup_restore',1,?4,?5)",params![event,new_profile,operation,json!({"sourceFingerprint":package.checksum,"mappingVersion":format!("backup.v{}",package.version),"summary":counts}).to_string(),now]).map_err(unavailable)?;
         tx.commit().map_err(unavailable)?;
         Ok(RestoreReport {
             profile: new_profile.into(),
