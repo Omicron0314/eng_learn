@@ -94,6 +94,8 @@ impl DesktopBackend {
     }
     fn execute(&self, command: Command) -> Result<Response> {
         match command {
+            Command::ExportBackup => self.export_backup(),
+            Command::RestoreBackup => self.restore_backup(),
             Command::LoadStats { page } => Ok(Response::Stats(Box::new(self.store.stats(
                 &self.profile,
                 now(),

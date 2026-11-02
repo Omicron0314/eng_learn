@@ -139,6 +139,14 @@ impl Shell {
                 this.loading = false;
                 match response {
                     Err(error) => this.error = Some(error.message),
+                    Ok(Response::BackupSaved) => {
+                        this.notice = Some("学习备份已保存，不包含密钥和音频缓存".into())
+                    }
+                    Ok(Response::RestoreOpened) => {
+                        this.notice =
+                            Some("恢复完成，新学习库已在另一个窗口打开；当前学习库保留".into())
+                    }
+                    Ok(Response::FileCancelled) => {}
                     Ok(Response::Stats(stats)) => this.stats = Some(*stats),
                     Ok(Response::Articles(articles)) => this.articles = articles,
                     Ok(Response::Article { article, session }) => {

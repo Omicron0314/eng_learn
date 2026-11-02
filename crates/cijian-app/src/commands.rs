@@ -7,6 +7,8 @@ use cijian_ports::{
 use futures::future::BoxFuture;
 #[derive(Debug, Clone)]
 pub enum Command {
+    ExportBackup,
+    RestoreBackup,
     LoadStats {
         page: u32,
     },
@@ -100,6 +102,9 @@ pub struct SelectedFile {
 }
 #[derive(Debug, Clone)]
 pub enum Response {
+    BackupSaved,
+    RestoreOpened,
+    FileCancelled,
     Stats(Box<cijian_ports::stats::StatsSnapshot>),
     Articles(Vec<cijian_ports::articles::Article>),
     Article {

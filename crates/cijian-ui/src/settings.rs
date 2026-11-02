@@ -213,6 +213,25 @@ impl Shell {
                         this.save_provider(true, cx);
                     })),
             );
+        body = body
+            .child("学习数据")
+            .child("备份包含学习记录和文章，不包含密钥或音频缓存。恢复会建立并打开新的学习库。")
+            .child(
+                material_button("export-backup", ButtonVariant::Tonal)
+                    .child("导出学习备份")
+                    .disabled(self.loading)
+                    .on_click(
+                        cx.listener(|this, _, _, cx| this.request(Command::ExportBackup, cx)),
+                    ),
+            )
+            .child(
+                material_button("restore-backup", ButtonVariant::Tonal)
+                    .child("恢复到新学习库并打开")
+                    .disabled(self.loading)
+                    .on_click(
+                        cx.listener(|this, _, _, cx| this.request(Command::RestoreBackup, cx)),
+                    ),
+            );
         body.into_any_element()
     }
     fn save_provider(&mut self, clear: bool, cx: &mut Context<Self>) {
