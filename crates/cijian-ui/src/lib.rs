@@ -32,6 +32,8 @@ struct Shell {
     navigation: Navigation,
     items: Vec<NavItem>,
     dark: bool,
+    #[cfg(test)]
+    rendered_dark: bool,
     backend: Option<Arc<dyn CommandBus>>,
     loading: bool,
     error: Option<String>,
@@ -104,6 +106,8 @@ impl Shell {
             navigation: Navigation::default(),
             items,
             dark: false,
+            #[cfg(test)]
+            rendered_dark: false,
             backend: None,
             loading: false,
             error: None,
@@ -329,7 +333,6 @@ impl Shell {
                         this.settings_editor = None;
                         this.dark =
                             matches!(this.settings.theme, cijian_domain::settings::Theme::Dark);
-                        init_component_theme(theme::scheme(this.dark), 1.0, cx);
                         if this.navigation.current() == &Route::Today {
                             this.request(Command::LoadReview, cx);
                         }
@@ -825,6 +828,23 @@ impl Render for Shell {
                 }));
         }
         self.apply_theme(window, cx);
+        let scope = gpui_kit_material::scope::Scope::new("window-theme")
+            .scheme(theme::scheme(self.dark))
+            .resolve(window, cx);
+        let content = scope.build(window, cx, |window, cx| self.render_content(window, cx));
+        scope.child(content)
+    }
+}
+impl Shell {
+    fn render_content(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui_kit::AnyElement {
+        #[cfg(test)]
+        {
+            self.rendered_dark = gpui_kit_material::theme::is_dark();
+        }
         self.prepare_library_inputs(window, cx);
         if self.focus.is_none() {
             let focus = cx.focus_handle();

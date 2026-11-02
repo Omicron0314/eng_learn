@@ -21,7 +21,6 @@ impl Shell {
         };
         if self.dark != dark {
             self.dark = dark;
-            init_component_theme(theme::scheme(dark), 1., cx);
             cx.notify();
         }
     }

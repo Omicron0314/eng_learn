@@ -4,6 +4,45 @@ use gpui_kit::test::TestWindowExt;
 use gpui_kit::{Bounds, TestAppContext, size};
 
 #[gpui_kit::test]
+fn separate_windows_render_their_saved_theme_without_changing_global_paint(
+    cx: &mut TestAppContext,
+) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let windows = [true, false].map(|dark| {
+        cx.update(|cx| {
+            gpui_kit::open_window(WindowOptions::default(), cx, |_, cx| {
+                cx.new(|_| {
+                    let mut shell = Shell::new();
+                    shell.settings.theme = if dark {
+                        cijian_domain::settings::Theme::Dark
+                    } else {
+                        cijian_domain::settings::Theme::Light
+                    };
+                    shell
+                })
+            })
+        })
+        .unwrap()
+    });
+    for _ in 0..2 {
+        for (i, (handle, shell)) in windows.iter().enumerate() {
+            cx.update_window(*handle, |_, window, cx| window.render_frame(cx))
+                .unwrap();
+            assert_eq!(shell.read_with(cx, |shell, _| shell.rendered_dark), i == 0);
+            assert!(
+                !gpui_kit_material::theme::is_dark(),
+                "a window must not replace application paint"
+            );
+        }
+    }
+}
+
+#[gpui_kit::test]
 fn navigation_routes_and_compact_targets(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
