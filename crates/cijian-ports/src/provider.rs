@@ -24,12 +24,22 @@ impl Secret {
         &self.0
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SecretPatch {
     Keep,
     Replace(Secret),
     Clear,
 }
+#[derive(Debug, Clone)]
+pub struct SaveProviderConfig {
+    pub profile: String,
+    pub operation: String,
+    pub event: String,
+    pub config: ProviderConfig,
+    pub expected_revision: u64,
+    pub now: i64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ProviderSnapshot {
     pub config: ProviderConfig,

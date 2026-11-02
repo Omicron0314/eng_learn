@@ -4,6 +4,7 @@ mod articles;
 mod calls;
 mod inbox;
 mod library;
+mod providers;
 mod reading;
 use cijian_domain::settings::{Settings, ValidatedSettings};
 use cijian_ports::{AppError, ErrorCode, Event, Result, SaveSettings, SettingsRepository};
