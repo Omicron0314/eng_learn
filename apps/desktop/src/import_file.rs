@@ -1,5 +1,6 @@
 //! Native file-format adapter. Never opens user databases except the selected APKG's temporary copy.
-use cijian_domain::import::{ImportRow, ParsedImport, parse_card_csv, parse_rows};
+mod stream;
+use cijian_domain::import::{ImportRow, ParsedImport, parse_rows};
 use cijian_ports::{AppError, ErrorCode, Result};
 use regex::Regex;
 use rusqlite::{Connection, OpenFlags};
@@ -27,35 +28,15 @@ fn text(html: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
-pub fn read(path: &Path, word_list: bool) -> Result<ParsedImport> {
-    let extension = path
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    if extension == "apkg" {
-        if word_list {
-            return Err(invalid("APKG只能作为词卡导入"));
-        }
-        return read_apkg(path);
-    }
-    let data = std::fs::read(path).map_err(|_| invalid("无法读取所选文件"))?;
-    if word_list {
-        return (if extension == "csv" {
-            cijian_domain::wordlist::parse_csv(&data)
-        } else {
-            cijian_domain::wordlist::parse(&data)
-        })
-        .map_err(|e| invalid(&e.to_string()));
-    }
-    if extension == "csv" {
-        parse_card_csv(&data).map_err(|e| invalid(&e.to_string()))
-    } else {
-        Err(invalid("此入口支持词卡CSV或兼容APKG"))
-    }
+pub fn read(path: &Path, word_list: bool) -> Result<(ParsedImport, String)> {
+    stream::read(path, word_list)
 }
-pub fn read_apkg(path: &Path) -> Result<ParsedImport> {
-    let file = std::fs::File::open(path).map_err(|_| invalid("无法读取APKG"))?;
+#[cfg(test)]
+fn read_apkg(path: &Path) -> Result<ParsedImport> {
+    let mut file = std::fs::File::open(path).map_err(|_| invalid("无法读取APKG"))?;
+    read_apkg_source(&mut file)
+}
+fn read_apkg_source(file: &mut std::fs::File) -> Result<ParsedImport> {
     let mut archive = zip::ZipArchive::new(file).map_err(|_| invalid("APKG压缩结构无效"))?;
     const LIMIT: u64 = 100 * 1024 * 1024;
     let mut collection = None;

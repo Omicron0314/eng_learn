@@ -13,8 +13,6 @@ use cijian_ports::{
 };
 use cijian_storage::Store;
 use futures::future::BoxFuture;
-use sha2::{Digest, Sha256};
-use std::io::Read;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -525,18 +523,7 @@ impl DesktopBackend {
                 } else {
                     (name, id())
                 };
-                let parsed = crate::import_file::read(&path, word_list)?;
-                let mut source = std::fs::File::open(&path).map_err(|_| failure())?;
-                let mut hasher = Sha256::new();
-                let mut buffer = [0_u8; 65536];
-                loop {
-                    let read = source.read(&mut buffer).map_err(|_| failure())?;
-                    if read == 0 {
-                        break;
-                    }
-                    hasher.update(&buffer[..read]);
-                }
-                let source_hash = format!("{:x}", hasher.finalize());
+                let (parsed, source_hash) = crate::import_file::read(&path, word_list)?;
                 let row_ids = (0..parsed.rows.len())
                     .map(|_| ImportIds {
                         lexeme: id(),

@@ -101,21 +101,24 @@ fn add(
     });
 }
 
-pub fn parse_rows(rows: impl IntoIterator<Item = ImportRow>) -> ParsedImport {
-    let mut result = ParsedImport::default();
-    let mut seen = HashSet::new();
-    for row in rows {
-        let before = result.rows.len();
+#[derive(Default)]
+pub struct ImportAccumulator {
+    result: ParsedImport,
+    seen: HashSet<String>,
+}
+impl ImportAccumulator {
+    pub fn push(&mut self, row: ImportRow) {
+        let before = self.result.rows.len();
         add(
-            &mut result,
-            &mut seen,
+            &mut self.result,
+            &mut self.seen,
             &row.word,
             &row.meaning,
             &row.example,
             row.line,
         );
-        if result.rows.len() > before {
-            let added = result.rows.last_mut().expect("inserted row");
+        if self.result.rows.len() > before {
+            let added = self.result.rows.last_mut().expect("inserted row");
             added.front = if row.front.trim().is_empty() {
                 row.word.trim().to_owned()
             } else {
@@ -124,7 +127,92 @@ pub fn parse_rows(rows: impl IntoIterator<Item = ImportRow>) -> ParsedImport {
             added.raw = row.raw;
         }
     }
-    result
+    pub fn error(&mut self, line: u64, reason: &str) {
+        self.result.skipped += 1;
+        self.result.errors.push(RowError {
+            line,
+            reason: reason.into(),
+        });
+    }
+    pub fn finish(self) -> ParsedImport {
+        self.result
+    }
+}
+pub struct CardCsvImporter {
+    rows: ImportAccumulator,
+    first: bool,
+    meaning: Option<usize>,
+    example: Option<usize>,
+}
+impl Default for CardCsvImporter {
+    fn default() -> Self {
+        Self {
+            rows: Default::default(),
+            first: true,
+            meaning: Some(1),
+            example: Some(2),
+        }
+    }
+}
+impl CardCsvImporter {
+    pub fn push_record(&mut self, cells: &[&str], line: u64) {
+        if cells.iter().all(|cell| cell.trim().is_empty()) {
+            return;
+        }
+        let raw = cells.first().copied().unwrap_or("");
+        let word = if self.first {
+            raw.trim_start_matches('\u{feff}')
+        } else {
+            raw
+        };
+        if self.first {
+            self.first = false;
+            if ["word", "单词", "词条"]
+                .iter()
+                .any(|header| word.trim().eq_ignore_ascii_case(header))
+            {
+                let column = |aliases: &[&str]| {
+                    cells.iter().position(|cell| {
+                        aliases
+                            .iter()
+                            .any(|alias| cell.trim().eq_ignore_ascii_case(alias))
+                    })
+                };
+                let meaning = column(&["meaning", "definition", "释义", "中文释义", "翻译"]);
+                let example = column(&["example", "sentence", "例句"]);
+                self.meaning = meaning.or(Some(1)).filter(|index| Some(*index) != example);
+                self.example = example.or(Some(2)).filter(|index| Some(*index) != meaning);
+                return;
+            }
+        }
+        add(
+            &mut self.rows.result,
+            &mut self.rows.seen,
+            word,
+            self.meaning
+                .and_then(|i| cells.get(i))
+                .copied()
+                .unwrap_or(""),
+            self.example
+                .and_then(|i| cells.get(i))
+                .copied()
+                .unwrap_or(""),
+            line,
+        );
+    }
+    pub fn record_error(&mut self, line: u64) {
+        self.rows.error(line, "CSV格式无效");
+    }
+    pub fn finish(self) -> ParsedImport {
+        self.rows.finish()
+    }
+}
+pub fn parse_rows(rows: impl IntoIterator<Item = ImportRow>) -> ParsedImport {
+    let mut result = ImportAccumulator::default();
+    for row in rows {
+        result.push(row);
+    }
+    result.finish()
 }
 
 pub fn parse_card_csv(bytes: &[u8]) -> Result<ParsedImport, ValidationError> {
@@ -149,40 +237,17 @@ pub fn parse_card_csv(bytes: &[u8]) -> Result<ParsedImport, ValidationError> {
         .has_headers(false)
         .flexible(true)
         .from_reader(text.as_bytes());
-    let mut result = ParsedImport::default();
-    let mut seen = HashSet::new();
-    let mut first = true;
+    let mut result = CardCsvImporter::default();
     for record in reader.records() {
         match record {
-            Err(error) => {
-                result.skipped += 1;
-                result.errors.push(RowError {
-                    line: error.position().map_or(1, source_line),
-                    reason: "CSV格式无效".into(),
-                });
-            }
-            Ok(record) => {
-                if record.iter().all(|cell| cell.trim().is_empty()) {
-                    continue;
-                }
-                let word = record.get(0).unwrap_or("");
-                if first && word.trim().eq_ignore_ascii_case("word") {
-                    first = false;
-                    continue;
-                }
-                first = false;
-                add(
-                    &mut result,
-                    &mut seen,
-                    word,
-                    record.get(1).unwrap_or(""),
-                    record.get(2).unwrap_or(""),
-                    record.position().map_or(1, source_line),
-                );
-            }
+            Err(error) => result.record_error(error.position().map_or(1, source_line)),
+            Ok(record) => result.push_record(
+                &record.iter().collect::<Vec<_>>(),
+                record.position().map_or(1, source_line),
+            ),
         }
     }
-    Ok(result)
+    Ok(result.finish())
 }
 
 #[cfg(test)]

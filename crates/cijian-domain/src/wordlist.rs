@@ -1,6 +1,8 @@
 use crate::{
     ValidationError,
-    import::{ImportRow, ParsedImport, RowError, normalize_headword, parse_rows},
+    import::{
+        ImportAccumulator, ImportRow, ParsedImport, RowError, normalize_headword, parse_rows,
+    },
 };
 use regex::Regex;
 use serde::Serialize;
@@ -143,7 +145,9 @@ pub fn parse_line(line: &str) -> Option<WordListEntry> {
     })
 }
 pub fn parse_csv(bytes: &[u8]) -> Result<ParsedImport, ValidationError> {
-    let source = crate::import::parse_card_csv(bytes)?;
+    Ok(from_csv(crate::import::parse_card_csv(bytes)?))
+}
+pub fn from_csv(source: ParsedImport) -> ParsedImport {
     let mut rows = Vec::new();
     let mut errors = source.errors;
     for row in source.rows {
@@ -169,47 +173,51 @@ pub fn parse_csv(bytes: &[u8]) -> Result<ParsedImport, ValidationError> {
     parsed.duplicates += source.duplicates;
     parsed.skipped += errors.len() as u64;
     parsed.errors = errors;
-    Ok(parsed)
+    parsed
 }
 
-pub fn parse(bytes: &[u8]) -> Result<ParsedImport, ValidationError> {
-    let text =
-        std::str::from_utf8(bytes).map_err(|_| ValidationError::new("file", "词表必须为UTF-8"))?;
-    let mut rows = Vec::new();
-    let mut errors = Vec::new();
-    for (index, line) in text.lines().enumerate() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        if index == 0 && line.trim().to_lowercase().starts_with("word,") {
-            continue;
+#[derive(Default)]
+pub struct WordListImporter {
+    rows: ImportAccumulator,
+}
+impl WordListImporter {
+    pub fn push_line(&mut self, line: &str, number: u64) {
+        if line.trim().is_empty()
+            || (number == 1 && line.trim().to_lowercase().starts_with("word,"))
+        {
+            return;
         }
         match parse_line(line) {
-            Some(entry) => rows.push(ImportRow {
+            Some(entry) => self.rows.push(ImportRow {
                 word: entry.headword.clone(),
                 front: entry.headword,
                 raw: entry.raw,
                 meaning: entry.meaning.unwrap_or_default(),
                 example: String::new(),
-                line: index as u64 + 1,
+                line: number,
                 phrase: entry.is_phrase,
             }),
             None => {
                 if !(line.trim().len() == 1 && line.trim().as_bytes()[0].is_ascii_uppercase())
                     && !patterns().heading.is_match(line.trim())
                 {
-                    errors.push(RowError {
-                        line: index as u64 + 1,
-                        reason: "无法识别词条".into(),
-                    });
+                    self.rows.error(number, "无法识别词条");
                 }
             }
         }
     }
-    let mut parsed = parse_rows(rows);
-    parsed.skipped += errors.len() as u64;
-    parsed.errors.extend(errors);
-    Ok(parsed)
+    pub fn finish(self) -> ParsedImport {
+        self.rows.finish()
+    }
+}
+pub fn parse(bytes: &[u8]) -> Result<ParsedImport, ValidationError> {
+    let text =
+        std::str::from_utf8(bytes).map_err(|_| ValidationError::new("file", "词表必须为UTF-8"))?;
+    let mut importer = WordListImporter::default();
+    for (index, line) in text.lines().enumerate() {
+        importer.push_line(line, index as u64 + 1);
+    }
+    Ok(importer.finish())
 }
 #[cfg(test)]
 mod tests {
