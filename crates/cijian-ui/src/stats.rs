@@ -67,7 +67,9 @@ impl Shell {
         }
         let today = stats.heatmap.iter().rposition(|d| !d.future).unwrap_or(0);
         let selected = self.heatmap_day.unwrap_or(today).min(today);
-        let date = &stats.heatmap[selected];
+        let Some(date) = stats.heatmap.get(selected) else {
+            return div().child("暂无学习活动").into_any_element();
+        };
         div()
             .flex()
             .flex_col()
