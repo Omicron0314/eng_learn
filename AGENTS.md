@@ -1,102 +1,83 @@
 # AGENTS.md
 
-English-learning web app (PWA, self-use MVP): import word lists -> FSRS review -> LLM-generated
-articles that reuse today's words -> tap-to-mark words -> TTS audio -> event log, stats, control experiment.
+Cijian is being replanned as a multi-platform English-learning app using Rust,
+GPUI, and gpui-kit-material. The current executable product is still the legacy
+TypeScript/Next.js app. No Rust workspace exists yet.
 
-`docs/plan.md` is the single source of truth. Read the relevant split doc and the task spec in
-`docs/specs/` before starting any task. Pick tasks from `docs/BACKLOG.md` in dependency order.
+## Authority and scope
 
-Status: MVP implementation authorized. The user approved all existing M0–M6 specs and delegated
-pending decisions to the agent for a no-interruption one-shot build. See `docs/MVP-EXECUTION.md`.
-This supersedes the stop-and-ask rules for implementation choices, dependencies, new migrations,
-and prompt implementation. Do not alter merged migrations, use secrets, make paid calls, or publish.
+- Read `docs/plan.md`, the relevant domain/UI document, and the task spec first.
+- User requirements override the final rendered `docs/cijian-m3.html`, which
+  overrides current specifications, which override legacy implementation/docs.
+- The design's script moves generation and story lists into Articles. Inspect
+  the rendered design; do not implement its obsolete initial Today markup.
+- `docs/neko.html` is a secondary visual reference. Preserve both HTML originals.
+- Current tasks are R00–R21 in `docs/BACKLOG.md`. Legacy T/S tasks and evidence
+  remain in git history at commit `46f499a` and impose no current approval workflow.
+- This revision authorizes documentation replanning only. Do not infer that
+  the old MVP execution approval authorizes the new Rust implementation.
+- Preserve pre-existing worktree changes. Do not stage, commit, publish, access
+  secrets, make paid calls, or operate on real user data without matching scope.
 
-## Commands
+## Current commands (legacy Web)
 
-```
-pnpm install
-pnpm dev                 # Next.js dev server
-pnpm test                # Vitest unit tests
+```sh
+pnpm install --frozen-lockfile
+pnpm dev
 pnpm lint
 pnpm typecheck
-pnpm e2e                 # Playwright
-pnpm eval:generation     # MANUAL ONLY: real LLM calls, cost cap (~$1)
-pnpm report:experiment   # exposed vs control Again rate + sample size
-docker compose up        # single container + data volume; set APP_PASSWORD
+pnpm test
+pnpm build
+pnpm e2e
+pnpm report:experiment
 ```
 
-## Layout
+`pnpm eval:generation --allow-paid` makes real calls and requires explicit
+paid-call authorization. Never run it as routine validation. Keep dev logs
+outside the repository to avoid Turbopack refresh loops.
 
-```
-packages/core       pure logic: lexicon, analyzer, knowledge, srs, generation
-packages/providers  LLM / TTS / BlobStore interfaces, implementations, fakes
-packages/db         Drizzle schema, migrations, repository layer
-apps/web            Next.js App Router pages + API routes
-prompts/            versioned prompts (article.v1.md, ...)
-fixtures/           test samples, LLM record/replay
-docs/specs/         one spec per task (Txx-*.md); docs/spikes/ spike results (Sx.md)
-```
+Rust commands in `docs/TESTING.md` are planned, not runnable until R01 exists.
+R00 must validate and pin the GPUI Kit/Material revisions and root patches.
 
-## Architecture boundaries
+## Target boundaries
 
-- `packages/core` does no IO (no fetch, fs, db). Inject dependencies via interfaces;
-  never import db or provider implementations.
-- All LLM/TTS calls go through `packages/providers`. Tests use fakes by default
-  (FakeLLM, FakeTTS, MemoryBlob).
-- Model names, voice names and provider endpoints live only in config (`.env` / settings),
-  never in code, prompts, tests or docs. `.env.example` holds placeholders only.
-- `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` are required; fail fast with a clear error
-  if missing. No default model.
-- Validate all LLM output and API input with zod. On LLM validation failure retry once with
-  a repair prompt, then return a clear error and record it in `llm_calls`.
-- Every write also writes `events` (reviews also write `review_logs`). Both tables are append-only.
-- Business code accesses the DB only through the repository layer in `packages/db`.
-- In-product AI is a deterministic workflow; the LLM only writes text and glosses.
+- Domain is pure Rust: no GPUI, DB, network, filesystem, platform clock or RNG.
+  Inject time, randomness and identifiers.
+- UI calls application commands/queries. Repositories own persistence;
+  provider adapters own LLM/TTS calls; platform adapters own device facilities.
+- Use the gpui-kit facade for matching GPUI types; do not mix engine versions.
+  Material supplies visuals/motion and Kit supplies behavior/focus/accessibility.
+- Validate all boundary input and model output. Deserialization is not validation.
+- Business writes include events in the same transaction; ratings also append
+  review_logs. Logs/cache/projections have the exceptions in DATA_MODEL.
+- Commands use operation IDs and revisions. Network IO is outside DB transactions.
+- All actual model calls, including failures/repairs, are logged. No hidden SDK
+  retries; model, endpoint and voice names belong in configuration only.
+- Missing AI configuration must not block offline study. No production fake mode.
+- Secrets go through platform SecretStore, never events, logs or backup packages.
+- Tests use test-only doubles and original fixtures. Do not distribute user decks.
 
-## Data conventions
+## Legacy boundaries during migration
 
-- IDs are UUIDv7. Every table carries `user_id` and `updated_at` (MVP has a single user).
-- Log every LLM call to `llm_calls`; store the model name in `llm_calls.model` / `articles.model`.
+- `packages/core` remains IO-free. Services access DB through repositories.
+- Test doubles are exported only by `@eng-learn/providers/testing`.
+- Leave merged Drizzle migrations unchanged. The Rust store has its own versioned
+  migrations and reads the legacy store only through an explicit conversion path.
+- `prompts/*.v1.md` are runtime assets, not obsolete planning docs. Preserve them
+  until a scoped semantic change adds a version and before/after evaluation.
 
-## Conventions
+## Delivery
 
-- English for AGENTS.md, identifiers and commit messages; Chinese for product docs and UI copy.
-- Prompts live in `prompts/` with a version suffix; the version goes into `articles.prompt_version`.
-  Prompt changes must include a before/after eval.
-- Spec first: write the spec and failing tests, then implement. One task per branch/PR, small diffs.
-- Spike code never goes into the product; results go to `docs/spikes/Sx.md`.
-- Only one task may change the schema at a time. Never modify merged migrations.
-- Do not add a LICENSE file or a `license` field in package.json (deferred).
-- When a task is done, set its status in `docs/BACKLOG.md`.
-
-## Commits (atomic)
-
-- One logical change per commit. Each commit must pass `pnpm lint`, `pnpm typecheck`, `pnpm test`.
-- Never mix unrelated changes (feature, refactor, formatting, deps) in one commit; split them.
-- Dependency changes, schema migrations and prompt changes each go in their own commit.
-- Conventional Commits in English: `type(scope): summary` (feat, fix, test, refactor, docs,
-  chore, build, ci). Add `Task: Txx` in the body. Never commit secrets.
-
-## Stop and ask the human when
-
-- an item is marked 待定 (undecided); never decide it yourself
-- adding a dependency
-- creating a schema migration or touching a merged one
-- changing prompt semantics
-- anything involving secrets, paid API calls or licenses
-- specs conflict, or are too incomplete to write testable acceptance criteria
-
-Status markers in docs: 已定 = fixed, never change; 默认 = default, may change but log it in
-`docs/DECISIONS.md`; 暂缓 = deferred, ignore and don't ask.
-
-## Definition of Done
-
-- Every acceptance criterion in the task spec is covered by a passing test
-- `pnpm test`, `pnpm lint`, `pnpm typecheck` are green
-- Data writes have `events` rows with assertions
-- `docs/specs/` updated; `docs/licenses.md` updated when word lists are involved
-
-## Docs index
-
-PRD.md (goals, scope) | ARCHITECTURE.md (stack, layout) | DATA_MODEL.md (tables) |
-SPEC-CORE.md (feature specs) | BACKLOG.md (tasks, workflow) | ROADMAP.md | DECISIONS.md
+- English identifiers/AGENTS/commit messages; Chinese UI and product docs.
+- Follow task dependencies; one schema writer at a time. Keep logical changes,
+  dependencies, migrations and prompt versions in separate atomic commits.
+- When commits are authorized use Conventional Commits and `Task: Rxx`.
+- Record implementation choices in `docs/DECISIONS.md`; ordinary reversible
+  choices do not require the archived per-spec approval process.
+- Do not add a project LICENSE or package license field; licensing is deferred.
+- Update task status only with matching evidence. Legacy test counts do not prove
+  Rust correctness; WASM/mobile layouts do not prove native mobile support.
+- Run checks appropriate to changed files. Documentation-only work needs link,
+  task/dependency and design-coverage checks, not invented product test claims.
+- UI completion needs behavior, light/dark/responsive evidence and platform
+  capability checks. Real AI quality and long-term learning outcomes are separate.

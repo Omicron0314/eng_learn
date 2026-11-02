@@ -1,66 +1,45 @@
-# 词间 · English learning MVP
+# 词间 · 多端英语学习 App
 
-私有、自用、中文界面的英语学习 PWA：导入自己的词表 → FSRS 复习 → 今日文章 → 点词 / 生词箱 → 听力 → 反馈与统计。SQLite 与音频文件保留在本机。没有内置词书、账号或同步；没有离线 service worker（PWA 安装入口不等于离线学习）。
+词间围绕「复习 → 阅读／听力 → 整理生词」组织学习。新的产品与界面基线是 [cijian-m3 设计稿](docs/cijian-m3.html)，重构采用 Rust、GPUI 与 [gpui-kit-material](https://github.com/mizorewww/gpui-kit-material)。
 
-## 快速体验（完全免费、明确假服务）
+**当前处于文档重规划完成、原生重构尚未开始的阶段。** 仓库可运行的仍是 TypeScript / Next.js Web 版本；尚无 Cargo workspace。下文的目标架构不代表已经实现。
 
-Node 24、pnpm 12.11.2：
+## 新规划入口
+
+- [项目总纲](docs/plan.md)：范围、文档权威、实施顺序。
+- [产品需求](docs/PRD.md)与[页面／交互规范](docs/UI-SPEC.md)：七个入口、完整学习流程和移动布局。
+- [设计系统](docs/DESIGN-SYSTEM.md)：浅深色、排版、形状、组件与 GPUI 对应。
+- [架构](docs/ARCHITECTURE.md)与[平台矩阵](docs/PLATFORMS.md)：共享 Rust 领域层、桌面、Web/WASM 与移动原生路线。
+- [数据模型](docs/DATA_MODEL.md)、[核心规则](docs/SPEC-CORE.md)、[迁移方案](docs/MIGRATION.md)。
+- [任务表](docs/BACKLOG.md)、[任务规格](docs/specs/README.md)、[验收方案](docs/TESTING.md)。
+
+桌面端按 Linux → Windows / macOS 验证与交付；Web/WASM 承担浏览器和手机浏览器形态。Android / iOS 原生是目标，但上游材料不足以证明直接可用，必须先完成平台验证。多端可运行与跨端同步分别规划。
+
+## 运行现有 Web 版本
+
+以下命令属于现有实现，供迁移对照和维护使用。Node 24、pnpm 12.11.2：
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm dev:demo
+pnpm dev
 # http://localhost:3000
 ```
 
-演示使用 FakeLLM / FakeTTS，文本和释义标记为演示，不证明真实生成质量。数据库在 `data/demo.sqlite`，音频在 `data/demo-blobs`。在词库导入 UTF-8 CSV（`word,meaning,example`，后两列可选），复习后在今日页生成文章。基线 TXT / CSV 不建卡，学习词书建卡；兼容旧版 `.apkg` 只取前两字段，忽略媒体与调度。
-
-## 真实 LLM（BYOK，可能产生费用）
-
-复制 `.env.example` 为 `apps/web/.env.local`，替换 LLM 的端点、服务端密钥和模型占位符，填写单价；将数据库与文件目录设为绝对路径。不要把密钥放在客户端变量或提交进仓库。
-
-```sh
-pnpm dev
-# 或 pnpm build && pnpm start
-```
-
-真实模式缺少 `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` 时会立即拒绝初始化，绝不会自动降级到假服务。设置 `APP_PASSWORD` 保护页面、API 和音频。公网使用 HTTPS / 反向代理，cookie 在 HTTPS 下使用 Secure；这只是单用户密码门禁，不是完整账号体系。跨站写入拒绝，CSV/TXT 上限 20 MiB，.apkg 上限 64 MiB（解压集合上限 100 MiB）。
-
-直接部署以请求 Host 验证浏览器 Origin，而不是监听地址；不会读取 Forwarded/X-Forwarded-* 作为同源凭据。HTTPS 反向代理须设置 `APP_ORIGIN=https://你的公开域名`（http/https origin，可含端口，不含账号、路径或查询），启动时校验；HTTPS APP_ORIGIN 同时启用 Secure cookie。代理需保留正确 Host、限制允许访问的域名并禁止后端绕过；此变量是你明确配置的信任边界。
-
-默认 TTS 为 `none`（浏览器 SpeechSynthesis）；真实服务端语音须设置 `TTS_PROVIDER=openai-compatible` 和全部 TTS_* 配置，日字符配额在设置页调整。每次合成前持久化完整文本的保守预留；部分合成、provider / blob / 缓存事务失败不退款，避免重试绕过护栏（显示用量不等于真实账单）。浏览器朗读不支持拖动进度，不产生服务端语音费用。
-
-## 验证与工具
+在设置页配置自己的 OpenAI 兼容 LLM / TTS。配置缺失时相关在线操作报错，已有词卡复习等本地操作可用。产品不提供 fake / 演示 provider。数据库默认 `data/app.sqlite`，音频默认 `data/blobs`；不要提交数据库或密钥。现有 Web 的密钥存储与原生目标方案不同，见[迁移方案](docs/MIGRATION.md)。
 
 ```sh
 pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
-pnpm --filter @eng-learn/web exec playwright install chromium
 pnpm e2e
-pnpm exec tsx tools/verify-standalone.ts  # 先 build，假服务临时数据部署回归
-pnpm eval:generation --fake
-pnpm report:experiment --db ./data/demo.sqlite --window 7 --json
+pnpm report:experiment --db ./data/app.sqlite --window 7 --json
 ```
 
-E2E 只用 fake provider、内存 SQLite 与本地 Chromium。`report:experiment` 不调用 AI，输出出现组 / 对照组样本数和 Again 率，空样本为 null。
+真实 AI 调用与 `pnpm eval:generation --allow-paid` 需明确授权；本次文档重规划没有运行。开发服务器日志写到 `/tmp`，避免仓库内日志写入触发 Turbopack 循环刷新。现有部署说明、命令历史和验证记录见 git 历史（提交 46f499a）中的 `docs/WEB-VALIDATION.md`，其中早期记录可能已被后续记录修正。
 
-**手动真实评测，本次没有运行：** 在 shell 导出真实 LLM 配置、正数单价、可选 `EVAL_BASELINE_PATH` 和 `EVAL_MAX_COST_USD`（正数且 ≤1）后运行 `pnpm eval:generation --allow-paid`。每次底层调用（包括修复）先预留保守费用上界，输出 token 上限为 2048；预算不够就不发请求。上界依赖配置单价准确以及服务端遵守 token 上限，未知额外收费无法保证。结果写 `tools/eval/results/`（不提交），记录模型、版本、baseline 来源和质量指标。假评测不算真实质量验收。
+## 文档与资源
 
-## Docker（单进程 + 数据卷）
+设计稿加载后的最终画面决定页面布局；其中示例词书、日期、数量、模型占位符不是真实产品数据。`docs/neko.html` 仅辅助理解视觉语言。两份设计稿原文件保留。
 
-将 `.env.example` 复制为根 `.env` 并替换占位符；**必须设置 APP_PASSWORD**。准备可由容器 node 用户（uid 1000）写入的 `data` 目录。
-
-```sh
-mkdir -p data
-# 确保 data 的属主或权限允许 uid 1000 写入
- docker compose up --build
-```
-
-默认仅监听 `127.0.0.1:3000`，SQLite / blobs 在 `./data` 持久化。备份整个目录时先停止容器。单进程锁不支持多副本预算协调。
-
-## 边界与未验证事项
-
-`packages/core` 无 IO；所有 AI 调用在 providers；业务写入通过仓储和事件事务。迁移保持不变。CI 包括 lint、类型、单测、构建、standalone 回归、E2E、假评测和 Docker 构建。当前机器没有 Docker，容器构建和重启验证尚未执行；真实 LLM / TTS 质量、真实 Anki 导出兼容性、完整 spike 语料和 2–4 周留存仍需手动验证。详见 `docs/MVP-EXECUTION.md`、`docs/SERVICES-HANDOFF.md` 与 `docs/WEB-VALIDATION.md`。
-
-评测调用同时写 `llm_calls`：fake 模式使用内存 SQLite，真实手动模式使用 `DATABASE_PATH`（默认根目录 `./data/app.sqlite`），并在结果 JSON 保留调用记录。不做 TTS 调用。
+旧 M0–M6 文档与任务已归档，新任务使用 R00–R21，状态从未开始重新计算。现有代码、迁移、提示词和测试样例保留为迁移资产；许可证、词表和字体来源见 [licenses](docs/licenses.md)。
