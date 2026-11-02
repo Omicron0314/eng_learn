@@ -1,0 +1,1 @@
+ALTER TABLE device_preferences ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
