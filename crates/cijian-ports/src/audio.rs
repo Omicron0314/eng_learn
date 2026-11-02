@@ -1,4 +1,10 @@
 use serde::{Deserialize, Serialize};
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemVoice {
+    pub id: String,
+    pub label: String,
+    pub language: String,
+}
 #[derive(Debug, Clone)]
 pub struct ReserveAudio {
     pub profile: String,

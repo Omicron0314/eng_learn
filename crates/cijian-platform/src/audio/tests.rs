@@ -31,7 +31,25 @@ fn native_audio_controls_and_natural_completion() {
     let temp = tempfile::tempdir().unwrap();
     let long = temp.path().join("tone.wav");
     std::fs::write(&long, wave(32000)).unwrap();
-    let player = NativeAudio::new();
+    let completed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let recorded = completed.clone();
+    let mut observed_at = None;
+    let player = NativeAudio::with_completion(move |state, at| {
+        assert_eq!(state.session.as_deref(), Some("second"));
+        assert!(at > 0);
+        if let Some(first) = observed_at {
+            assert_eq!(first, at);
+        } else {
+            observed_at = Some(at);
+        }
+        if recorded.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+            return Err(AppError::new(
+                ErrorCode::StorageUnavailable,
+                "original transient test failure",
+            ));
+        }
+        Ok(())
+    });
     let state = player
         .command(AudioCommand::Play {
             path: long,
@@ -64,6 +82,14 @@ fn native_audio_controls_and_natural_completion() {
         .unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(3);
     loop {
+        if completed.load(std::sync::atomic::Ordering::SeqCst) < 2 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "completion callback did not retry without polling"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+            continue;
+        }
         let state = player.command(AudioCommand::Status).unwrap();
         if state.state == PlaybackState::Ended {
             assert_eq!(state.session.as_deref(), Some("second"));

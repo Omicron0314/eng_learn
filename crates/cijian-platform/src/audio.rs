@@ -29,19 +29,27 @@ pub fn validate_audio(bytes: Vec<u8>) -> Result<Option<f64>> {
 }
 
 pub struct NativeAudio {
-    sender: mpsc::Sender<(AudioCommand, mpsc::SyncSender<Result<Playback>>)>,
+    sender: Option<mpsc::Sender<(AudioCommand, mpsc::SyncSender<Result<Playback>>)>>,
+    worker: Option<std::thread::JoinHandle<()>>,
 }
 fn failure(message: &str) -> AppError {
     AppError::new(ErrorCode::UnsupportedCapability, message)
 }
 impl NativeAudio {
     pub fn new() -> Self {
+        Self::with_completion(|_, _| Ok(()))
+    }
+    pub fn with_completion(
+        mut on_complete: impl FnMut(Playback, i64) -> Result<()> + Send + 'static,
+    ) -> Self {
         let (sender, receiver) =
             mpsc::channel::<(AudioCommand, mpsc::SyncSender<Result<Playback>>)>();
-        std::thread::spawn(move || {
+        let worker = std::thread::spawn(move || {
             let mut stream: Option<OutputStream> = None;
             let mut sink: Option<Sink> = None;
             let mut state = Playback::default();
+            let mut completions = std::collections::VecDeque::new();
+            let mut completion_error = None;
             loop {
                 if let Some(sink) = &sink
                     && state.state == PlaybackState::Playing
@@ -51,6 +59,20 @@ impl NativeAudio {
                         && let Some(session) = state.session.clone()
                     {
                         state.ended(&session);
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|time| time.as_millis().try_into().unwrap_or(i64::MAX))
+                            .unwrap_or(0);
+                        completions.push_back((state.clone(), now));
+                    }
+                }
+                if let Some((completed, at)) = completions.front() {
+                    match on_complete(completed.clone(), *at) {
+                        Ok(()) => {
+                            completions.pop_front();
+                            completion_error = None;
+                        }
+                        Err(error) => completion_error = Some(error),
                     }
                 }
                 let (command, response) = match receiver.recv_timeout(Duration::from_millis(100)) {
@@ -117,8 +139,11 @@ impl NativeAudio {
                                 sink.as_ref().ok_or_else(|| failure("没有正在播放的音频"))?;
                             let mut next = state.clone();
                             next.seek(position).map_err(|e| failure(&e.to_string()))?;
-                            sink.try_seek(Duration::from_secs_f64(position))
-                                .map_err(|_| failure("当前音频不支持定位"))?;
+                            sink.try_seek(
+                                Duration::try_from_secs_f64(next.position)
+                                    .map_err(|_| failure("音频位置超出范围"))?,
+                            )
+                            .map_err(|_| failure("当前音频不支持定位"))?;
                             state = next;
                         }
                         AudioCommand::Rate(rate) => {
@@ -127,21 +152,38 @@ impl NativeAudio {
                                 sink.set_speed(rate as f32);
                             }
                         }
-                        AudioCommand::Status => {}
+                        AudioCommand::Status => {
+                            if let Some(error) = &completion_error {
+                                return Err(error.clone());
+                            }
+                        }
                     }
                     Ok(state.clone())
                 })();
                 let _ = response.send(result);
             }
         });
-        Self { sender }
+        Self {
+            sender: Some(sender),
+            worker: Some(worker),
+        }
     }
     pub fn command(&self, command: AudioCommand) -> Result<Playback> {
         let (sender, receiver) = mpsc::sync_channel(1);
         self.sender
+            .as_ref()
+            .ok_or_else(|| failure("播放器已停止"))?
             .send((command, sender))
             .map_err(|_| failure("播放器已停止"))?;
         receiver.recv().map_err(|_| failure("播放器已停止"))?
+    }
+}
+impl Drop for NativeAudio {
+    fn drop(&mut self) {
+        self.sender.take();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
     }
 }
 impl Default for NativeAudio {
