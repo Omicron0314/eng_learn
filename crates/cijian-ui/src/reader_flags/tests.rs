@@ -34,7 +34,7 @@ fn open(window: &mut Window, cx: &mut App) {
     window.dispatch_event(
         gpui_kit::ScrollEvent {
             position: point(
-                window.viewport_size().width - px(20.),
+                window.viewport_size().width * 0.6,
                 window.viewport_size().height / 2.,
             ),
             delta: ScrollDelta::Pixels(point(

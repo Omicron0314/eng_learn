@@ -156,7 +156,16 @@ impl Shell {
         body.into_any_element()
     }
     pub(super) fn reader_body(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
-        let mut body = div().flex().flex_col().gap_4();
+        let mut body = div()
+            .id("reader-page")
+            .track_scroll(&self.reader_scroll)
+            .h_full()
+            .flex_1()
+            .min_w_0()
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .gap_4();
         let Some(article) = self.article.as_ref().filter(
             |article| matches!(self.navigation.current(),Route::Article{id,..} if id==&article.id),
         ) else {
@@ -326,35 +335,52 @@ impl Shell {
             }
             let weak = cx.entity().downgrade();
             let dismiss = move |window: &mut Window, cx: &mut App| {
-                let _ = weak.update(cx, |this, cx| {
-                    this.lookup = None;
-                    this.focus_reader(window, cx);
-                    cx.notify();
-                });
+                let _ = weak.update(cx, |this, cx| this.dismiss_lookup(window, cx));
             };
-            body = body.child(if self.compact {
-                MaterialBottomSheet::new("word-sheet")
+            if self.compact_reader {
+                body = body.child(
+                    MaterialBottomSheet::new("word-sheet")
+                        .open(true)
+                        .modal(true)
+                        .label(context.selection.surface.clone())
+                        .dismiss_on_escape(!self.loading || self.lookup_loading)
+                        .dismiss_on_scrim(!self.loading || self.lookup_loading)
+                        .drag_handle("展开词语面板")
+                        .child(
+                            div()
+                                .p_4()
+                                .child(context.selection.surface.clone())
+                                .child(sheet),
+                        )
+                        .on_dismiss(dismiss),
+                );
+            } else {
+                let width = gpui_kit_material::tokens::typography::rem(384.);
+                let side = MaterialSideSheet::new("word-sheet")
                     .open(true)
-                    .modal(true)
-                    .label(context.selection.surface.clone())
-                    .drag_handle("展开词语面板")
+                    .modal(false)
+                    .width(width)
+                    .headline(context.selection.surface.clone())
+                    .when(!self.loading || self.lookup_loading, |sheet| {
+                        sheet.close_button("关闭词语面板")
+                    })
+                    .child(sheet)
+                    .on_dismiss(dismiss);
+                return div()
+                    .flex()
+                    .h_full()
+                    .gap_4()
+                    .child(body)
                     .child(
                         div()
-                            .p_4()
-                            .child(context.selection.surface.clone())
-                            .child(sheet),
+                            .relative()
+                            .w(width)
+                            .h_full()
+                            .flex_shrink_0()
+                            .child(side),
                     )
-                    .on_dismiss(dismiss)
-                    .into_any_element()
-            } else {
-                MaterialSideSheet::new("word-sheet")
-                    .open(true)
-                    .modal(true)
-                    .headline(context.selection.surface.clone())
-                    .child(sheet)
-                    .on_dismiss(dismiss)
-                    .into_any_element()
-            });
+                    .into_any_element();
+            }
         }
         body.into_any_element()
     }

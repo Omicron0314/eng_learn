@@ -111,6 +111,19 @@ impl Shell {
             }))
             .into_any_element()
     }
+    pub(super) fn dismiss_lookup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.loading && !self.lookup_loading {
+            return;
+        }
+        if self.lookup_loading {
+            self.request_id += 1;
+            self.loading = false;
+            self.lookup_loading = false;
+        }
+        self.lookup = None;
+        self.focus_reader(window, cx);
+        cx.notify();
+    }
     pub(super) fn focus_reader(&self, window: &mut Window, cx: &mut App) {
         if let Some(reader) = &self.reader_text {
             window.focus(&reader.input.read(cx).focus_handle(cx), cx);

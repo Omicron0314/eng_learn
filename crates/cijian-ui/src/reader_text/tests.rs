@@ -6,7 +6,9 @@ use gpui_kit::{
 use std::sync::Mutex;
 const BODY: &str = "🙂 Cats run.\nDogs rest.";
 #[derive(Default)]
-struct Bus(Mutex<Vec<Command>>);
+struct Gate(Mutex<(bool, Option<std::task::Waker>)>);
+#[derive(Default)]
+struct Bus(Mutex<Vec<Command>>, Mutex<Option<Arc<Gate>>>);
 impl CommandBus for Bus {
     fn dispatch(
         &self,
@@ -34,7 +36,22 @@ impl CommandBus for Bus {
                 "仅允许点词",
             )),
         };
-        Box::pin(async move { response })
+        let gate = self.1.lock().unwrap().take();
+        Box::pin(async move {
+            if let Some(gate) = gate {
+                std::future::poll_fn(|cx| {
+                    let mut state = gate.0.lock().unwrap();
+                    if state.0 {
+                        std::task::Poll::Ready(())
+                    } else {
+                        state.1 = Some(cx.waker().clone());
+                        std::task::Poll::Pending
+                    }
+                })
+                .await;
+            }
+            response
+        })
     }
 }
 fn point_at(
@@ -137,10 +154,10 @@ fn reader_preserves_source_selection_and_returns_focus_after_lookup(cx: &mut Tes
                 BODY
             );
             let anchor = point_at(&shell, 5..9, cx);
-            let offset = shell.read(cx).page_scroll.offset();
+            let offset = shell.read(cx).reader_scroll.offset();
             shell
                 .read(cx)
-                .page_scroll
+                .reader_scroll
                 .set_offset(point(offset.x, offset.y + px(400.) - anchor.y));
             window.render_frame(cx);
             let position = point_at(&shell, 5..9, cx);
@@ -177,6 +194,20 @@ fn reader_preserves_source_selection_and_returns_focus_after_lookup(cx: &mut Tes
         ));
         cx.update_window(handle, |_, window, cx| {
             window.render_frame(cx);
+            if !shell.read(cx).compact_reader {
+                let text = shell
+                    .read(cx)
+                    .reader_text
+                    .as_ref()
+                    .unwrap()
+                    .input
+                    .read(cx)
+                    .input_bounds();
+                assert!(
+                    text.right() <= window.find("mark-known").bounds().left(),
+                    "expanded word panel must reserve space beside the text"
+                );
+            }
             window.press("escape", cx);
             window.render_frame(cx);
             assert!(
@@ -249,6 +280,33 @@ fn reader_preserves_source_selection_and_returns_focus_after_lookup(cx: &mut Tes
                 |(context, _, _)| context.selection.range == TextRange { start: 5, end: 9 }
             ))
         );
+        let gate = Arc::new(Gate::default());
+        *bus.1.lock().unwrap() = Some(gate.clone());
+        shell.update(cx, |shell, cx| {
+            shell.request(
+                Command::Lookup {
+                    article: "original".into(),
+                    body_hash: "original-hash".into(),
+                    range: TextRange { start: 15, end: 19 },
+                },
+                cx,
+            )
+        });
+        cx.run_until_parked();
+        cx.update_window(handle, |_, window, cx| {
+            window.render_frame(cx);
+            window.press("escape", cx);
+        })
+        .unwrap();
+        {
+            let mut state = gate.0.lock().unwrap();
+            state.0 = true;
+            if let Some(waker) = state.1.take() {
+                waker.wake();
+            }
+        }
+        cx.run_until_parked();
+        assert!(shell.read_with(cx, |shell, _| shell.lookup.is_none() && !shell.loading));
         cx.update_window(handle, |_, window, _| window.remove_window())
             .unwrap();
     }

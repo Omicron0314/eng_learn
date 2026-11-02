@@ -38,7 +38,8 @@ struct Shell {
     rendered_dark: bool,
     backend: Option<Arc<dyn CommandBus>>,
     loading: bool,
-    compact: bool,
+    compact_reader: bool,
+    reader_scroll: gpui_kit::ScrollHandle,
     lookup_loading: bool,
     reader_text: Option<reader_text::ReaderText>,
     error: Option<String>,
@@ -117,7 +118,8 @@ impl Shell {
             rendered_dark: false,
             backend: None,
             loading: false,
-            compact: false,
+            compact_reader: false,
+            reader_scroll: gpui_kit::ScrollHandle::new(),
             lookup_loading: false,
             reader_text: None,
             error: None,
@@ -881,7 +883,9 @@ impl Shell {
         self.prepare_flag(window, cx);
         self.prepare_reader(window, cx);
         let compact = window.viewport_size().width < px(600.);
-        self.compact = compact;
+        self.compact_reader = window.viewport_size().width
+            < gpui_kit_material::tokens::typography::rem(840.).to_pixels(window.rem_size());
+        let is_reader = matches!(self.navigation.current(), Route::Article { .. });
         let selected = self.navigation.current().section();
         let entity = cx.entity().downgrade();
         let on_change = move |value: &gpui_kit::SharedString, _: &mut Window, cx: &mut App| {
@@ -916,11 +920,13 @@ impl Shell {
         }
         let mut content = div()
             .id("page")
-            .track_scroll(&self.page_scroll)
+            .when(!is_reader, |content| {
+                content.track_scroll(&self.page_scroll).overflow_y_scroll()
+            })
+            .when(is_reader, |content| content.overflow_hidden())
             .flex_1()
             .min_w_0()
             .h_full()
-            .overflow_y_scroll()
             .p_6()
             .flex()
             .flex_col()
@@ -951,12 +957,29 @@ impl Shell {
         }
         content = content.child(
             div()
+                .when(is_reader, |surface| {
+                    surface.flex_1().min_h_0().overflow_hidden()
+                })
                 .rounded(px(28.))
                 .p_6()
                 .bg(color(ColorRole::SURFACE_CONTAINER_LOW))
                 .child(self.body(cx)),
         );
         let background = div()
+            .capture_key_down(
+                cx.listener(|this, event: &gpui_kit::KeyDownEvent, window, cx| {
+                    if event.keystroke.key == "escape"
+                        && !this.compact_reader
+                        && !this.reader_flags.open
+                        && this.lookup.is_some()
+                        && matches!(this.navigation.current(), Route::Article { .. })
+                        && (!this.loading || this.lookup_loading)
+                    {
+                        this.dismiss_lookup(window, cx);
+                        cx.stop_propagation();
+                    }
+                }),
+            )
             .track_focus(self.focus.as_ref().expect("initialized focus"))
             .tab_stop(false)
             .on_key_down(cx.listener(|this, event: &gpui_kit::KeyDownEvent, _, cx| {
