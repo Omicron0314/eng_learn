@@ -94,6 +94,11 @@ impl DesktopBackend {
     }
     fn execute(&self, command: Command) -> Result<Response> {
         match command {
+            Command::LoadStats { page } => Ok(Response::Stats(Box::new(self.store.stats(
+                &self.profile,
+                now(),
+                page,
+            )?))),
             Command::LoadArticles { page } => Ok(Response::Articles(self.store.articles(
                 &self.profile,
                 None,
@@ -247,13 +252,9 @@ impl DesktopBackend {
                 futures::executor::block_on(self.secrets.write(&reference, secret))?;
                 self.settings_response()
             }
-            Command::LoadLibrary => Ok(Response::Library(self.store.cards(
-                &self.profile,
-                CardFilter {
-                    page_size: 100,
-                    ..Default::default()
-                },
-            )?)),
+            Command::LoadLibrary { filter } => {
+                Ok(Response::Library(self.store.cards(&self.profile, filter)?))
+            }
             Command::ChooseImport { word_list } => {
                 let selected = rfd::FileDialog::new()
                     .set_title("选择导入文件")
@@ -366,6 +367,9 @@ impl DesktopBackend {
                     cards,
                     waiting,
                     intervals,
+                    stats: Box::new(self.store.stats(&self.profile, now, 0)?),
+                    books: self.store.books(&self.profile)?,
+                    inbox_pending: self.store.pending_inbox_count(&self.profile)?,
                 })
             }
             Command::Rate {

@@ -7,6 +7,9 @@ use cijian_ports::{
 use futures::future::BoxFuture;
 #[derive(Debug, Clone)]
 pub enum Command {
+    LoadStats {
+        page: u32,
+    },
     LoadArticles {
         page: u32,
     },
@@ -69,7 +72,9 @@ pub enum Command {
         secret: cijian_ports::provider::SecretPatch,
         operation: String,
     },
-    LoadLibrary,
+    LoadLibrary {
+        filter: cijian_ports::library::CardFilter,
+    },
     ChooseImport {
         word_list: bool,
     },
@@ -95,6 +100,7 @@ pub struct SelectedFile {
 }
 #[derive(Debug, Clone)]
 pub enum Response {
+    Stats(Box<cijian_ports::stats::StatsSnapshot>),
     Articles(Vec<cijian_ports::articles::Article>),
     Article {
         article: Box<cijian_ports::articles::Article>,
@@ -127,6 +133,9 @@ pub enum Response {
         cards: Vec<CardView>,
         waiting: bool,
         intervals: Option<[i64; 4]>,
+        stats: Box<cijian_ports::stats::StatsSnapshot>,
+        books: Vec<cijian_ports::library::BookView>,
+        inbox_pending: u64,
     },
     Rated(CardView),
 }

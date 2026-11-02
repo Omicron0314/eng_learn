@@ -28,6 +28,14 @@ fn navigation_routes_and_compact_targets(cx: &mut TestAppContext) {
             .unwrap();
         cx.update_window(handle, |_, window, cx| {
             window.render_frame(cx);
+            let initial_focus = window.focused(cx);
+            window.press("tab", cx);
+            window.render_frame(cx);
+            assert_ne!(
+                window.focused(cx),
+                initial_focus,
+                "Tab must move focus from the application root"
+            );
             let mut previous_right = px(0.);
             for destination in ["today", "review", "articles", "library", "inbox", "stats"] {
                 let id = gpui_kit::ElementId::NamedChild(

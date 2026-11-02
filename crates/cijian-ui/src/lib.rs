@@ -2,6 +2,7 @@
 #[cfg(test)]
 extern crate gpui_kit as gpui;
 mod settings;
+mod stats;
 mod study;
 #[cfg(test)]
 mod tests;
@@ -25,6 +26,7 @@ use gpui_kit_material::{
 use std::{sync::Arc, time::Instant};
 
 struct Shell {
+    focus: Option<gpui_kit::FocusHandle>,
     navigation: Navigation,
     items: Vec<NavItem>,
     dark: bool,
@@ -56,6 +58,9 @@ struct Shell {
     inbox_total: u64,
     inbox_selected: std::collections::BTreeSet<String>,
     notice: Option<String>,
+    stats: Option<cijian_ports::stats::StatsSnapshot>,
+    books: Vec<cijian_ports::library::BookView>,
+    heatmap_day: Option<usize>,
 }
 impl Shell {
     fn new() -> Self {
@@ -77,6 +82,7 @@ impl Shell {
         })
         .collect();
         Self {
+            focus: None,
             navigation: Navigation::default(),
             items,
             dark: false,
@@ -108,6 +114,9 @@ impl Shell {
             inbox_total: 0,
             inbox_selected: Default::default(),
             notice: None,
+            stats: None,
+            books: Vec::new(),
+            heatmap_day: None,
         }
     }
     fn request(&mut self, command: Command, cx: &mut Context<Self>) {
@@ -130,6 +139,7 @@ impl Shell {
                 this.loading = false;
                 match response {
                     Err(error) => this.error = Some(error.message),
+                    Ok(Response::Stats(stats)) => this.stats = Some(*stats),
                     Ok(Response::Articles(articles)) => this.articles = articles,
                     Ok(Response::Article { article, session }) => {
                         this.navigation.navigate(Route::Article {
@@ -207,13 +217,24 @@ impl Shell {
                     Ok(Response::Imported(report)) => {
                         this.report = Some(report);
                         this.selected = None;
-                        this.request(Command::LoadLibrary, cx);
+                        this.request(
+                            Command::LoadLibrary {
+                                filter: this.library_filter(),
+                            },
+                            cx,
+                        );
                     }
                     Ok(Response::Review {
                         cards,
                         waiting,
                         intervals,
+                        stats,
+                        books,
+                        inbox_pending,
                     }) => {
+                        this.stats = Some(*stats);
+                        this.books = books;
+                        this.inbox_total = inbox_pending;
                         this.review = cards;
                         this.waiting = waiting;
                         this.intervals = intervals;
@@ -228,19 +249,33 @@ impl Shell {
         .detach();
         cx.notify();
     }
+    fn library_filter(&self) -> cijian_ports::library::CardFilter {
+        let (book_id, search) = match self.navigation.current() {
+            Route::Library { book, search } => (book.clone(), search.clone()),
+            _ => (None, String::new()),
+        };
+        cijian_ports::library::CardFilter {
+            book_id,
+            search,
+            page_size: 100,
+            ..Default::default()
+        }
+    }
     fn navigate(&mut self, route: Route, cx: &mut Context<Self>) {
         self.navigation.navigate(route);
         match self.navigation.current() {
             Route::Articles => self.request(Command::LoadArticles { page: 0 }, cx),
             Route::Article { id, .. } => self.request(Command::OpenArticle { id: id.clone() }, cx),
             Route::Inbox => self.request(Command::LoadInbox { page: 0 }, cx),
+            Route::Stats => self.request(Command::LoadStats { page: 0 }, cx),
             Route::Settings => self.request(Command::LoadSettings, cx),
             Route::Today | Route::Review => self.request(Command::LoadReview, cx),
-            Route::Library { .. } => self.request(Command::LoadLibrary, cx),
-            _ => {
-                self.request_id += 1;
-                self.loading = false;
-            }
+            Route::Library { .. } => self.request(
+                Command::LoadLibrary {
+                    filter: self.library_filter(),
+                },
+                cx,
+            ),
         }
         cx.notify();
     }
@@ -269,6 +304,7 @@ impl Shell {
         let mut body = div().flex().flex_col().gap_4();
         match self.navigation.current() {
             Route::Today => {
+                body = body.child(self.today_metrics(cx));
                 body = body.child(div().text_size(px(24.)).child("一点复习，一段故事。"));
                 if !self.loading {
                     body = body.child(format!("当前可复习 {} 张词卡", self.review.len()));
@@ -505,7 +541,7 @@ impl Shell {
             Route::Articles => return self.articles_body(cx),
             Route::Article { .. } => return self.reader_body(cx),
             Route::Inbox => return self.inbox_body(cx),
-            Route::Stats => body = body.child("在学习记录中观察自己的进步。"),
+            Route::Stats => return self.stats_body(cx),
         }
         body.into_any_element()
     }
@@ -522,6 +558,11 @@ fn format_interval(ms: i64) -> String {
 }
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.focus.is_none() {
+            let focus = cx.focus_handle();
+            window.focus(&focus, cx);
+            self.focus = Some(focus);
+        }
         if self.navigation.current() == &Route::Settings && self.settings_editor.is_none() {
             self.settings_editor = Some(settings::Editor::new(
                 &self.settings,
@@ -609,6 +650,24 @@ impl Render for Shell {
                 .child(self.body(cx)),
         );
         let background = div()
+            .track_focus(self.focus.as_ref().expect("initialized focus"))
+            .tab_stop(false)
+            .on_key_down(cx.listener(|this, event: &gpui_kit::KeyDownEvent, _, cx| {
+                if this.navigation.current() == &Route::Review && !this.loading {
+                    match event.keystroke.key.as_str() {
+                        "space" if !this.revealed => {
+                            this.revealed = true;
+                            cx.notify();
+                            cx.stop_propagation();
+                        }
+                        "1" => this.rate(Rating::Again, cx),
+                        "2" => this.rate(Rating::Hard, cx),
+                        "3" => this.rate(Rating::Good, cx),
+                        "4" => this.rate(Rating::Easy, cx),
+                        _ => {}
+                    }
+                }
+            }))
             .w(window.viewport_size().width)
             .h(window.viewport_size().height)
             .flex()
@@ -659,7 +718,8 @@ pub fn run(application: gpui_kit::Application, backend: Result<Arc<dyn CommandBu
             gpui_kit::init(cx);
             gpui_kit_material::init(cx);
             init_component_theme(theme::scheme(false), 1.0, cx);
-            gpui_kit::open_window(WindowOptions::default(), cx, move |_, cx| {
+            gpui_kit::open_window(WindowOptions::default(), cx, move |window, cx| {
+                window.set_window_title("词间");
                 let view = cx.new(|_| {
                     let mut shell = Shell::new();
                     match backend {
