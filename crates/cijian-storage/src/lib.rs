@@ -2,6 +2,7 @@
 //! callers execute native IO on a background worker, never in GPUI render.
 mod articles;
 mod calls;
+mod inbox;
 mod library;
 mod reading;
 use cijian_domain::settings::{Settings, ValidatedSettings};

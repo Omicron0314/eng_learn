@@ -4,7 +4,7 @@ use super::*;
 use cijian_domain::reading::{self, FeedbackMode, TextRange};
 use cijian_ports::reading::*;
 use serde_json::json;
-fn body(db: &Connection, c: &ReaderCommand) -> Result<String> {
+pub(super) fn body(db: &Connection, c: &ReaderCommand) -> Result<String> {
     let value: Option<(String, String)> = db
         .query_row(
             "SELECT body,body_hash FROM articles WHERE profile_id=?1 AND id=?2",
