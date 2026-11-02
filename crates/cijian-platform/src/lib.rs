@@ -1,6 +1,7 @@
 //! Native credential storage. Tests exercise only the in-memory session implementation.
 #[cfg(not(target_family = "wasm"))]
 pub mod audio;
+pub mod files;
 #[cfg(not(target_family = "wasm"))]
 pub mod speech;
 use cijian_ports::{
