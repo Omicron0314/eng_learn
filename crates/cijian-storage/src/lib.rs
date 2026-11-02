@@ -1,5 +1,6 @@
 //! Native SQLite adapter. Its synchronous transaction stays inside the adapter;
 //! callers execute native IO on a background worker, never in GPUI render.
+mod articles;
 mod calls;
 mod library;
 use cijian_domain::settings::{Settings, ValidatedSettings};
@@ -332,6 +333,44 @@ mod tests {
             );
         }
         assert_eq!(Store::open(&path).unwrap().settings("p").unwrap().1, 2);
+    }
+    #[test]
+    fn upgrades_initial_database_without_rewriting_its_migration() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("version-one.sqlite");
+        {
+            let db = Connection::open(&path).unwrap();
+            db.execute_batch(INITIAL).unwrap();
+            db.execute_batch(
+                "CREATE TABLE migrations(version INTEGER PRIMARY KEY, checksum TEXT NOT NULL);",
+            )
+            .unwrap();
+            db.execute("INSERT INTO migrations VALUES (1,?1)", [hash(INITIAL)])
+                .unwrap();
+            db.execute(
+                "INSERT INTO profiles VALUES ('legacy-rust','保留档案',0,0)",
+                [],
+            )
+            .unwrap();
+        }
+        let store = Store::open(&path).unwrap();
+        assert_eq!(
+            store.first_profile().unwrap().as_deref(),
+            Some("legacy-rust")
+        );
+        let db = store.connection.lock().unwrap();
+        assert_eq!(
+            db.query_row("SELECT count(*) FROM migrations", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            MIGRATIONS.len() as i64
+        );
+        assert_eq!(
+            db.query_row("SELECT checksum FROM migrations WHERE version=1", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            hash(INITIAL)
+        );
     }
     #[test]
     fn unknown_database_and_modified_migration_are_rejected() {
