@@ -156,15 +156,15 @@ impl Default for CardCsvImporter {
 }
 impl CardCsvImporter {
     pub fn push_record(&mut self, cells: &[&str], line: u64) {
-        if cells.iter().all(|cell| cell.trim().is_empty()) {
-            return;
-        }
         let raw = cells.first().copied().unwrap_or("");
         let word = if self.first {
             raw.trim_start_matches('\u{feff}')
         } else {
             raw
         };
+        if word.trim().is_empty() && cells.iter().skip(1).all(|cell| cell.trim().is_empty()) {
+            return;
+        }
         if self.first {
             self.first = false;
             if ["word", "单词", "词条"]

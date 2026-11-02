@@ -48,6 +48,11 @@ fn chunk_boundaries_preserve_chinese_columns_multiline_positions_and_hash() {
                 false,
             )
             .unwrap();
+            assert_eq!(parsed.errors.len(), 1, "BOM must not become an empty word");
+            assert!(
+                parsed.rows.iter().all(|row| row.word != "word"),
+                "header must still be recognized after the BOM-only row"
+            );
             assert_eq!(
                 parsed.errors[0].line, expected,
                 "BOM/blank prefix at chunk {size}"
