@@ -1,3 +1,4 @@
+mod browsing;
 use super::*;
 use cijian_domain::{import::parse_card_csv, srs::Rating};
 fn import(prefix: &str, kind: BookKind, text: &str) -> ImportWords {

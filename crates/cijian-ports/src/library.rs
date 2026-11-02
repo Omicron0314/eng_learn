@@ -79,6 +79,19 @@ pub struct RateCard {
     pub now: i64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BookEntryView {
+    pub id: String,
+    pub lemma: String,
+    pub raw: String,
+    pub card: Option<CardView>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BookEntryPage {
+    pub total: u64,
+    pub entries: Vec<BookEntryView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookView {
     pub id: String,
     pub name: String,

@@ -80,6 +80,8 @@ impl Store {
         };
         let request=json!({"name":c.name,"kind":kind,"sourceHash":c.source_hash,"format":c.format,"rows":c.parsed}).to_string();
         let result=self.command(&c.profile_id,&c.operation_id,"import_words",&request,c.now,|tx|{
+            let requested:Option<(String,String,String,Option<i64>)>=tx.query_row("SELECT profile_id,name,kind,archived_at FROM word_books WHERE id=?1",[&c.book_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(unavailable)?;
+            if requested.is_some_and(|(profile,name,existing_kind,archived)|profile!=c.profile_id||name!=c.name||existing_kind!=kind||archived.is_some()){return Err(AppError::new(ErrorCode::StaleState,"目标词书已变更或用途不匹配"));}
             let same:Option<String>=tx.query_row("SELECT id FROM word_books WHERE profile_id=?1 AND name=?2 AND kind=?3 AND archived_at IS NULL",params![c.profile_id,c.name,kind],|r|r.get(0)).optional().map_err(unavailable)?;
             let book=same.unwrap_or_else(||c.book_id.clone());
             tx.execute("INSERT OR IGNORE INTO word_books(id,profile_id,name,kind,source,created_at,updated_at,revision) VALUES (?1,?2,?3,?4,?5,?6,?6,1)",params![book,c.profile_id,c.name,kind,c.format,c.now]).map_err(unavailable)?;
@@ -106,6 +108,76 @@ impl Store {
             Ok((report_json.clone(),vec![Event{id:c.event_id,kind:"import_complete".into(),schema_version:1,payload:json!({"importId":c.import_id,"bookId":book,"sourceHash":c.source_hash,"counts":report_json})}]))
         })?;
         serde_json::from_value(result).map_err(unavailable)
+    }
+    pub fn latest_import_report(&self, profile: &str) -> Result<Option<(String, ImportReport)>> {
+        let db = self.connection.lock().map_err(unavailable)?;
+        let row:Option<(String,String)>=db.query_row("SELECT source_name,report_json FROM imports WHERE profile_id=?1 AND json_type(report_json,'$.words_added') IS NOT NULL ORDER BY created_at DESC,id DESC LIMIT 1",[profile],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(unavailable)?;
+        row.map(|(name, raw)| {
+            let value: serde_json::Value = serde_json::from_str(&raw).map_err(unavailable)?;
+            if value.get("words_added").is_none() {
+                return Ok(None);
+            }
+            Ok(Some((
+                name,
+                serde_json::from_value(value).map_err(unavailable)?,
+            )))
+        })
+        .transpose()
+        .map(Option::flatten)
+    }
+    pub fn book_entries(
+        &self,
+        profile: &str,
+        filter: &CardFilter,
+    ) -> Result<cijian_ports::library::BookEntryPage> {
+        use cijian_ports::library::{BookEntryPage, BookEntryView};
+        if !(1..=500).contains(&filter.page_size) {
+            return Err(invalid("分页大小无效"));
+        }
+        let book = filter.book_id.as_deref().ok_or(invalid("请选择词书"))?;
+        let db = self.connection.lock().map_err(unavailable)?;
+        let state = filter.state.map(state_name);
+        let predicate = "e.profile_id=?1 AND e.book_id=?2 AND b.archived_at IS NULL AND (?3='' OR instr(lower(l.lemma||' '||e.raw||' '||COALESCE(c.meaning,'')),lower(?3))>0) AND (?4 IS NULL OR c.state=?4) AND (?5 IS NULL OR c.suspended=?5)";
+        let joins = "book_entries e JOIN word_books b ON b.id=e.book_id AND b.profile_id=e.profile_id JOIN lexemes l ON l.id=e.lexeme_id LEFT JOIN cards c ON c.profile_id=e.profile_id AND c.lexeme_id=e.lexeme_id";
+        let total: i64 = db
+            .query_row(
+                &format!("SELECT count(*) FROM {joins} WHERE {predicate}"),
+                params![profile, book, filter.search, state, filter.suspended],
+                |r| r.get(0),
+            )
+            .map_err(unavailable)?;
+        let mut statement=db.prepare(&format!("SELECT e.id AS entry_id,e.raw,l.lemma,c.* FROM {joins} WHERE {predicate} ORDER BY l.lemma,e.id LIMIT ?6 OFFSET ?7")).map_err(unavailable)?;
+        let entries = statement
+            .query_map(
+                params![
+                    profile,
+                    book,
+                    filter.search,
+                    state,
+                    filter.suspended,
+                    filter.page_size,
+                    i64::from(filter.page) * i64::from(filter.page_size)
+                ],
+                |row| {
+                    Ok(BookEntryView {
+                        id: row.get("entry_id")?,
+                        lemma: row.get("lemma")?,
+                        raw: row.get("raw")?,
+                        card: if row.get::<_, Option<String>>("id")?.is_some() {
+                            Some(read_card(row)?)
+                        } else {
+                            None
+                        },
+                    })
+                },
+            )
+            .map_err(unavailable)?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(unavailable)?;
+        Ok(BookEntryPage {
+            total: total as u64,
+            entries,
+        })
     }
     pub fn cards(&self, profile: &str, filter: CardFilter) -> Result<CardPage> {
         if !(1..=500).contains(&filter.page_size) {
