@@ -991,6 +991,7 @@ dependencies = [
  "cijian-ports",
  "keyring",
  "rodio",
+ "rustix",
  "tempfile",
  "tokio",
 ]
@@ -1041,6 +1042,7 @@ dependencies = [
  "cijian-ports",
  "gpui-kit",
  "gpui-kit-material",
+ "serde_json",
 ]
 
 [[package]]
