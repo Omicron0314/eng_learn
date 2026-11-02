@@ -1,63 +1,93 @@
-# 架构(ARCHITECTURE)
+# 目标架构
 
-来源:`docs/plan.md` §3、§4、§9.6。
+**这是待实现架构。** 当前仓库仍是 `apps/web`＋`packages/*` 的 TypeScript 工程；新 Rust workspace 在 R01 建立，旧目录在迁移验收前保留。
 
-## 1. 技术选型
+## 依赖方向
 
-选型原则:主流、类型安全、文档多、易测试,方便 agent 实现与自检。
+```mermaid
+flowchart TD
+  Desktop[Desktop entry] --> UI[GPUI / Material UI]
+  Web[WASM entry] --> UI
+  UI --> App[Application services]
+  App --> Domain[Pure domain]
+  App --> Ports[IO port contracts]
+  Native[Native adapters] --> Ports
+  Browser[Browser adapters] --> Ports
+  Native --> SQL[SQLite / files / credential store / audio]
+  Browser --> WebIO[Browser storage / fetch / media / speech]
+```
 
-| 层 | 选择 | 备注 |
+入口负责装配适配器。领域层不依赖 GPUI、SQLite、HTTP、文件系统或特定 executor；应用服务通过接口执行业务、记录事件和协调异步任务。UI 只能发命令／查询并观察状态，不能直接写数据库或调用模型。
+
+## 规划目录
+
+```text
+crates/
+  cijian-domain/          # FSRS封装、时间、词形／覆盖率、选词、统计纯规则
+  cijian-ports/           # Repository/UoW、LLM/TTS、Blob、Audio、Secret等契约
+  cijian-app/             # 用例、验证、事件、任务与幂等
+  cijian-storage/         # 原生SQLite、迁移、备份导入／导出
+  cijian-providers/       # OpenAI兼容协议、结构输出和调用日志适配
+  cijian-platform/        # 原生文件选择、音频、系统朗读、凭据、生命周期
+  cijian-ui/              # 主题、导航、页面、应用控件；依赖gpui-kit facade
+  cijian-testing/         # test-only doubles与固定时钟、随机源
+apps/
+  desktop/               # cijian-desktop binary
+  wasm/                  # cijian-wasm：浏览器入口与浏览器专属适配器
+  web/                   # 现有Next.js，迁移对照
+packages/                # 现有TS实现与测试；逐模块迁移
+prompts/                 # 版本化文本资产，编译／打包时嵌入
+fixtures/                # 共享原创样例和跨语言向量
+```
+
+R00 确认 crate 名与边界可编译后固定，不能把上图当已有模块。优先少量清晰 crate；平台条件编译留在适配器与入口，不散入领域规则。
+
+## 关键技术与状态
+
+| 层 | 选择 | 实施要求 |
 | --- | --- | --- |
-| 语言与仓库 | TypeScript,pnpm monorepo | 类型即契约 |
-| Web | Next.js(App Router)+ Tailwind + shadcn/ui,带 PWA manifest | 全栈一体,SaaS 阶段同栈 |
-| 数据库 | SQLite(better-sqlite3)+ Drizzle ORM | 自托管零运维;Drizzle 也支持 Postgres,便于以后迁移 |
-| 校验 | zod | LLM 输出、API 入参统一校验 |
-| 复习调度 | ts-fsrs | 开源 FSRS 实现 |
-| 词形还原 | 接口 `Lemmatizer`;候选 wink-lemmatizer 或离线词形表 | 由 spike S1 决定 |
-| LLM | `LLMProvider` 接口;适配器基于 openai SDK;`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 全部来自环境变量 | 当前填 DeepSeek 的取值;代码和文档里不写死任何模型名;见 `docs/SPEC-CORE.md` §5.1 |
-| TTS | `TTSProvider` 接口;服务商、模型、音色全部来自配置;浏览器 SpeechSynthesis 作零成本兜底 | 待定:不做盲听选型,到 M5 时由作者直接指定一家接入 |
-| 文件存储 | `BlobStore` 接口,MVP 用本地文件 | 以后换对象存储 |
-| 测试 | Vitest(单元)、Playwright(端到端)、固定样本评测脚本 | 见 `docs/BACKLOG.md` |
-| 质量与 CI | Biome 或 ESLint+Prettier、GitHub Actions | 默认;T0.1 选定后记入 `docs/DECISIONS.md` |
-| 部署 | `pnpm dev`;`docker compose up`(单容器 + 数据卷) | 设置 `APP_PASSWORD`,避免暴露公网时被他人消耗你的 API 额度 |
+| UI | GPUI＋gpui-kit＋gpui-kit-material | Kit facade 导入匹配引擎；全量 Git revision 与 root patches 一起锁定 |
+| 主题 | 词间语义 token | 映射 Material theme；初始化在 Root 首次绘制之前，render 不更新全局主题 |
+| 调度 | Rust FSRS 实现 | 选型、参数／版本转换与跨语言向量在 R00/R02 验证 |
+| 原生存储 | SQLite | SQL迁移、仓储、事务；具体 Rust driver 在 R00 验证后锁定 |
+| 边界校验 | Rust typed DTO＋显式约束 | serde 反序列化不代替范围／跨字段校验 |
+| 网络 | OpenAI兼容 LLM/TTS，transport 接口 | 桌面／WASM transport 分离；超时、取消、计数统一 |
+| 异步 | GPUI task 与后台 executor 桥接 | 阻塞 SQLite／APKG 放后台，UI 线程只更新视图 |
+| 音频 | AudioPlayer＋SystemSpeech ports | 缓存播放、seek／rate capability；浏览器走媒体API |
+| 凭据 | SecretStore | 桌面优先系统凭据存储；浏览器默认会话内，无假定等价安全保证 |
+| 校验工具 | cargo fmt/clippy/test＋UI harness | 命令在 workspace 存在后启用；旧TS检查继续用于旧代码 |
 
-## 2. 目录
+上游 Material 是预发布 Git 依赖，默认 GPUI Fast，但后端选择必须通过消费者最小程序验证。不要把另一版本 `gpui` 直接加入依赖形成不兼容的 Entity/Context 类型。上游要求的 consumer patches 放 workspace 根且来源 revision 一致，不能依赖开发机相邻 checkout。
 
-```
-/
-├─ AGENTS.md                 # agent 工作规则
-├─ docs/specs/               # 每个任务一份 spec: Txx-*.md
-├─ docs/spikes/              # spike 结论: Sx.md
-├─ prompts/                  # 版本化提示词: article.v1.md ...
-├─ fixtures/                 # 测试样本、LLM 录制回放
-├─ spikes/                   # spike 一次性代码,不进入产品
-├─ tools/                    # 评测与报告脚本(eval:generation、report:experiment)
-├─ packages/
-│  ├─ core/                  # 纯逻辑,禁止 IO
-│  │  ├─ lexicon/            # 分词、词形还原、词表
-│  │  ├─ analyzer/           # analyzeText
-│  │  ├─ knowledge/          # KnownModel v0
-│  │  ├─ srs/                # ts-fsrs 封装与队列规则
-│  │  └─ generation/         # 选词与文章生成工作流
-│  ├─ providers/             # LLM / TTS / BlobStore 接口与实现
-│  └─ db/                    # Drizzle schema、迁移、仓储层
-└─ apps/web/                 # Next.js: 页面 + API 路由
-   └─ src/server/
-      ├─ services/           # 编排层:仓储 + providers + core,处理事务与事件
-      └─ import/             # 文件解析(.apkg 解压与读取等需要 IO 的部分)
-```
+## 应用接口
 
-服务层(`apps/web/src/server/services`)是唯一把 `core`、`db`、`providers` 组装在一起的地方。API 路由和 Server Actions 只调用服务层。
+接口名称是领域契约，不是对外稳定 ABI。R01/R03 细化 Rust 签名与异步 trait 策略。
 
-## 3. 边界规则
+| 用例 | 输入／输出关键字段 |
+| --- | --- |
+| query_today / query_stats | ProfileId、now、过滤范围 → 与首页／统计共享的投影 |
+| import_words | operationId、file handle、kind、target → ImportReport |
+| review_preview / rate_card | cardId、expectedRevision、rating、duration → 状态／四档预览 |
+| generate_article | operationId、tier、genre → JobId；订阅 JobState |
+| lookup_word | articleId、bodyHash、UTF-8 range → GlossView＋标记状态 |
+| mark_word / batch_inbox | operationId、action、ids、expected revisions → 实际处理结果 |
+| ensure_audio | operationId、articleId、voice config revision → AudioAsset或错误 |
+| save_settings / save_provider | validated patch、keep/replace/clear secret → 脱敏配置视图 |
+| export_profile / import_legacy | 路径／句柄、版本、检查选项 → 校验与转换报告 |
 
-- `core` 通过接口注入依赖,不直接依赖 db 与 providers 的实现;`core` 内禁止 IO(无 fetch、fs、db)。
-- `web` 只通过仓储层访问数据库。
-- 所有写操作同时写 `events`(复习另写 `review_logs`)。
-- 所有 LLM/TTS 调用必须经 `packages/providers`;测试默认使用 Fake 实现(FakeLLM / FakeTTS / MemoryBlob)。
-- 模型名、音色名、服务商端点只出现在配置(`.env` / 设置)里。
-- `core` 中依赖当前时间或随机数的函数,一律通过参数接收 `now: Date` 与 `rng: () => number`,保证测试可复现。
+所有可重放写命令带 operationId。错误统一为 code、中文 message、可选 fieldErrors、retryable；内部原因在脱敏日志。至少区分 INVALID_INPUT、NO_TARGETS、CONFIG_MISSING、PROVIDER_ERROR、LLM_OUTPUT_INVALID、QUOTA_EXCEEDED、STALE_STATE、NOT_FOUND、STORAGE_UNAVAILABLE、UNSUPPORTED_CAPABILITY、CANCELLED。
 
-## 4. 产品内 AI 是工作流,不是自主 agent
+## 状态、并发与事务
 
-选词、生成、校验、重试都是确定性代码,LLM 只负责写文本和给释义。这样可测试、可控、可计量成本。自主 agent(如 AI 导师)留到后期,届时把 `core` 里的函数作为工具暴露给它。
+- 页面状态是显式 Idle／Loading／Ready／Submitting／Error，长任务另有阶段与 requestId；UI 重绘不能发 IO。
+- 每个 profile 一个写入协调器，仓储 transaction 同时写业务与事件；数据库也有唯一键／版本校验，不能只靠按钮禁用。
+- 网络调用不在写事务内。生成／音频先记录任务与预算，再发请求，再保存结果；关闭窗口后按产品规则中止观察或取消，不自动重试付费请求。
+- 配置保存后新请求取新版本，在途请求保持自己的快照；结果按原 requestId 回送，防止旧响应覆盖新词或新页面。
+- Native Repository 与 Browser Repository 都满足相同 contract tests；WASM 的异步事务不可假装同步 SQL callback。
+- 启动缺少 AI 配置可用本地能力；损坏数据库进入恢复界面，不悄悄换空库。
+
+## 测试与保留资产
+
+原 `packages/core` 的样例用于领域对照；`apps/web/src/server/services` 的业务回归作为应用服务契约参考。测试替身仅在 `cijian-testing`／test feature 内，生产设置没有 fake provider。原 Prompt v1 首先原样嵌入并记录 hash/version；修改版本需评测。
+
+跨端协议先是领域 DTO 和可导出快照，不在首轮增加必须常驻的 Node 服务，也不把本地 SQLite 直接跨设备共享。同步按 [ROADMAP](ROADMAP.md) 的独立门槛推进。

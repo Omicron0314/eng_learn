@@ -1,14 +1,25 @@
-# 词表与词形数据来源
+# 数据、字体、图标与依赖来源
 
-- MVP 不内置或分发任何词书。用户自带 TXT/CSV/apkg 仅在本地导入；未将用户牌组或词表内容公开成 fixtures。
-- `fixtures/wordlist/cases.json`、`fixtures/lemma/probes.json` 为合成/原创测试输入，不代表任何第三方词书。500 行负载用例在测试内生成标识符。
-- 现有 wink-lemmatizer 安装包版本 3.0.4 的 package metadata 标为 MIT；本阶段没有新引入词形表或数据文件。未完成其所有上游数据来源的独立审计，不宣称许可问题全部解决。
-- 项目自身 LICENSE 与 package.json license 字段继续暂缓，本阶段未新增。
+本文件记录来源与待验证范围，不代替项目自身的开源许可证。当前不添加LICENSE或包license声明；公开发布前单独决定项目许可。规划采用某依赖不等于本次已安装／分发该依赖。
 
-## Web 阶段合成样例
+## 保留资产
 
-`fixtures/wordlist/baseline-sample.txt`（189 条常用词）和 `fixtures/eval/targets.json`（30 组）为本次手工编排的原创测试输入，不摘录用户词书、不声称是高中 / 四级词表；仅用于离线工具与合成导入验证。
+- 不内置或分发用户词书。私人TXT/CSV/APKG仅在用户明确选择时本地导入，不复制进fixtures。
+- `fixtures/wordlist/cases.json`、`fixtures/lemma/probes.json`、`fixtures/wordlist/baseline-sample.txt`、`fixtures/eval/targets.json`及`fixtures/analyzer/samples/import-baseline.txt`是旧实现留下的原创／合成验证素材，不宣称是正式四级或高中词书。
+- 旧`wink-lemmatizer`包metadata标MIT；未独立审计其所有上游数据。Rust迁移若更换词形数据，需重新核对来源，不自动继承结论。
+- 历史许可记录见 git 历史（提交 46f499a）。
 
-## 审查修复样例与私有文件
+## 设计与新UI依赖
 
-新增 `fixtures/analyzer/samples/import-baseline.txt` 为原创短文，仅用于合成基线覆盖率链路，不声称为真实四级语料。追加变体/音标规则也是原创合成输入。父审查对用户自带 blank.apkg 只提供大小/笔记数/字段数的私有读取证据；本次未再读取、自动导入或复制其内容，不随仓库分发，不宣称用户文件可再分发。
+| 对象 | 本次可见来源／条款 | 实施要求 |
+| --- | --- | --- |
+| [cijian-m3](cijian-m3.html) | 用户提供设计；内嵌Roboto Flex／Roboto Mono及SIL OFL 1.1声明 | 保留HTML原注释；打包字体另确认完整文件与对应许可 |
+| [neko](neko.html) | 用户提供辅助参考 | 保留原文件；不推定其中所有第三方资源都可直接打包 |
+| [gpui-kit-material](https://github.com/mizorewww/gpui-kit-material) | README称MIT，移植自Apache-2.0的文件保留原声明 | 锁定revision后逐项形成第三方notice清单 |
+| [GPUI Kit](https://github.com/longbridge/gpui-kit) / [GPUI](https://gpui.rs/) | 上游称软件源码Apache-2.0；Kit部分文档文字另有CC BY 4.0说明 | 核对所锁定源码及vendor补丁许可；引用事实与复制文字分开 |
+| Material Symbols | Material README称Apache-2.0，独立图标repo锁revision | 保留原notice，不从网页随意提取未确认资源 |
+| 中文字体fallback | 计划使用系统字体或授权Noto Sans SC | 系统字体不自动复制；如内嵌另选文件并记录license |
+
+上述为公开文档查阅结果，不是全依赖许可证审计。R00/R01锁定后生成依赖与资源清单，发布打包时核对实际包含的字体／图标／音频素材。设计稿只有部分字体字符子集，不应直接当作全语言字体包。
+
+生成文章记录来源、prompt版本与model；用户提供内容保留来源字段，不把“AI生成”当作任何第三方内容许可豁免。备份包可能含用户学习材料，默认留本地。

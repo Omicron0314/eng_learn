@@ -1,86 +1,106 @@
-# 核心功能规格(SPEC-CORE)
+# 核心业务规则
 
-来源:`docs/plan.md` §6。正文里未标记的规格视为“默认”。
+本文件是默认值、算法与统计口径的唯一维护位置。界面见 [UI-SPEC](UI-SPEC.md)，存储见 [DATA_MODEL](DATA_MODEL.md)。这些是 Rust 重构目标；旧 TypeScript 尚未自动同步。
 
-## 1. 复习
+## 1. 设置契约
 
-默认每日新词 20、复习上限 200、目标保持率 0.9(设置可调),使用 ts-fsrs 默认参数,4 档评分(Again / Hard / Good / Easy)。每次评分写 1 条 `review_logs` 和 1 条 `events`。
+设计稿中的数量／日期是样例；下表把可编辑设置明确为新装默认值。文章长度与重试次数采用新设计展示值作为可调整默认，迁移时保留用户已保存值。
 
-## 2. 选词 `selectTargets(userId, n=8)`
+| 键 | 默认 | 合法范围／含义 |
+| --- | --- | --- |
+| level | B1 | A2 / B1 / B2 / C1，仅指导文本风格，不凭等级伪造 KnownSet |
+| dailyNewLimit | 20 | 整数 0–200 |
+| dailyReviewLimit | 200 | 整数 0–2000 |
+| requestRetention | 0.90 | 0.70–0.99 |
+| tier | medium | easy ≥98%；medium 95–98%；hard 90–95% |
+| articleMinWords / articleMaxWords | 220 / 420 | min 100–800；max 100–1000；min≤max |
+| genre | auto | auto / story / dialogue / monologue |
+| targetCount | 8 | 整数 1–12，含对照词 |
+| controlRatio | 0.20 | 0–0.5 |
+| generationMaxRetries | 2 | 整数 0–3，仅覆盖率重写次数 |
+| lookupMode | markOnly | markOnly / autoAdd |
+| ttsDailyCharLimit | 20000 | 整数 0–200000；0 禁新合成 |
+| timezone / dayStartHour | Asia/Shanghai / 4 | IANA 时区；整数 0–23 |
+| playbackRate | 1.0 | 0.75 / 0.9 / 1.0 / 1.1 / 1.25；设备偏好 |
+| theme | system | system / light / dark；设备偏好 |
 
-优先级:① 今天评了 Again/Hard 的词;② 今天新学的词;③ 已到期且可提取率最低的词。排除近 3 天已在文章中出现 ≥3 次的词。候选中随机 20% 标为 `control`:不进入文章,但记录到 `article_targets`,用于验证 H3。
+界面滑块与输入共用校验。设置批量保存原子化，provider 密钥不混进普通设置；未配置 LLM 仍允许启动。默认值变更不回写旧用户设置。
 
-## 3. 分析器 `analyzeText(text, known)`
+## 2. 时间与复习
 
-```ts
-type AnalysisResult = {
-  tokenCount: number;
-  coverage: number;                       // 已知词 token 占比(含目标词)
-  unknownLemmas: { lemma: string; count: number }[];
-  targetOccurrences: Record<string, number>;  // lemma -> 出现次数
-  names: string[];                        // 被判为专有名词而跳过的词
-};
-```
+时间持久化为 UTC Unix 毫秒。学习日由 IANA 时区内的 `dayStartHour:00` 到次日同一边界组成 `[start,end)`，不能简单减 UTC 4 小时；夏令时缺失小时取其后的首个有效时刻，重叠小时取较早时刻。周一为一周开始。更改日界／时区后历史统计按当前设置重新分组，事件原始时刻不变。
 
-规则:小写化;分词时保留缩写(don't);词形还原;跳过数字与专有名词(句中大写词,或 LLM 返回的 `names`);功能词默认已知。覆盖率按 token 计,同时报告按词种(type)的值。
+领域层接收固定 `now`、随机源、ID 源；不自行读系统时间或随机数。FSRS 使用可验证的 Rust 实现，版本与参数锁定，旧调度状态转换在 R00/R02 做样例对照，不自创替代公式。
 
-## 4. 已知词模型 v0(确定性集合)
+队列：到期 learning/relearning → 到期 Review → New；组内 due、创建时间、id 稳定排序。暂停／归档卡不进队列。首次从 New 评分占当天一个新词名额；当天 Review 状态的有效评分占复习次数名额，learning/relearning 不占这两个新增名额。新建卡只进入待学池，不在建卡时消耗新词名额。
 
-已知词 = 用户导入并标为“基线”的词表 ∪ 状态为 Review 且可提取率 ≥0.8 的卡片词 ∪ 用户标记“认识”的词 ∪ 本次目标词。排除:近期被标记“不认识”且之后未复习过的词。概率化模型留到后期。
+四档评分仅在翻面后提交。应用在事务内验证卡版本、due、资格和最新配额，更新完整 FSRS 状态、追加 review_log 和 review 事件；命令重放返回原结果，过期版本拒绝。四档预览与提交使用同一调度参数版本；真实提交时间变化允许重新计算。等待未到期学习步骤与全日完成分开显示。
 
-### 4.1 词表来源
+## 3. 导入、词书与卡片
 
-**默认**:MVP 不内置任何词表,导入时由用户把词表标为“基线(已知)”或“学习词书”。作者本人的设置:基线 = 高中 3500 词,学习词书 = 四级词书。词表文件格式沿用 §9。公开发布前才需要内置词表,届时必须逐个核实许可(NGSL、CEFR-J 等各有条款)并记录到 `docs/licenses.md`,这不属于 MVP。
+支持 UTF-8 CSV `word,meaning,example`（后两列可空）、TXT/CSV 词表、兼容旧版 APKG。词卡和学习词书建卡；基线只进入已知词表。新词书名来自文件 basename 去扩展名，同名同类合并；显式合并必须匹配用途。全局词元与每个本地 profile 的词卡去重；同一张卡可属于多本词书，避免重复学习。
 
-## 5. 文章生成工作流 `generateArticle`
+APKG 识别模型字段名：正面 Front／正面；释义 Back／释义／中文释义／Meaning／Definition／翻译，依次取第一个非空值；无已知字段时回退第一／第二字段，词条原始 key 保留第一字段。去除 HTML；忽略媒体与 Anki 调度，不把笔记等任意中文字段猜作释义。新版不支持格式明确提示兼容导出。
 
-步骤:`selectTargets` → 构建提示词 → LLM(JSON 输出,zod 校验)→ `analyzeText` → 若 `coverage` 低于所选档位下限,带“需避免的词”重试 1 次(重试次数为配置项)→ 落库(articles、article\_targets、analysis\_json、llm\_calls)→ 返回。
+保留原有单词、词形、缩写、短语归一化样例；短语独立计数，不伪装成单词 lemma。词书成员去重和词卡去重分别计数，已存在用户／AI 释义不被空输入覆盖。返回 parsed、wordsAdded、cardsAdded、duplicates、phrases、skipped、errors（行号／原因）；phrases 是解析结果子集，不能把所有指标直接相加。
 
-- 难度档位:轻松 ≥98% / 适中 95–98% / 挑战 90–95%,默认适中。
-- 长度默认 300–400 词(约 2–3 分钟音频);体裁:短故事 / 对话 / 独白。
+不恢复旧的任意文件字节限制；桌面采用流式处理和后台任务。APKG 解压集合仍以 100 MiB 为初始资源保护，并拒绝路径穿越、异常结构与解压炸弹。浏览器资源不足时给出可操作错误。逐行校验可跳过坏行，合法结果在一个事务内提交；数据库错误整批回滚，不得半导入。
 
-提示词骨架(`prompts/article.v1.md`,版本号写入 `articles.prompt_version`):
+删除学习词书先移除该书成员关系；同时属于其他有效词书的卡保留。仅属于被删书的无复习历史卡删除，有历史卡设置 `archived` 且暂停，保留日志；普通取消暂停不能恢复归档。删除基线移除其对 KnownSet 的贡献，不删除被其他对象引用的 lexeme。历史统计不随删书清空。
 
-```
-System: You write short reading/listening texts for English learners.
-Task: Write a {genre} of {minWords}-{maxWords} words for a learner at CEFR {level}.
-Target words: {targets}
-Rules:
-- Use each target word at least twice, in contexts that make its meaning inferable.
-- Apart from the target words, use only common, high-frequency vocabulary.
-- {avoidWords ? "Do NOT use these words: " + avoidWords : ""}
-- Natural spoken-style sentences; no lists of words; no explanations.
-Output JSON only: {"title": string, "body": string, "names": string[]}
-```
+## 4. 分析与已知词
 
-### 5.1 LLM 调用约定(已定)
+分词保留 don't 等缩写与原文位置，归一到 lemma；跳过数字、可验证的专有名词（保留现有启发式与 names 输入的误差说明），常用功能词默认已知。Rust 对外正文位置使用 UTF-8 字节区间，Web／旧 JS 的 UTF-16 位置必须通过转换，不能混用。
 
-- 走 OpenAI 兼容接口。`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 全部来自环境变量;代码、提示词、测试和文档里不出现具体模型名,`.env.example` 只放占位符。当前由作者在 `.env` 里填 DeepSeek 的取值。
-- 启动时检查这三个变量,缺失则给出明确报错,不使用任何默认模型。
-- 更换模型只改 `.env`,不改代码。每次调用的模型名记入 `llm_calls.model` 与 `articles.model`;评测脚本按当前配置运行,并把模型名写进结果。
-- TTS 同理:服务商、模型、音色全部来自配置,不写进代码。
-- 结构化输出:先尝试 JSON 模式,不支持或失败时退回提示词约束。无论哪种,输出都必须过 zod 校验;校验失败用“修复提示”重试 1 次,仍失败则返回明确错误并记入 `llm_calls`。各家对 JSON 严格度不同,不能假设输出总是合规。
-- 文章生成优先选便宜快速的非推理型号,推理型号只留给评测或复杂校验;具体型号由作者在 `.env` 里选。
-- 提示词骨架里的 `{level}` 取自设置项,作者的默认值为“B1(约中国大学英语四级水平)”。
+KnownSet = 基线词 ∪ Review 且当前可提取率≥0.8的非归档卡词 ∪ 最近明确标记认识词 ∪ 本次 exposed 词。最近标记不认识且之后没有复习的词优先排除；control 不因入选而自动视为已知。停用卡本身不等于忘记，但归档卡不自动贡献卡片推断。
 
-## 6. 点词交互
+coverage = 已知有效 token / 全部有效 token；同时输出 type coverage、未知 lemma 次数、目标实际次数、排除 names、分析器版本。零有效 token 返回不可计算，不除零。生成时的分析快照不随用户后来学习改变，重分析另存版本。
 
-点击正文任意词,弹层显示:词形还原后的词、发音、“在本句中的释义”(LLM 生成,缓存到 `gloss_cache`),以及三个按钮:**认识 / 标记不认识 / 加入复习**。
+## 5. 选词与生成
 
-设置项 `lookupMode`:`markOnly`(默认:只记录并进入 inbox,不建卡)、`autoAdd`(直接建卡)。加入复习的卡片计入每日新词上限;`/inbox` 页可批量加入或忽略。
+候选优先级：今天 Again/Hard → 今天首次学的新词 → 已到期且可提取率低的词；词元去重，排除近三个学习日累计出现≥3次的词。抽取最多 targetCount；以注入随机源分配 `floor(n × controlRatio)` 个 control，至少留一个 exposed。无候选返回 NO_TARGETS，不能暗中使用演示词。
 
-## 7. 听力
+auto 体裁按最近成功生成在 story→dialogue→monologue 循环；显式选择不改变轮换游标。一次生成固定候选、分组、KnownSet、设置与 provider 配置版本，重试不重新抽样。
 
-文章页一键生成音频(整篇一条,按文本哈希缓存,相同文本不重复合成)。播放器:变速(0.75–1.25)、先听后看(正文默认折叠)、听完提示难度反馈。逐句重复与听写留到后续版本。成本护栏:每日 TTS 字符数上限(设置项)。
+流程：选词 → 构建版本化提示 → 一次模型输出 → 结构验证 → 分析 → 覆盖率低于档位下限时重写 → 保存。每次输出结构非法最多修复一次，修复仍非法则结束本次请求。外层最多 `1 + generationMaxRetries` 个候选，因此底层调用硬上限 `2 × (1 + generationMaxRetries)`；SDK 隐式重试关闭。JSON 能力降级也必须占用已定义调用预算，不能另起无限回退。
 
-TTS 服务商(待定):不做盲听选型,到 M5 时由作者直接指定一家接入;服务商、模型、音色全部走配置。
+control 不进任何提示、修复或避词列表。每个 exposed 目标要求在自然语境使用至少两次；缺失／不足与 control 偶然出现全部记录。结构合法但长度、覆盖率或出现次数不达预期，最终可保存并标注诊断；不把它伪装成达标。超过覆盖率上限只显示更容易，不为提高难度额外请求。所有真实底层调用含错误都进 llm_calls。
 
-## 8. 度量
+同一命令并发去重，联网期间不持有数据库事务。取消或重启不自动再次付费调用；已送出的请求可能已计费，记录 interrupted／unknown，用户决定重试。配置保存不触发模型调用。
 
-- 难度反馈(太难 / 刚好 / 太简单)和“不自然”标记写入 `events`。
-- `pnpm report:experiment` 输出 exposed 与 control 两组的 Again 率和样本量。
-- `/stats` 展示:今日与本周新学、复习数量,已学词列表,文章覆盖率趋势。
+## 6. 点词与生词箱
 
-## 9. 导入
+词命中由 articleId＋bodyHash＋range 推导真实词和所在句，拒绝伪造或过期位置。先追加 lookup，即使释义失败也保留标记入口。释义缓存按 profile、lemma、上下文 hash、promptVersion、provider 配置指纹区分；快速切词用请求 ID 丢弃过时 UI 响应，后台成功结果仍可入缓存。
 
-CSV(列:word,meaning,example,后两列可选)。.apkg:解压并读取笔记字段,前两个字段映射为正面/背面,去 HTML,忽略媒体与调度数据;若检测到新版压缩格式,提示用户导出时选择兼容旧版(是否可行由 spike S2 确认)。缺释义的词在首次展示时由 LLM 生成简明释义并缓存,用户可编辑,来源标记为 AI 生成。
+认识：更新 mark，追加事件；不自动删除学习卡。不认识：markOnly 建立／复用同词 pending inbox；autoAdd 幂等建卡并处理相关 pending 项。显式加入复习不受 lookupMode 影响。已暂停卡返回 paused 状态并提供显式恢复，归档卡不自动复活。同词再次从已忽略状态出现可新建 pending 项，保留新上下文与历史。
+
+批量整理全成或全败；成功加入不会重置已有 FSRS 状态，不覆盖用户释义。每项有可追踪事件，计数来自实际处理结果。
+
+## 7. 音频与预算
+
+远端合成经 provider，缓存 key 包含 profile、规范化文本 hash、provider／endpoint 指纹、model、voice、格式及影响声音的参数；密钥本身不进 key。不同声音不能错误复用旧缓存，换密钥但声音不变不必强制失效。
+
+查到可用缓存先返回，不扣额度。新合成在独立事务中原子预留全文 Unicode 字符数，再发网络请求；跨窗口共享数据库锁和幂等键。不确定失败、部分合成、文件写失败不退预留；UI 说明这是保守用量，不是供应商账单。cache 记录与音频生成事件原子提交，blob 先写临时文件再替换；崩溃孤儿文件可清理。
+
+本机朗读通过 capability 检查，不产生远端字符预留；不保证每台设备有英语 voice 或完整暂停／seek 支持。速度持久化，切模式不并行播放两路声音，切文章停止旧声音。完成事件以一次播放会话去重，自然 ended 才记录，手动 stop 不算。
+
+## 8. 完成、反馈与统计
+
+阅读完成由明确按钮或正文末尾可见且有实际阅读交互触发，每个阅读会话最多一次；重复渲染不产生新的打开／完成。阅读／听力反馈各取每篇最后一次（太难／刚好／太简单），保留事件历史。不自然反馈存 bodyHash、句子区间和可选备注，避免分句算法升级错位。
+
+统计页固定显示今日／本周计数；阅读完成率与反馈默认取截至now的累计数据，近7天指标单独标注。查询接口的可选范围用于报告／后续筛选，当前画板没有全局日期筛选器，不能暗中套用不同窗口。
+
+| 指标 | 口径 |
+| --- | --- |
+| 今日／本周新学 | review_logs 中 state_before=New 的去重卡数 |
+| 今日／本周复习 | state_before≠New 的有效评分次数（包括学习／重新学习；与 Review 队列限额区别） |
+| 阅读完成率 | 所选时间内打开的去重文章中、截至统计时已完成的文章数／打开文章数 |
+| 刚好比例 | 所选时间内最新反馈条目中 just_right／有反馈条目；阅读与听力可分别查看，合计以 article×mode 为单位 |
+| 覆盖率趋势 | 每篇生成时快照；标明各篇档位，不能把所有文章都画成同一目标带 |
+| 未知词占比中位数 | 有效文章的 1−coverage，中位数，分别报告近7学习日／全部 |
+| 已学词 | 至少有一次有效评分的去重 lemma；保留归档历史标识，预测不等于掌握认证 |
+| 活跃／热力图 | 有效评分次数＋当日每篇首次阅读完成＋当日每篇首次音频完成；打开／查词／保存设置不计 |
+
+热力图为含本周在内的 13 个自然周×7天，未来格禁用；阈值 0、1–13、14–26、27–39、≥40。跨视图共享同一聚合服务。无分母返回 null，显示暂无数据。
+
+对照实验按每个 article×lexeme 观察：文章生成后 7×24小时内首次有效复习是否 Again。有效出现组要求 occurrences>0，有效对照组要求 occurrences=0；不满足者单列排除计数。各组给出已复习样本、Again 数、未复习数和比例；差值以百分点显示。一个词可有多个观察，后续文章可能污染组别，因此不作因果结论；第二次评分不替换首次结果。旧版生成时入组规则单列 legacy 统计，不能混算。

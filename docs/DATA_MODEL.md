@@ -1,63 +1,86 @@
-# 数据模型(DATA_MODEL)
+# 数据模型与事件契约
 
-来源:`docs/plan.md` §5。schema 迁移属于人工必审项;不得修改已合并的迁移。
+这是新 Rust 存储的逻辑模型，**尚未创建新迁移**。旧实物 schema 在 `packages/db/src/schema.ts`，不可通过改写旧迁移达到新结构。转换见 [MIGRATION](MIGRATION.md)。Native SQLite 与浏览器仓储共用业务约束，不要求物理实现完全相同。
 
-## 1. 表结构
+## 身份与通用规则
 
-```
-users(id, created_at)                        -- MVP 只有一行,但所有表都带 user_id
-lexemes(id, lemma, pos, UNIQUE(lemma,pos))   -- 词的统一标识,与词库解耦
-cards(id, user_id, lexeme_id, front, back_json, deck, suspended,
-      due, stability, difficulty, state, reps, lapses, last_review, updated_at)
-review_logs(id, user_id, card_id, rating, state_before, due_before,
-            reviewed_at, duration_ms)        -- 只追加,永不修改
-events(id, user_id, type, payload_json, ts) -- 只追加
-   -- type: lookup | mark_unknown | mark_known | add_to_review | article_open
-   --       | audio_play | difficulty_feedback | unnatural_flag ...
-articles(id, user_id, kind, title, body, genre, level_tier, prompt_version,
-         model, source, license, analysis_json, created_at)
-article_targets(article_id, lexeme_id, role, occurrences)  -- role: exposed | control
-audios(id, article_id, provider, voice, blob_key, duration_s, text_hash)
-inbox(id, user_id, lexeme_id, context_sentence, article_id, status, created_at)
-gloss_cache(lexeme_id, context_hash, gloss_json)           -- 语境释义缓存
-llm_calls(id, user_id, purpose, provider, model, tokens_in, tokens_out,
-          cost_usd, latency_ms, ts)          -- 成本与调试;SaaS 阶段直接复用
-```
+本地 profile 不是云账号。新对象用 UUIDv7；导入的合法旧 ID 原样保留，不为整齐重新编号。Profile 拥有的数据显式带 profile_id；引用必须同属一个 profile。UTC时间用毫秒，业务日期从设置推导。
 
-## 2. 为 SaaS 预留的低成本约定
+可变对象有 created_at、updated_at、revision；append-only 日志只有记录时间与版本，不虚设 updated_at。写命令带 operation_id，唯一约束保证重放不重复。默认外键 RESTRICT，不级联删除复习历史。
 
-- id 用 UUIDv7。
-- 所有表有 `user_id` 与 `updated_at`。
-- `events` 和 `review_logs` 只追加。
-- 文章记录来源与许可字段(`articles.source`、`articles.license`)。
+## 逻辑实体
 
-## 3. 补充(已确认,T0.2 实施)
+| 实体 | 关键字段与约束 |
+| --- | --- |
+| profiles | id、名称、created_at、updated_at；首轮本地一份，恢复可建新profile |
+| devices | id、profile_id、platform；设备身份，不等于同步已实现 |
+| settings | profile_id PK、schema_version、json、revision；仅学习／实验设置 |
+| device_preferences | profile_id＋device_id PK、theme、playback_rate、窗口／阅读偏好 |
+| provider_configs | id、profile_id、kind、endpoint、model、voice?、secret_ref?、revision；无明文key |
+| lexemes | id、lemma、pos（非NULL，未知为''）、kind word/phrase；UNIQUE(lemma,pos,kind) |
+| word_books | id、profile_id、name、kind baseline/study、source、archived_at?；有效同名同类唯一 |
+| book_entries | id、profile_id、book_id、lexeme_id、raw、import_id?；UNIQUE(book_id,lexeme_id) |
+| cards | id、profile_id、lexeme_id、front、meaning、example、text_source、origin、suspended、archived_at?、FSRS完整状态、scheduler_version、revision；UNIQUE(profile_id,lexeme_id) |
+| review_logs | id、profile_id、card_id、operation_id、rating、state_before/after、due_before/after、scheduler_version、reviewed_at、duration_ms、旧记录metadata；append-only |
+| events | id、profile_id、device_id?、operation_id、ordinal、type、schema_version、payload_json、occurred_at；UNIQUE(profile_id,operation_id,ordinal)；append-only |
+| command_receipts | profile_id＋operation_id PK、command_type、result_json、completed_at；与业务写同事务 |
+| imports | id、profile_id、source_name、format、kind、report_json、source_hash、created_at；不默认保存整份私有源文件 |
+| articles | id、profile_id、title、body、body_hash、genre、tier、prompt_version、model、provider_fingerprint、source、license?、analysis_json、analyzer_version、experiment_version、created_at |
+| article_targets | article_id＋lexeme_id PK、profile_id、role exposed/control、occurrences、selection_reason |
+| reading_sessions | id、profile_id、article_id、opened_at、completed_at?、position；用于恢复和事件去重 |
+| lexeme_marks | profile_id＋lexeme_id PK、status known/unknown、marked_at、revision；历史在events |
+| inbox | id、profile_id、lexeme_id、article_id?、body_hash?、context_sentence、range?、status pending/added/ignored、revision；每profile×lexeme至多一个pending |
+| gloss_cache | profile_id＋lexeme_id＋context_hash＋prompt_version＋provider_fingerprint联合key、gloss_json、created_at；可清理 |
+| audio_assets | id、profile_id、cache_key UNIQUE、text_hash、provider_fingerprint、model、voice、format、blob_key、duration?、chars、created_at |
+| article_audio_links | profile_id、article_id、audio_id；同音频可被多个相同正文文章引用 |
+| audio_reservations | id、profile_id、operation_id UNIQUE、article_id、chars、reserved_at、outcome；预留金额不因失败回退 |
+| audio_sessions | id、profile_id、article_id、audio_id?、source remote/system/browser、started_at、completed_at?、rate；完成去重 |
+| llm_calls | id、profile_id、job_id?、purpose、provider、model、prompt_version、tokens_in/out?、cost_usd?、latency_ms、status、sanitized_error?、ts |
+| jobs | id、profile_id、operation_id UNIQUE、kind、phase、config_revision、status、result_ref?、error?、timestamps；重启将未完成任务标interrupted，不自动付费重试 |
+| migrations / legacy_imports | schema版本／checksum；源库fingerprint、映射版本、报告hash、目标profile、完成时间，防止重复迁入 |
 
-plan §5 的草案缺了几处功能需要的存储,且“所有表有 `user_id` 与 `updated_at`”与草案本身不一致。以下补充已由作者确认(2026-10-11),由 T0.2 写入首个迁移。
+FSRS 状态含 state、due、stability、difficulty、reps、lapses、last_review、elapsed_days、scheduled_days、learning_steps 等锁定版本所需字段。升级算法不能只保留 due；无法转换的状态报告阻塞，不全量重置词卡。
 
-**新增表**
+卡片不再用 deck 字符串作为唯一归属；成员从 book_entries 关联同词的卡，允许多书共享一张卡。删除一书不伤及其他书的卡；仅保留历史的卡显式归档，不混在普通暂停卡中。
 
-```
-word_lists(id, user_id, name, kind, source_file, created_at, updated_at)
-   -- kind: baseline | study;baseline 词不建卡,study 词书走卡片导入
-word_list_items(id, list_id, user_id, lexeme_id, raw, created_at,
-                UNIQUE(list_id, lexeme_id))
-lexeme_marks(user_id, lexeme_id, status, marked_at, updated_at,
-             PRIMARY KEY(user_id, lexeme_id))
-   -- status: known | unknown;最新一次“认识 / 不认识”标记的当前状态,历史在 events
-settings(user_id PRIMARY KEY, json, updated_at)
-   -- 一行一个用户,json 经 zod 校验并带默认值
-```
+## 事件目录
 
-**对草案的调整**
+payload 中只放必要业务标识与摘要，不放凭据。导入与备份可单个事件记汇总；批处理逐项事件使用同一 operation_id 与不同 ordinal。
 
-- `lexemes.pos`:`NOT NULL DEFAULT ''`,避免 SQLite 中 NULL 绕过唯一约束。`lexemes` 是全局词标识,不带 `user_id`。
-- `cards` 补齐 ts-fsrs `Card` 的全部字段(以 T0.1 锁定的 ts-fsrs 版本为准,如 `scheduled_days`、`learning_steps`),并增加 `origin`(`import` | `lookup` | `inbox` | `autoAdd`)与 `created_at`;`UNIQUE(user_id, lexeme_id)`,一个词只有一张卡。
-- `llm_calls` 增加 `status`(`ok` | `invalid_output` | `error`)与 `error`(TEXT,可空),失败调用也要落库。
-- `audios` 增加 `chars`、`created_at`,用于每日 TTS 字符上限统计;`text_hash` 唯一。
-- `gloss_cache` 为全局缓存,不带 `user_id`;增加 `created_at`;主键 `(lexeme_id, context_hash)`。
-- `user_id` 规则:用户拥有的数据都带 `user_id`(cards、review_logs、events、articles、inbox、llm_calls、word_lists、word_list_items、lexeme_marks、settings);从属于文章的表(article_targets、audios)通过 `article_id` 归属,不重复存 `user_id`;全局表(lexemes、gloss_cache)不带。
-- `updated_at` 规则:可变表带 `updated_at`(users、cards、articles、inbox、word_lists、lexeme_marks、settings);只追加表与缓存表不带。
-- 时间统一存 Unix 毫秒整数;JSON 列存 TEXT,读写时经 zod 校验。
+| 事件 | 关键payload |
+| --- | --- |
+| import_complete | importId、bookId、各计数、sourceHash |
+| review | cardId、rating、before/after摘要、schedulerVersion |
+| card_edit / card_suspend | cardId、changedFields或suspended |
+| book_delete | bookId、removedEntries、deletedCards、archivedCards、sharedCards |
+| settings_update / provider_update | changedKeys、configRevision；密钥仅“是否变更” |
+| article_generate | articleId、attempts、coverage、belowTier、诊断摘要 |
+| article_open / article_complete | articleId、sessionId、via |
+| lookup | articleId?、lexemeId、bodyHash、range、cacheHit、status |
+| mark_known / mark_unknown | lexemeId、articleId?、inboxId?、cardId? |
+| add_to_review / inbox_ignore | lexemeId、inboxId?、cardId?、created、source |
+| audio_reserve / audio_generate | reservationId、articleId、chars；成功另含audioId |
+| audio_play / audio_complete | articleId、sessionId、source、rate |
+| difficulty_feedback | articleId、mode reading/listening、value |
+| unnatural_flag | articleId、bodyHash、句子区间数组、note? |
+| legacy_import / backup_restore | sourceFingerprint、mappingVersion、summary；无key、无私有全文 |
 
-**事件类型**:完整清单与 payload 定义见 `docs/specs/README.md`。
+历史 Web event 保留原始 schema_version 与 payload，不强行解析成最新结构；新聚合显式处理 legacy 类型。旧 `via=server` 映射为remote，`browser`保持原义；没有 audio_complete 的历史不凭 audio_play 补造完成。
+
+## 事务边界
+
+1. 评分：校验版本／资格 → 更新卡 → review_log → event → receipt，任何失败全部回滚。
+2. 导入：先解析校验 → 建词／书／成员／卡 → import报告 → event／receipt，数据库错误整批回滚。
+3. 标记／批量：marks、inbox、cards、events、receipt同事务，不能先显示成功再补事件。
+4. 生成：job先记录，网络与日志独立；文章、targets、generate event、成功receipt最后原子提交。
+5. 音频：reservations＋audio_reserve先独立原子提交；网络和blob IO在事务外；asset、link、audio_generate与成功receipt再提交。
+
+llm_calls、缓存、可恢复的job进度、读取位置及投影更新无需递归生成事件；业务状态变更必须有事件。事件本身不可更新。存储层按 operation_id 识别既有预留，避免重启后二次扣同一请求额度。
+
+## 索引、兼容与恢复
+
+原生至少索引 cards(profile,archived,suspended,due)、review_logs(profile,time)/card、events(profile,type,time)、articles(profile,created)、inbox(profile,status)、book_entries(book,lexeme)、audio_reservations(profile,time)。大列表用分页／游标，统计投影可重建，不能成为唯一数据。
+
+secret_ref 指向系统凭据；无法保存时只允许会话内配置并说明重启后失效。学习备份默认排除密钥、可重建释义缓存与未完成job；音频可选且每blob有checksum。文章、评分、标记和inbox不能因清缓存丢失。
+
+旧DB只读转换到新库，未知列／事件保留在migration metadata或原始归档，不静默丢弃。含明文provider配置的旧库不是可公开的fixture；迁移后旧备份仍敏感，由用户决定保存位置与处置，工具不自动删除源文件。

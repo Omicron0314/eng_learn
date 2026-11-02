@@ -1,105 +1,25 @@
-# Spec 共用约定
+# 当前任务规格
 
-所有 `docs/specs/*.md` 默认遵守本文件。单个 spec 与本文件冲突时,以单个 spec 为准,并在 spec 中写明原因。
+R00–R21是GPUI重构任务；任务清单、依赖与状态只维护在 [BACKLOG](../BACKLOG.md)。旧T0–T6与S1–S4规格见 git 历史（提交 46f499a），不作为当前实施任务。
 
-## 1. 文件与模板
+## 共用契约
 
-- 文件名:`<任务ID>-<英文短名>.md`,如 `T1.2-fsrs-queue.md`、`S1-lemmatizer.md`。
-- 章节固定为:目标、范围与非范围、接口、验收标准、测试计划、依赖与风险。
-- 验收标准编号 `AC1`、`AC2`…,每条都要能对应到至少一个自动化测试;测试名里带上编号,如 `it("AC3: ...")`。
-- spike 的 spec 也放在这里;spike 结论写入 `docs/spikes/Sx.md`,一次性代码放 `spikes/Sx/`。
+1. 实施前读 [plan](../plan.md) 与本任务规格；UI按 [UI-SPEC](../UI-SPEC.md)，业务默认按 [SPEC-CORE](../SPEC-CORE.md)，存储按 [DATA_MODEL](../DATA_MODEL.md)。
+2. spec列目标／接口契约、设计追踪、编号AC、验证与风险。类型名是规划接口，实施时固化Rust签名，不把伪签名当现有API。
+3. 参数、文件、设置与模型输出均显式校验；serde成功不代表业务有效。错误不泄漏密钥或内部堆栈。
+4. 可变业务用operationId＋revision保证重放与竞争正确。业务写和events在同一事务，复习另写review_logs；日志／缓存例外只按DATA_MODEL。
+5. now、rng、ID source注入；正文区间是UTF-8字节，旧JS UTF-16必须转换。平台异步／句柄不流入domain。
+6. 测试默认原创fixtures、固定时间、本地协议stub和test-only doubles，不访问私人数据与真实付费provider。
+7. 行为测试优先验证用户结果和事务／失败路径；视觉和平台AC需要实际运行证据，不能只检查组件树名称。
 
-## 2. 代码位置
+## 开发与交付
 
-| 内容 | 位置 |
-| --- | --- |
-| 纯逻辑 | `packages/core/src/<module>/` |
-| 接口与实现(LLM / TTS / Blob) | `packages/providers/src/` |
-| schema、迁移、仓储 | `packages/db/src/` |
-| 编排(事务、事件、调用 provider) | `apps/web/src/server/services/` |
-| 依赖装配 | `apps/web/src/server/deps.ts`:`createAppDeps(env)` 返回 `AppDeps` |
-| 页面 | `apps/web/src/app/` |
-| 单元测试 | 与源码同目录 `*.test.ts` |
-| 端到端测试 | `apps/web/e2e/*.spec.ts` |
+新增逻辑先写可失败的合同测试；纯文档／可逆样式变更做相应检查，不堆实现镜像测试。实现规格需要补充精确接口时，与代码同次更新并说明决策；不删AC以适配未完成代码。
 
-服务函数统一形如 `fn(deps: AppDeps, input)`。`AppDeps` 至少包含:`repos`、`llm`、`tts`、`blobs`、`clock: () => Date`、`rng: () => number`、`settings`(读取当前设置)。
+每个任务完成记录：修改范围、AC→证据、验证命令／结果、平台／工具链、剩余限制。测试名可标Rxx-ACn，视觉场景使用稳定业务名称。已存在旧实现的通过证据不能计作新实现验收。
 
-## 3. 时间、日界与随机数
+当前授权是重写规划文档；后续编码任务在实际启动时按用户范围执行。常规实施选择由证据与当前规格推进，不沿用旧文档“每三份spec停下审批”的流程。真实付费调用、密钥迁移、公开发布和不可逆数据操作仍需匹配明确授权。
 
-- 数据库里的时间一律存 Unix 毫秒整数。
-- “今天”按设置项 `timezone`(默认 `Asia/Shanghai`)和 `dayStartHour`(默认 4,与 Anki 一致)计算,由 `packages/core/src/time` 的 `dayRange(now, { timezone, dayStartHour })` 给出 `[start, end)`。
-- `core` 不调用 `Date.now()` 或 `Math.random()`,一律由参数传入 `now` 与 `rng`。测试用固定时间和带种子的 rng。
+## 目录与维护
 
-## 4. 设置项与默认值
-
-由 T0.2 的 `settings` 表存储,`SettingsSchema`(zod)提供默认值;T1.5 提供编辑页面。
-
-| 键 | 默认 | 说明 |
-| --- | --- | --- |
-| `level` | `B1` | 提示词中的 CEFR 等级;界面显示“B1(约中国大学英语四级水平)” |
-| `dailyNewLimit` | 20 | 每日新词上限(含点词加入的卡片) |
-| `dailyReviewLimit` | 200 | 每日复习上限 |
-| `requestRetention` | 0.9 | FSRS 目标保持率 |
-| `tier` | `medium` | `easy`(≥98%)/ `medium`(95–98%)/ `hard`(90–95%) |
-| `articleMinWords` / `articleMaxWords` | 300 / 400 | 文章长度 |
-| `targetCount` | 8 | 每篇目标词总数(含 control) |
-| `controlRatio` | 0.2 | control 占比 |
-| `generationMaxRetries` | 1 | coverage 不足时的重试次数 |
-| `lookupMode` | `markOnly` | `markOnly` / `autoAdd` |
-| `ttsDailyCharLimit` | 20000 | 每日 TTS 合成字符上限 |
-| `timezone` | `Asia/Shanghai` | 日界计算 |
-| `dayStartHour` | 4 | 日界小时 |
-
-## 5. 环境变量
-
-`.env.example` 只放占位符,不出现任何具体模型名或音色名。
-
-| 变量 | 必填 | 说明 |
-| --- | --- | --- |
-| `DATABASE_PATH` | 否,默认 `./data/app.sqlite` | SQLite 文件 |
-| `BLOB_DIR` | 否,默认 `./data/blobs` | 本地文件存储 |
-| `APP_PASSWORD` | 否 | 设置后整站需要密码 |
-| `APP_ORIGIN` | 反向代理须设置 | 公开 http/https origin，无账号/路径/查询；启动校验，HTTPS 启用 Secure cookie；不信任 forwarded headers |
-| `LLM_PROVIDER` | 否,默认 `openai-compatible` | `openai-compatible` 或 `fake`(测试 / e2e) |
-| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | `openai-compatible` 时必填 | 缺失时启动报错,不用任何默认值 |
-| `LLM_PRICE_INPUT_PER_MTOK` / `LLM_PRICE_OUTPUT_PER_MTOK` | 否 | 每百万 token 美元单价,用于计算 `llm_calls.cost_usd`;未配置时记为 NULL |
-| `TTS_PROVIDER` | 否,默认 `none` | `none`(前端用浏览器 SpeechSynthesis)、`fake`、`openai-compatible`（已授权，见 MVP-EXECUTION） |
-| `TTS_BASE_URL` / `TTS_API_KEY` / `TTS_MODEL` / `TTS_VOICE` | 视服务商 | 全部走配置 |
-| `EVAL_MAX_COST_USD` | 否,默认 1 | `pnpm eval:generation` 的费用上限 |
-
-## 6. 事件类型
-
-所有写操作在同一事务里写一条 `events`。例外:`llm_calls`(本身就是日志)和 `gloss_cache`(缓存)的写入不需要事件。事件类型与 payload 用 zod 定义在 `packages/db/src/events.ts`(T1.4 完成类型化)。
-
-| type | payload | 产生方 |
-| --- | --- | --- |
-| `review` | `{ cardId, rating, stateBefore, stateAfter, dueBefore, dueAfter, durationMs }` | T1.2 |
-| `import` | `{ source: "csv" \| "apkg" \| "txt", fileName, kind: "cards" \| "baseline" \| "study", deck?, listId?, added, skipped, duplicates }` | T1.1、T2.2 |
-| `card_edit` | `{ cardId, fields: string[] }` | T1.3 |
-| `card_suspend` | `{ cardId, suspended }` | T1.3 |
-| `settings_update` | `{ changed: string[] }` | T1.5 |
-| `article_generate` | `{ articleId, attempts, coverage, belowTier, missingTargets: string[] }` | T3.2 |
-| `article_open` | `{ articleId }` | T3.3 |
-| `article_complete` | `{ articleId, via: "button" \| "scroll", openId? }`（可选 openId 用于一次打开内的服务端去重） | T3.3 |
-| `lookup` | `{ lexemeId, lemma, surface, sentence, articleId?, cacheHit }` | T4.1 |
-| `mark_known` | `{ lexemeId, articleId? }` | T4.2 |
-| `mark_unknown` | `{ lexemeId, articleId?, inboxId?, cardId? }` | T4.2 |
-| `add_to_review` | `{ lexemeId, cardId, from: "lookup" \| "inbox" \| "autoAdd", articleId? }` | T4.2、T4.3 |
-| `inbox_ignore` | `{ inboxId, lexemeId }` | T4.3 |
-| `audio_reserve` | `{ articleId, chars }`（调用前独立提交、失败不退款） | T5.3 |
-| `audio_generate` | `{ articleId, audioId, chars, reservationId? }`（兼容旧记录） | T5.1 |
-| `audio_play` | `{ articleId, rate, via: "server" \| "browser" }` | T5.2 |
-| `difficulty_feedback` | `{ articleId, value: "too_hard" \| "just_right" \| "too_easy", after: "reading" \| "listening" }` | T6.1 |
-| `unnatural_flag` | `{ articleId, sentenceIndex?, note? }` | T6.1 |
-
-## 7. API 与错误
-
-- API 路由入参用 zod 校验,失败返回 400。
-- 错误统一为 `{ "error": { "code": string, "message": string } }`。
-- 已知错误码:`VALIDATION_FAILED`(400)、`NO_TARGETS`(400)、`APKG_UNSUPPORTED_FORMAT`(400)、`UNAUTHORIZED`(401)、`NOT_FOUND`(404)、`PAYLOAD_TOO_LARGE`(413)、`TTS_DAILY_LIMIT_EXCEEDED`(429)、`CONFIG_MISSING`(500)、`LLM_OUTPUT_INVALID`(502)、`PROVIDER_ERROR`(502)。
-
-## 8. 测试约定
-
-- 单元测试不访问网络、不读写真实文件;需要数据库的测试用 `:memory:` SQLite 并跑完全部迁移。
-- 端到端测试用 `LLM_PROVIDER=fake`、`TTS_PROVIDER=fake` 和临时数据库启动应用。
-- 真实 LLM / TTS 调用只出现在手动脚本里(`pnpm eval:generation`),运行前须经人确认。
+每个任务文件名为`Rxx-英文短名.md`。spike结果归 [spikes](../spikes/README.md)，任务状态不在多个文件重复维护。新需求先记录范围和依赖；同步、账号、听写等不隐藏在现有任务内。
