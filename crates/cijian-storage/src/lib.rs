@@ -32,6 +32,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0002_generation_snapshots.sql"),
     include_str!("../migrations/0003_device_preferences.sql"),
     include_str!("../migrations/0004_legacy_records.sql"),
+    include_str!("../migrations/0005_reading_position_revisions.sql"),
 ];
 fn unavailable(_: impl std::fmt::Display) -> AppError {
     AppError::new(ErrorCode::StorageUnavailable, "本地数据库操作失败")
