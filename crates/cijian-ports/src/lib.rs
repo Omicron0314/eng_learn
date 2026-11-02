@@ -1,5 +1,6 @@
 //! IO contracts. Platform resources stay behind these interfaces.
 pub mod articles;
+pub mod audio;
 pub mod inbox;
 pub mod library;
 pub mod provider;

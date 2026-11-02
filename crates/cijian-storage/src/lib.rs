@@ -1,6 +1,7 @@
 //! Native SQLite adapter. Its synchronous transaction stays inside the adapter;
 //! callers execute native IO on a background worker, never in GPUI render.
 mod articles;
+mod audio;
 mod calls;
 mod inbox;
 mod library;

@@ -1,5 +1,6 @@
 //! Pure learning rules; all time and randomness supplied by callers.
 pub mod analysis;
+pub mod audio;
 pub mod gloss;
 pub mod import;
 pub mod knowledge;
