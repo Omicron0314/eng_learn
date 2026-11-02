@@ -196,6 +196,14 @@ pub enum Response {
     Completed,
     FeedbackSaved,
     InboxProcessed(cijian_ports::inbox::BatchResult),
+    LearningSettingsSaved {
+        value: cijian_domain::settings::Settings,
+        revision: u64,
+    },
+    ProviderSaved {
+        config: cijian_domain::provider::ProviderConfig,
+        has_key: bool,
+    },
     Settings {
         value: cijian_domain::settings::Settings,
         revision: u64,

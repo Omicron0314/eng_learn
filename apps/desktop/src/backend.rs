@@ -341,12 +341,14 @@ impl DesktopBackend {
                 revision,
                 operation,
             } => {
-                let value = value
-                    .try_into()
-                    .map_err(|e: cijian_domain::ValidationError| {
-                        AppError::new(ErrorCode::InvalidInput, e.to_string())
-                    })?;
-                self.store.update_settings(SaveSettings {
+                let value: cijian_domain::settings::ValidatedSettings =
+                    value
+                        .try_into()
+                        .map_err(|e: cijian_domain::ValidationError| {
+                            AppError::new(ErrorCode::InvalidInput, e.to_string())
+                        })?;
+                let saved = value.get().clone();
+                let revision = self.store.update_settings(SaveSettings {
                     profile_id: self.profile.clone(),
                     operation_id: operation,
                     event_id: id(),
@@ -354,7 +356,10 @@ impl DesktopBackend {
                     now: now(),
                     value,
                 })?;
-                self.settings_response()
+                Ok(Response::LearningSettingsSaved {
+                    value: saved,
+                    revision,
+                })
             }
             Command::SaveProvider {
                 config,
@@ -392,7 +397,11 @@ impl DesktopBackend {
                     }
                 );
                 futures::executor::block_on(self.secrets.write(&reference, secret))?;
-                self.settings_response()
+                let has_key = futures::executor::block_on(self.secrets.read(&reference))?.is_some();
+                Ok(Response::ProviderSaved {
+                    config: current,
+                    has_key,
+                })
             }
             Command::EditLibraryCard {
                 card,

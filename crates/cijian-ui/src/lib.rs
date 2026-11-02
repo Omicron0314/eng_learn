@@ -64,6 +64,8 @@ struct Shell {
     has_tts_key: bool,
     provider_config: Option<cijian_domain::provider::ProviderConfig>,
     has_session_key: bool,
+    settings_ui: settings::SettingsState,
+    page_scroll: gpui_kit::ScrollHandle,
     settings_editor: Option<settings::Editor>,
     articles: Vec<cijian_ports::articles::Article>,
     article: Option<cijian_ports::articles::Article>,
@@ -134,6 +136,8 @@ impl Shell {
             has_tts_key: false,
             provider_config: None,
             has_session_key: false,
+            settings_ui: Default::default(),
+            page_scroll: gpui_kit::ScrollHandle::new(),
             settings_editor: None,
             articles: Vec::new(),
             article: None,
@@ -272,6 +276,29 @@ impl Shell {
                     }
                     Ok(Response::FeedbackSaved) => this.notice = Some("反馈已保存".into()),
                     Ok(Response::Job(job)) => this.receive_job(job, cx),
+                    Ok(Response::LearningSettingsSaved {
+                        mut value,
+                        revision,
+                    }) => {
+                        value.theme = this.settings.theme;
+                        value.playback_rate = this.settings.playback_rate;
+                        this.settings = value;
+                        this.settings_revision = revision;
+                        this.settings_ui.refresh_learning = true;
+                        this.notice = Some("学习设置已保存".into());
+                    }
+                    Ok(Response::ProviderSaved { config, has_key }) => {
+                        let kind = config.kind;
+                        if kind == cijian_domain::provider::ProviderKind::Tts {
+                            this.tts_config = Some(config);
+                            this.has_tts_key = has_key;
+                        } else {
+                            this.provider_config = Some(config);
+                            this.has_session_key = has_key;
+                        }
+                        this.settings_ui.refresh_provider = kind == this.provider_kind;
+                        this.notice = Some("AI 配置已保存".into());
+                    }
                     Ok(Response::Settings {
                         value,
                         revision,
@@ -412,6 +439,30 @@ impl Shell {
         }
     }
     fn navigate(&mut self, route: Route, cx: &mut Context<Self>) {
+        self.navigate_to(route, false, cx);
+    }
+    fn navigate_to(&mut self, route: Route, back: bool, cx: &mut Context<Self>) {
+        if !back
+            && self.navigation.current() == &route
+            && (self.loading || route == Route::Settings)
+        {
+            return;
+        }
+        if self.navigation.current() != &route
+            && self.guard_settings_exit(
+                if back {
+                    settings::PendingSettings::Back
+                } else {
+                    settings::PendingSettings::Navigate(route.clone())
+                },
+                cx,
+            )
+        {
+            return;
+        }
+        if self.loading && self.library_ui.editor.is_some() {
+            return;
+        }
         if self.navigation.current() != &route
             && self
                 .library_ui
@@ -419,8 +470,9 @@ impl Shell {
                 .as_ref()
                 .is_some_and(|editor| editor.dirty(cx))
         {
-            self.library_ui.pending_route = Some(route);
-            self.library_ui.pending_back = false;
+            self.library_ui.pending_close = false;
+            self.library_ui.pending_route = if back { None } else { Some(route) };
+            self.library_ui.pending_back = back;
             self.library_ui.discard = true;
             cx.notify();
             return;
@@ -458,7 +510,11 @@ impl Shell {
                     .detach();
             }
         }
-        self.navigation.navigate(route);
+        if back {
+            self.navigation.back();
+        } else {
+            self.navigation.navigate(route);
+        }
         match self.navigation.current() {
             Route::Articles => self.request(Command::LoadArticles { page: 0 }, cx),
             Route::Article { id, .. } => self.request(Command::OpenArticle { id: id.clone() }, cx),
@@ -774,19 +830,13 @@ impl Render for Shell {
             let focus = cx.focus_handle();
             window.focus(&focus, cx);
             self.focus = Some(focus);
+            let weak = cx.entity().downgrade();
+            window.on_window_should_close(cx, move |_, cx| {
+                weak.update(cx, |this, cx| this.may_close(cx))
+                    .unwrap_or(true)
+            });
         }
-        if self.navigation.current() == &Route::Settings && self.settings_editor.is_none() {
-            self.settings_editor = Some(settings::Editor::new(
-                &self.settings,
-                if self.provider_kind == cijian_domain::provider::ProviderKind::Tts {
-                    self.tts_config.as_ref()
-                } else {
-                    self.provider_config.as_ref()
-                },
-                window,
-                cx,
-            ));
-        }
+        self.prepare_settings(window, cx);
         let compact = window.viewport_size().width < px(600.);
         let selected = self.navigation.current().section();
         let entity = cx.entity().downgrade();
@@ -822,6 +872,7 @@ impl Render for Shell {
         }
         let mut content = div()
             .id("page")
+            .track_scroll(&self.page_scroll)
             .flex_1()
             .min_w_0()
             .h_full()

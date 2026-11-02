@@ -176,6 +176,16 @@ impl Shell {
                 .map(|v| format!("Again 比例差：{v:+.1} 个百分点"))
                 .unwrap_or("组间样本不足，暂无比例差".into()),
         );
+        body = body.child(
+            material_button("experiment-settings", ButtonVariant::Tonal)
+                .child("调整实验设置")
+                .disabled(self.loading)
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.settings_ui.advanced = true;
+                    this.settings_ui.focus_advanced = true;
+                    this.navigate(Route::Settings, cx);
+                })),
+        );
         body.into_any_element()
     }
 }

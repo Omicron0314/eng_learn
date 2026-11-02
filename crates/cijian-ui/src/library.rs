@@ -23,6 +23,7 @@ pub(super) struct LibraryState {
     pub deletion: Option<DeletePreview>,
     pub discard: bool,
     pub pending_route: Option<Route>,
+    pub pending_close: bool,
     pub pending_back: bool,
     pub import_open: bool,
     pub report_open: bool,
@@ -63,21 +64,12 @@ fn state_label(state: State) -> &'static str {
 }
 impl Shell {
     pub(super) fn go_back(&mut self, cx: &mut Context<Self>) {
-        if self
-            .library_ui
-            .editor
-            .as_ref()
-            .is_some_and(|editor| editor.dirty(cx))
-        {
-            self.library_ui.pending_back = true;
-            self.library_ui.pending_route = None;
-            self.library_ui.discard = true;
-            cx.notify();
+        if !self.navigation.can_back() {
             return;
         }
-        self.navigation.back();
-        let route = self.navigation.current().clone();
-        self.navigate(route, cx);
+        let mut target = self.navigation.clone();
+        target.back();
+        self.navigate_to(target.current().clone(), true, cx);
     }
     pub(super) fn prepare_library_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Route::Library { search, .. } = self.navigation.current() else {
@@ -574,16 +566,27 @@ impl Shell {
     }
     pub(super) fn library_dialogs(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         if self.library_ui.discard {
+            let weak = cx.entity().downgrade();
             return MaterialDialog::new("discard-card-draft")
                 .headline("放弃未保存的词卡修改？")
                 .modal(true)
                 .dismiss_on_scrim(false)
-                .dismiss_on_escape(false)
+                .dismiss_on_escape(true)
+                .on_dismiss(move |_, cx| {
+                    let _ = weak.update(cx, |this, cx| {
+                        this.library_ui.discard = false;
+                        this.library_ui.pending_close = false;
+                        this.library_ui.pending_route = None;
+                        this.library_ui.pending_back = false;
+                        cx.notify();
+                    });
+                })
                 .action(
                     material_button("keep-card-draft", ButtonVariant::Tonal)
                         .child("继续编辑")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.library_ui.discard = false;
+                            this.library_ui.pending_close = false;
                             this.library_ui.pending_route = None;
                             this.library_ui.pending_back = false;
                             cx.notify();
@@ -592,15 +595,17 @@ impl Shell {
                 .action(
                     material_button("discard-card-draft-confirm", ButtonVariant::Text)
                         .child("放弃修改")
-                        .on_click(cx.listener(|this, _, _, cx| {
+                        .on_click(cx.listener(|this, _, window, cx| {
                             this.library_ui.editor = None;
                             this.library_ui.discard = false;
                             let pending = this.library_ui.pending_route.take();
                             let back = std::mem::take(&mut this.library_ui.pending_back);
+                            if std::mem::take(&mut this.library_ui.pending_close) {
+                                window.remove_window();
+                                return;
+                            }
                             if back {
-                                this.navigation.back();
-                                let route = this.navigation.current().clone();
-                                this.navigate(route, cx);
+                                this.go_back(cx);
                             } else if let Some(route) = pending {
                                 this.navigate(route, cx);
                             }

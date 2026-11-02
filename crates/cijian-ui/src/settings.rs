@@ -1,100 +1,14 @@
 use super::*;
 use cijian_domain::{
     provider::{ProviderConfig, ProviderKind},
-    settings::{Level, LookupMode, Settings, Theme},
+    settings::{Genre, Level, LookupMode, Theme, Tier},
 };
 use cijian_ports::provider::{Secret, SecretPatch};
-use gpui_kit::{Entity, base::input::InputState};
 use gpui_kit_material::components::TextField;
-use std::collections::BTreeMap;
-pub(super) struct Editor {
-    fields: BTreeMap<&'static str, Entity<InputState>>,
-    endpoint: Entity<InputState>,
-    model: Entity<InputState>,
-    voice: Entity<InputState>,
-    key: Entity<InputState>,
-}
-impl Editor {
-    pub fn new(
-        value: &Settings,
-        provider: Option<&ProviderConfig>,
-        window: &mut Window,
-        cx: &mut Context<Shell>,
-    ) -> Self {
-        let values = [
-            ("daily-new", value.daily_new_limit.to_string()),
-            ("daily-review", value.daily_review_limit.to_string()),
-            ("retention", value.request_retention.to_string()),
-            ("min-words", value.article_min_words.to_string()),
-            ("max-words", value.article_max_words.to_string()),
-            ("targets", value.target_count.to_string()),
-            ("control-ratio", value.control_ratio.to_string()),
-            ("retries", value.generation_max_retries.to_string()),
-            ("tts-limit", value.tts_daily_char_limit.to_string()),
-            ("timezone", value.timezone.clone()),
-            ("day-start", value.day_start_hour.to_string()),
-        ];
-        let fields = values
-            .into_iter()
-            .map(|(key, value)| {
-                (
-                    key,
-                    cx.new(|cx| InputState::new(window, cx).default_value(value)),
-                )
-            })
-            .collect();
-        let endpoint = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(provider.map(|p| p.endpoint.clone()).unwrap_or_default())
-        });
-        let model = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(provider.map(|p| p.model.clone()).unwrap_or_default())
-        });
-        let voice = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(provider.and_then(|p| p.voice.clone()).unwrap_or_default())
-        });
-        let key = cx.new(|cx| InputState::new(window, cx).masked(true));
-        Self {
-            voice,
-            fields,
-            endpoint,
-            model,
-            key,
-        }
-    }
-    fn value(&self, base: &Settings, cx: &App) -> Result<Settings, AppError> {
-        let text = |key: &str| self.fields[key].read(cx).value().to_string();
-        let integer = |key: &str| {
-            text(key)
-                .trim()
-                .parse::<u32>()
-                .map_err(|_| AppError::new(cijian_ports::ErrorCode::InvalidInput, "请输入有效整数"))
-        };
-        let number = |key: &str| {
-            text(key)
-                .trim()
-                .parse::<f64>()
-                .map_err(|_| AppError::new(cijian_ports::ErrorCode::InvalidInput, "请输入有效数值"))
-        };
-        let mut value = base.clone();
-        value.daily_new_limit = integer("daily-new")?;
-        value.daily_review_limit = integer("daily-review")?;
-        value.request_retention = number("retention")?;
-        value.article_min_words = integer("min-words")?;
-        value.article_max_words = integer("max-words")?;
-        value.target_count = integer("targets")?;
-        value.control_ratio = number("control-ratio")?;
-        value.generation_max_retries = integer("retries")?;
-        value.tts_daily_char_limit = integer("tts-limit")?;
-        value.timezone = text("timezone");
-        value.day_start_hour = integer("day-start")?;
-        cijian_domain::settings::ValidatedSettings::try_from(value.clone())
-            .map_err(|e| AppError::new(cijian_ports::ErrorCode::InvalidInput, e.to_string()))?;
-        Ok(value)
-    }
-}
+mod drafts;
+mod editor;
+pub(super) use drafts::{PendingSettings, SettingsState};
+pub(super) use editor::Editor;
 impl Shell {
     pub(super) fn apply_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let dark = match self.settings.theme {
@@ -116,6 +30,60 @@ impl Shell {
         let Some(editor) = &self.settings_editor else {
             return body.child("正在读取设置…").into_any_element();
         };
+        let (draft, errors) = editor.draft(&self.settings, cx);
+        let learning_dirty = editor.learning_dirty(&self.settings, cx);
+        let dirty = learning_dirty || editor.provider_dirty(cx);
+        body = body
+            .child(if dirty {
+                "有未保存的修改"
+            } else {
+                "设置已保存"
+            })
+            .child(
+                material_button("reset-settings-draft", ButtonVariant::Text)
+                    .child("撤销未保存修改")
+                    .disabled(self.loading || !dirty)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.settings_ui.pending = Some(PendingSettings::Reset);
+                        cx.notify();
+                    })),
+            )
+            .child(
+                material_button("reload-settings", ButtonVariant::Text)
+                    .child("重新载入已保存设置")
+                    .disabled(self.loading)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if !this.guard_settings_exit(PendingSettings::Reload, cx) {
+                            this.request(Command::LoadSettings, cx);
+                        }
+                    })),
+            )
+            .child(
+                material_button("advanced-settings", ButtonVariant::Tonal)
+                    .child(if errors.keys().any(|id| editor::advanced(id)) {
+                        "高级实验设置 · 有待修正项"
+                    } else if self.settings_ui.advanced {
+                        "收起高级实验设置"
+                    } else {
+                        "展开高级实验设置"
+                    })
+                    .disabled(self.loading)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.settings_ui.advanced = !this.settings_ui.advanced;
+                        cx.notify();
+                    })),
+            );
+        if self.settings_ui.advanced {
+            body = body
+                .child("高级实验设置")
+                .child("对照词比例用于生成时划分出现组与对照组，修改后用于后续生成。");
+            for field in editor::FIELDS
+                .iter()
+                .filter(|field| editor::advanced(field.id))
+            {
+                body = body.child(editor.field(field, &errors, self.loading));
+            }
+        }
         body = body
             .child("外观与学习")
             .child(
@@ -125,6 +93,7 @@ impl Shell {
                     } else {
                         "切换深色"
                     })
+                    .disabled(self.loading)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.settings.theme = if this.dark { Theme::Light } else { Theme::Dark };
                         this.apply_theme(window, cx);
@@ -141,6 +110,7 @@ impl Shell {
             .child(
                 material_button("system-theme", ButtonVariant::Text)
                     .child("主题跟随系统")
+                    .disabled(self.loading)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.settings.theme = Theme::System;
                         this.apply_theme(window, cx);
@@ -157,6 +127,7 @@ impl Shell {
             .child(
                 material_button("device-rate", ButtonVariant::Tonal)
                     .child(format!("本机播放速度：{}×", self.settings.playback_rate))
+                    .disabled(self.loading)
                     .on_click(cx.listener(|this, _, _, cx| {
                         let rates = cijian_domain::settings::PLAYBACK_RATES;
                         let index = rates
@@ -174,6 +145,7 @@ impl Shell {
             .child(
                 material_button("level", ButtonVariant::Tonal)
                     .child(format!("英语等级：{:?}", self.settings.level))
+                    .disabled(self.loading)
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.settings.level = match this.settings.level {
                             Level::A2 => Level::B1,
@@ -191,6 +163,7 @@ impl Shell {
                     } else {
                         "不认识时自动加入复习"
                     })
+                    .disabled(self.loading)
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.settings.lookup_mode =
                             if this.settings.lookup_mode == LookupMode::MarkOnly {
@@ -201,25 +174,79 @@ impl Shell {
                         cx.notify();
                     })),
             );
-        for (key, label) in [
-            ("daily-new", "每日新词上限"),
-            ("daily-review", "每日复习上限"),
-            ("retention", "目标记忆保留率"),
-            ("min-words", "文章最少词数"),
-            ("max-words", "文章最多词数"),
-            ("targets", "目标词数量"),
-            ("control-ratio", "对照词比例"),
-            ("retries", "覆盖率重写次数"),
-            ("tts-limit", "每日远程朗读字符额度"),
-            ("timezone", "学习时区"),
-            ("day-start", "学习日开始小时"),
-        ] {
-            body = body.child(TextField::new(key, &editor.fields[key]).label(label));
+        if self.settings.lookup_mode == LookupMode::AutoAdd {
+            body = body.child("自动加入复习会把标为“不认识”的词直接加入学习流程，可能增加复习量。");
+        }
+        body = body
+            .child(
+                material_button("default-tier", ButtonVariant::Tonal)
+                    .child(format!(
+                        "默认难度：{}",
+                        match self.settings.tier {
+                            Tier::Easy => "轻松",
+                            Tier::Medium => "适中",
+                            Tier::Hard => "挑战",
+                        }
+                    ))
+                    .disabled(self.loading)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.settings.tier = match this.settings.tier {
+                            Tier::Easy => Tier::Medium,
+                            Tier::Medium => Tier::Hard,
+                            Tier::Hard => Tier::Easy,
+                        };
+                        cx.notify();
+                    })),
+            )
+            .child(
+                material_button("default-genre", ButtonVariant::Tonal)
+                    .child(format!(
+                        "默认体裁：{}",
+                        match self.settings.genre {
+                            Genre::Auto => "自动",
+                            Genre::Story => "故事",
+                            Genre::Dialogue => "对话",
+                            Genre::Monologue => "独白",
+                        }
+                    ))
+                    .disabled(self.loading)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.settings.genre = match this.settings.genre {
+                            Genre::Auto => Genre::Story,
+                            Genre::Story => Genre::Dialogue,
+                            Genre::Dialogue => Genre::Monologue,
+                            Genre::Monologue => Genre::Auto,
+                        };
+                        cx.notify();
+                    })),
+            );
+        for field in editor::FIELDS
+            .iter()
+            .filter(|field| !editor::advanced(field.id))
+        {
+            body = body.child(editor.field(field, &errors, self.loading));
+        }
+        body = body.child(
+            TextField::new("timezone", &editor.fields["timezone"])
+                .label("学习时区")
+                .disabled(self.loading)
+                .error(errors.contains_key("timezone"))
+                .supporting_text(
+                    errors
+                        .get("timezone")
+                        .cloned()
+                        .unwrap_or("使用 IANA 时区名称".into()),
+                ),
+        );
+        let saved = editor.baseline(&self.settings);
+        if draft.timezone != saved.timezone || draft.day_start_hour != saved.day_start_hour {
+            body = body
+                .child("改变时区或日界会按新边界重新统计活动与今日配额，已有复习时间保持不变。");
         }
         body = body.child(
             material_button("save-settings", ButtonVariant::Filled)
                 .child("保存学习设置")
-                .disabled(self.loading)
+                .disabled(self.loading || !learning_dirty || !errors.is_empty())
                 .on_click(cx.listener(|this, _, _, cx| {
                     let Some(editor) = &this.settings_editor else {
                         return;
@@ -243,6 +270,11 @@ impl Shell {
                     }
                 })),
         );
+        let has_key = if self.provider_kind == ProviderKind::Llm {
+            self.has_session_key
+        } else {
+            self.has_tts_key
+        };
         body = body
             .child("AI 服务")
             .child(
@@ -252,49 +284,64 @@ impl Shell {
                     } else {
                         "配置类型：远程朗读"
                     })
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.provider_kind = if this.provider_kind == ProviderKind::Llm {
+                    .disabled(self.loading)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        let kind = if this.provider_kind == ProviderKind::Llm {
                             ProviderKind::Tts
                         } else {
                             ProviderKind::Llm
                         };
-                        this.settings_editor = None;
-                        cx.notify();
+                        this.switch_provider(kind, window, cx);
                     })),
             )
             .child("保存配置不会调用模型。密钥仅保存在本次会话，退出后需重新输入。")
+            .child(if has_key {
+                "本次会话已设置密钥；留空表示保留"
+            } else {
+                "本次会话未设置密钥"
+            })
             .child(
-                if (self.provider_kind == ProviderKind::Llm && self.has_session_key)
-                    || (self.provider_kind == ProviderKind::Tts && self.has_tts_key)
-                {
-                    "本次会话已设置密钥；留空表示保留"
-                } else {
-                    "本次会话未设置密钥"
-                },
+                TextField::new("provider-endpoint", &editor.endpoint)
+                    .label("服务地址")
+                    .disabled(self.loading),
             )
-            .child(TextField::new("provider-endpoint", &editor.endpoint).label("服务地址"))
-            .child(TextField::new("provider-model", &editor.model).label("模型名称"))
             .child(
-                TextField::new("provider-voice", &editor.voice).label("语音名称（远程朗读时必填）"),
+                TextField::new("provider-model", &editor.model)
+                    .label("模型名称")
+                    .disabled(self.loading),
             )
-            .child(TextField::new("provider-key", &editor.key).label("会话密钥"))
+            .when(self.provider_kind == ProviderKind::Tts, |body| {
+                body.child(
+                    TextField::new("provider-voice", &editor.voice)
+                        .label("语音名称")
+                        .disabled(self.loading),
+                )
+            })
+            .child(
+                TextField::new("provider-key", &editor.key)
+                    .label("会话密钥")
+                    .disabled(self.loading),
+            )
             .child(
                 material_button("save-provider", ButtonVariant::Filled)
                     .child("保存 AI 配置")
-                    .disabled(self.loading)
+                    .disabled(self.loading || !editor.provider_dirty(cx))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.save_provider(false, cx);
                     })),
             )
             .child(
                 material_button("clear-provider-key", ButtonVariant::Text)
-                    .child("清除会话密钥并保存配置")
-                    .disabled(self.loading)
+                    .child("清除已保存的会话密钥")
+                    .disabled(self.loading || !has_key || editor.provider_dirty(cx))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.save_provider(true, cx);
                     })),
             );
         body = body
+            .when(has_key && editor.provider_dirty(cx), |body| {
+                body.child("请先保存或撤销 AI 草稿，再清除已保存密钥。")
+            })
             .child("学习数据")
             .child("备份包含学习记录和文章，不包含密钥或音频缓存。恢复会建立并打开新的学习库。")
             .child(
@@ -395,7 +442,7 @@ impl Shell {
                         })),
                 );
         }
-        body.into_any_element()
+        body.child(self.settings_dialog(cx)).into_any_element()
     }
     fn save_provider(&mut self, clear: bool, cx: &mut Context<Self>) {
         let Some(editor) = &self.settings_editor else {

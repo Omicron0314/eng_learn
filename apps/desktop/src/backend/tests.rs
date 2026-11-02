@@ -48,6 +48,31 @@ fn offline_startup_and_settings_survive_reopen_without_network() {
         backend
             .execute(Command::SetPlaybackRate { rate: 1.25 })
             .unwrap();
+        backend
+            .execute(Command::SetPlaybackRate { rate: 2. })
+            .unwrap();
+        let Response::Settings {
+            mut value,
+            revision,
+            ..
+        } = backend.execute(Command::LoadSettings).unwrap()
+        else {
+            panic!("settings");
+        };
+        value.request_retention = 0.91;
+        assert!(matches!(
+            backend
+                .execute(Command::SaveSettings {
+                    value,
+                    revision,
+                    operation: "learning-at-double-speed".into()
+                })
+                .unwrap(),
+            Response::LearningSettingsSaved { .. }
+        ));
+        backend
+            .execute(Command::SetPlaybackRate { rate: 1.25 })
+            .unwrap();
         let config = ProviderConfig {
             kind: ProviderKind::Llm,
             endpoint: "https://example.invalid/v1".into(),
@@ -65,10 +90,7 @@ fn offline_startup_and_settings_survive_reopen_without_network() {
             .unwrap();
         assert!(matches!(
             response,
-            Response::Settings {
-                has_session_key: true,
-                ..
-            }
+            Response::ProviderSaved { has_key: true, .. }
         ));
         assert_eq!(
             backend
@@ -84,6 +106,6 @@ fn offline_startup_and_settings_survive_reopen_without_network() {
     }
     let reopened = DesktopBackend::open(directory.path()).unwrap();
     assert!(
-        matches!(reopened.execute(Command::LoadSettings).unwrap(),Response::Settings{value,has_session_key:false,..} if value.daily_new_limit==7 && value.theme==cijian_domain::settings::Theme::Dark && value.playback_rate==1.25)
+        matches!(reopened.execute(Command::LoadSettings).unwrap(),Response::Settings{value,has_session_key:false,..} if value.daily_new_limit==7 && value.request_retention==0.91 && value.theme==cijian_domain::settings::Theme::Dark && value.playback_rate==1.25)
     );
 }
