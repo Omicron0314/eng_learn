@@ -237,6 +237,21 @@ impl Shell {
                     }
                 })),
         );
+        let mode = if listening {
+            FeedbackMode::Listening
+        } else {
+            FeedbackMode::Reading
+        };
+        let saved_feedback = self
+            .reading_feedback
+            .iter()
+            .find(|feedback| feedback.mode == mode)
+            .map(|feedback| feedback.value);
+        body = body.child(if listening {
+            "听力难度反馈"
+        } else {
+            "阅读难度反馈"
+        });
         let mut feedback = div().flex().flex_wrap().gap_2();
         for (id, label, value) in [
             ("feedback-easy", "太简单", Difficulty::TooEasy),
@@ -244,33 +259,44 @@ impl Shell {
             ("feedback-hard", "有点难", Difficulty::TooHard),
         ] {
             feedback = feedback.child(
-                material_button(id, ButtonVariant::Tonal)
-                    .child(label)
-                    .disabled(self.loading)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if let Some(article) = &this.article {
-                            this.request(
-                                Command::Feedback {
-                                    article: article.id.clone(),
-                                    body_hash: article.body_hash.clone(),
-                                    value,
-                                    mode: if matches!(
-                                        this.navigation.current(),
-                                        Route::Article {
-                                            listening: true,
-                                            ..
-                                        }
-                                    ) {
-                                        FeedbackMode::Listening
-                                    } else {
-                                        FeedbackMode::Reading
-                                    },
-                                    operation: this.operation("feedback"),
+                material_button(
+                    id,
+                    if saved_feedback == Some(value) {
+                        ButtonVariant::Filled
+                    } else {
+                        ButtonVariant::Tonal
+                    },
+                )
+                .child(if saved_feedback == Some(value) {
+                    format!("{label} · 已保存")
+                } else {
+                    label.into()
+                })
+                .disabled(self.loading || saved_feedback == Some(value))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if let Some(article) = &this.article {
+                        this.request(
+                            Command::Feedback {
+                                article: article.id.clone(),
+                                body_hash: article.body_hash.clone(),
+                                value,
+                                mode: if matches!(
+                                    this.navigation.current(),
+                                    Route::Article {
+                                        listening: true,
+                                        ..
+                                    }
+                                ) {
+                                    FeedbackMode::Listening
+                                } else {
+                                    FeedbackMode::Reading
                                 },
-                                cx,
-                            );
-                        }
-                    })),
+                                operation: this.operation("feedback"),
+                            },
+                            cx,
+                        );
+                    }
+                })),
             );
         }
         body = body.child(feedback);

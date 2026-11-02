@@ -272,11 +272,11 @@ impl DesktopBackend {
                 body_hash,
                 session,
             } => {
-                self.store.complete_reading(
+                let session = self.store.complete_reading(
                     self.reader_command(article, body_hash, format!("complete-{session}")),
                     &session,
                 )?;
-                Ok(Response::Completed)
+                Ok(Response::Completed(session))
             }
             Command::Feedback {
                 article,
@@ -285,11 +285,11 @@ impl DesktopBackend {
                 mode,
                 operation,
             } => {
-                self.store.submit_feedback(
+                let feedback = self.store.submit_feedback(
                     self.reader_command(article, body_hash, operation),
                     cijian_ports::reading::Feedback { mode, value },
                 )?;
-                Ok(Response::FeedbackSaved)
+                Ok(Response::FeedbackSaved(feedback))
             }
             Command::Mark {
                 article,

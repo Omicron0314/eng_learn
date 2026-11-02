@@ -181,6 +181,7 @@ pub enum Response {
         article: Box<cijian_ports::articles::Article>,
         session: cijian_ports::reading::ReadingSession,
         audio: Vec<cijian_ports::audio::AudioAsset>,
+        feedback: Vec<cijian_ports::reading::Feedback>,
     },
     Lookup {
         context: cijian_ports::reading::LookupContext,
@@ -193,8 +194,8 @@ pub enum Response {
         total: u64,
     },
     Job(cijian_ports::articles::GenerationJob),
-    Completed,
-    FeedbackSaved,
+    Completed(cijian_ports::reading::ReadingSession),
+    FeedbackSaved(cijian_ports::reading::Feedback),
     InboxProcessed(cijian_ports::inbox::BatchResult),
     LearningSettingsSaved {
         value: cijian_domain::settings::Settings,

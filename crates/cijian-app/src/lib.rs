@@ -92,6 +92,11 @@ impl Navigation {
         !self.history.is_empty()
     }
     pub fn navigate(&mut self, route: Route) {
+        if matches!((&self.current,&route),(Route::Article{id:current,..},Route::Article{id:next,..}) if current==next)
+        {
+            self.current = route;
+            return;
+        }
         if route != self.current {
             self.history
                 .push(std::mem::replace(&mut self.current, route));
@@ -119,6 +124,14 @@ mod tests {
             listening: true,
         });
         assert_eq!(nav.current().section(), "articles");
+        nav.navigate(Route::Article {
+            id: "a".into(),
+            listening: false,
+        });
+        nav.navigate(Route::Article {
+            id: "a".into(),
+            listening: true,
+        });
         nav.back();
         assert_eq!(nav.current(), &library);
     }

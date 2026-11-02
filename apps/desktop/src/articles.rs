@@ -78,7 +78,18 @@ impl DesktopBackend {
             self.reader_command(article.id.clone(), article.body_hash.clone(), id()),
             &id(),
         )?;
+        let feedback = [
+            cijian_domain::reading::FeedbackMode::Reading,
+            cijian_domain::reading::FeedbackMode::Listening,
+        ]
+        .into_iter()
+        .map(|mode| self.store.feedback(&self.profile, &article.id, mode))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
         Ok(Response::Article {
+            feedback,
             audio: self
                 .store
                 .article_audio_assets(&self.profile, &article.id)?,

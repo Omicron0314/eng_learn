@@ -72,6 +72,7 @@ struct Shell {
     articles: Vec<cijian_ports::articles::Article>,
     article: Option<cijian_ports::articles::Article>,
     reading_session: Option<cijian_ports::reading::ReadingSession>,
+    reading_feedback: Vec<cijian_ports::reading::Feedback>,
     lookup: Option<(cijian_ports::reading::LookupContext, u64, String)>,
     generation_job: Option<cijian_ports::articles::GenerationJob>,
     inbox: Vec<cijian_ports::inbox::InboxItem>,
@@ -146,6 +147,7 @@ impl Shell {
             articles: Vec::new(),
             article: None,
             reading_session: None,
+            reading_feedback: Vec::new(),
             lookup: None,
             generation_job: None,
             inbox: Vec::new(),
@@ -230,11 +232,14 @@ impl Shell {
                         article,
                         session,
                         audio,
+                        feedback,
                     }) => {
+                        this.reading_feedback = feedback;
                         this.stored_audio = audio;
+                        let listening=matches!(this.navigation.current(),Route::Article{id,listening:true} if id==&article.id);
                         this.navigation.navigate(Route::Article {
                             id: article.id.clone(),
-                            listening: false,
+                            listening,
                         });
                         this.article = Some(*article);
                         this.reading_session = Some(session);
@@ -272,13 +277,15 @@ impl Shell {
                     Ok(Response::InboxProcessed(_)) => {
                         this.request(Command::LoadInbox { page: 0 }, cx)
                     }
-                    Ok(Response::Completed) => {
-                        if let Some(session) = &mut this.reading_session {
-                            session.completed_at = Some(0);
-                        }
+                    Ok(Response::Completed(session)) => {
+                        this.reading_session = Some(session);
                         this.notice = Some("已记录本次阅读完成".into());
                     }
-                    Ok(Response::FeedbackSaved) => this.notice = Some("反馈已保存".into()),
+                    Ok(Response::FeedbackSaved(feedback)) => {
+                        this.reading_feedback.retain(|value|value.mode!=feedback.mode);
+                        this.reading_feedback.push(feedback);
+                        this.notice = Some("反馈已保存".into());
+                    }
                     Ok(Response::Job(job)) => this.receive_job(job, cx),
                     Ok(Response::LearningSettingsSaved {
                         mut value,
