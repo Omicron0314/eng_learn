@@ -1,4 +1,6 @@
 //! Native credential storage. Tests exercise only the in-memory session implementation.
+#[cfg(not(target_family = "wasm"))]
+pub mod audio;
 use cijian_ports::{
     AppError, ErrorCode, Result,
     provider::{Secret, SecretPatch, SecretStore},

@@ -1,4 +1,5 @@
 //! OpenAI-compatible transport. All calls are explicit, recorded and have no retry policy.
+mod speech;
 use cijian_domain::provider::ProviderKind;
 use cijian_ports::{AppError, ErrorCode, Result, provider::*};
 use serde_json::{Value, json};
@@ -27,18 +28,42 @@ impl HttpTransport for NativeHttp {
         if let Some(secret) = request.bearer {
             builder = builder.bearer_auth(secret.expose());
         }
-        let response = builder
+        let mut response = builder
             .send()
             .await
             .map_err(|_| AppError::new(ErrorCode::ProviderError, "服务连接失败或超时"))?;
         let status = response.status().as_u16();
-        let bytes = response
-            .bytes()
+        const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+        {
+            return Err(AppError::new(
+                ErrorCode::ProviderError,
+                "服务响应超出64MiB资源保护",
+            ));
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
             .await
-            .map_err(|_| AppError::new(ErrorCode::ProviderError, "无法读取服务响应"))?;
+            .map_err(|_| AppError::new(ErrorCode::ProviderError, "无法读取服务响应"))?
+        {
+            if bytes
+                .len()
+                .checked_add(chunk.len())
+                .is_none_or(|size| size > MAX_RESPONSE_BYTES)
+            {
+                return Err(AppError::new(
+                    ErrorCode::ProviderError,
+                    "服务响应超出64MiB资源保护",
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
         Ok(HttpResponse {
             status,
-            body: bytes.to_vec(),
+            body: bytes,
             latency_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
         })
     }
@@ -242,6 +267,44 @@ mod tests {
             ErrorCode::ConfigMissing
         );
         assert_eq!(*p.transport.calls.lock().unwrap(), 0);
+    }
+    #[tokio::test]
+    async fn speech_invalid_output_and_http_errors_are_logged_without_retry() {
+        for (status, body, expected) in [
+            (
+                200,
+                b"RIFF invalid WAVE".to_vec(),
+                CallStatus::InvalidOutput,
+            ),
+            (
+                429,
+                b"test-secret-do-not-log".to_vec(),
+                CallStatus::HttpError,
+            ),
+        ] {
+            let provider = OpenAiCompatible {
+                transport: Stub {
+                    calls: Mutex::new(0),
+                    status,
+                    body,
+                },
+                recorder: Log::default(),
+            };
+            let mut config = snapshot();
+            config.config.kind = ProviderKind::Tts;
+            config.config.voice = Some("configured-voice".into());
+            let error = provider
+                .speech(&config, "An original sentence.", call())
+                .await
+                .unwrap_err();
+            assert!(!error.message.contains("test-secret-do-not-log"));
+            assert_eq!(*provider.transport.calls.lock().unwrap(), 1);
+            assert_eq!(
+                provider.recorder.finishes.lock().unwrap()[0].status,
+                expected
+            );
+            assert_eq!(provider.recorder.starts.lock().unwrap().len(), 1);
+        }
     }
     #[tokio::test]
     async fn success_and_failures_are_recorded_once_without_secret() {

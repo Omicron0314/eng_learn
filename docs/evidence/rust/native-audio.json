@@ -1,0 +1,11 @@
+{
+  "platform": "Linux x86_64",
+  "test": "cijian-platform::audio::tests::native_audio_controls_and_natural_completion",
+  "command": "cargo test --locked --offline -p cijian-platform native_audio_controls_and_natural_completion -- --ignored",
+  "result": "passed",
+  "fixture": "Original quiet 440 Hz PCM16 mono WAV, generated inside the test",
+  "checked": ["open default device", "decode WAV", "seek", "pause", "1.25x rate", "resume", "stop without completion", "natural completion on a fresh session"],
+  "humanListeningVerified": false,
+  "ttsCalled": false,
+  "realCredentialsUsed": false
+}
