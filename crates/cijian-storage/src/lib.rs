@@ -9,7 +9,10 @@ use sha2::{Digest, Sha256};
 use std::{path::Path, sync::Mutex, time::Duration};
 
 const INITIAL: &str = include_str!("../migrations/0001_initial.sql");
-const MIGRATIONS: &[&str] = &[INITIAL];
+const MIGRATIONS: &[&str] = &[
+    INITIAL,
+    include_str!("../migrations/0002_generation_snapshots.sql"),
+];
 fn unavailable(_: impl std::fmt::Display) -> AppError {
     AppError::new(ErrorCode::StorageUnavailable, "本地数据库操作失败")
 }
