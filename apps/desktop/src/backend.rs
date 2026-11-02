@@ -33,13 +33,20 @@ fn failure() -> AppError {
     AppError::new(ErrorCode::StorageUnavailable, "无法读取本地文件或数据库")
 }
 pub struct DesktopBackend {
-    _directory_lock: std::fs::File,
+    pub(super) audio_epoch: std::sync::atomic::AtomicU64,
+    pub(super) audio: cijian_platform::audio::NativeAudio,
+    pub(super) system_audio: Mutex<Option<tempfile::TempPath>>,
+    pub(super) playback_gate: Mutex<()>,
+    pub(super) audio_lock: Mutex<()>,
+    pub(super) directory: PathBuf,
     pub(super) store: Arc<Store>,
+    pub(super) device: String,
     pub(super) profile: String,
     files: Mutex<HashMap<String, PathBuf>>,
     pub(super) secrets: SessionSecrets,
     pub(super) config_lock: Mutex<()>,
     pub(super) runtime: tokio::runtime::Runtime,
+    _directory_lock: std::fs::File,
 }
 impl DesktopBackend {
     pub fn open(directory: &Path) -> Result<Self> {
@@ -66,10 +73,57 @@ impl DesktopBackend {
                 p
             }
         };
+        let device_path = directory.join("device-id");
+        let device = match std::fs::read_to_string(&device_path) {
+            Ok(device) if uuid::Uuid::parse_str(device.trim()).is_ok() => device.trim().to_owned(),
+            Ok(_) => {
+                return Err(AppError::new(
+                    ErrorCode::StorageUnavailable,
+                    "本机身份文件无效",
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                use std::io::Write;
+                let device = id();
+                let mut file = tempfile::NamedTempFile::new_in(directory).map_err(|_| failure())?;
+                file.write_all(device.as_bytes()).map_err(|_| failure())?;
+                file.as_file().sync_all().map_err(|_| failure())?;
+                file.persist_noclobber(device_path).map_err(|_| failure())?;
+                device
+            }
+            Err(_) => return Err(failure()),
+        };
+        store.ensure_device(&profile, &device, std::env::consts::OS)?;
         store.interrupt_generation_jobs(&profile, now())?;
+        let store = Arc::new(store);
+        let completion_store = store.clone();
+        let completion_profile = profile.clone();
+        let audio = cijian_platform::audio::NativeAudio::with_completion(move |state, now| {
+            let (Some(session), Some(article)) = (state.session, state.article) else {
+                return Ok(());
+            };
+            completion_store.complete_audio_session(cijian_ports::audio::AudioSessionCommand {
+                profile: completion_profile.clone(),
+                operation: format!("audio-ended-{session}"),
+                event: id(),
+                session,
+                article,
+                audio: None,
+                source: "remote".into(),
+                rate: state.rate,
+                now,
+            })
+        });
         Ok(Self {
+            audio_epoch: std::sync::atomic::AtomicU64::new(0),
+            audio,
+            audio_lock: Mutex::new(()),
+            system_audio: Mutex::new(None),
+            playback_gate: Mutex::new(()),
+            directory: directory.into(),
             _directory_lock: directory_lock,
-            store: Arc::new(store),
+            store,
+            device,
             profile,
             files: Mutex::new(HashMap::new()),
             secrets: SessionSecrets::default(),
@@ -77,8 +131,30 @@ impl DesktopBackend {
             runtime: tokio::runtime::Runtime::new().map_err(|_| failure())?,
         })
     }
+    fn save_preferences(
+        &self,
+        update: impl FnOnce(&mut cijian_domain::settings::DevicePreferences) -> Result<()>,
+    ) -> Result<Response> {
+        let _guard = self.config_lock.lock().map_err(|_| failure())?;
+        let (mut value, revision) = self.store.device_preferences(&self.profile, &self.device)?;
+        update(&mut value)?;
+        self.store
+            .save_device_preferences(cijian_ports::SaveDevicePreferences {
+                profile: self.profile.clone(),
+                device: self.device.clone(),
+                operation: id(),
+                event: id(),
+                expected_revision: revision,
+                value: value.clone(),
+                now: now(),
+            })?;
+        Ok(Response::Preferences(value))
+    }
     fn settings_response(&self) -> Result<Response> {
-        let (value, revision) = self.store.settings(&self.profile)?;
+        let (mut value, revision) = self.store.settings(&self.profile)?;
+        let (preferences, _) = self.store.device_preferences(&self.profile, &self.device)?;
+        value.theme = preferences.theme;
+        value.playback_rate = preferences.playback_rate;
         let provider = self
             .store
             .provider_config(&self.profile, ProviderKind::Llm)?;
@@ -90,10 +166,63 @@ impl DesktopBackend {
             revision,
             provider,
             has_session_key,
+            tts: self
+                .store
+                .provider_config(&self.profile, ProviderKind::Tts)?,
+            system_voice: preferences.system_voice,
+            voices: cijian_platform::speech::voices().unwrap_or_default(),
+            has_tts_key: futures::executor::block_on(
+                self.secrets.read(&format!("{}/tts", self.profile)),
+            )?
+            .is_some(),
         })
     }
     fn execute(&self, command: Command) -> Result<Response> {
         match command {
+            Command::SetTheme { value } => self.save_preferences(|preferences| {
+                preferences.theme = value;
+                Ok(())
+            }),
+            Command::SetPlaybackRate { rate } => {
+                let result = self.save_preferences(|preferences| {
+                    preferences.playback_rate = rate;
+                    Ok(())
+                })?;
+                self.audio
+                    .command(cijian_platform::audio::AudioCommand::Rate(rate))?;
+                Ok(result)
+            }
+            Command::SetSystemVoice { voice } => self.save_preferences(|preferences| {
+                if !cijian_platform::speech::voices()?
+                    .iter()
+                    .any(|available| available.id == voice)
+                {
+                    return Err(AppError::new(
+                        ErrorCode::UnsupportedCapability,
+                        "本机语音不可用",
+                    ));
+                }
+                preferences.system_voice = Some(voice);
+                Ok(())
+            }),
+            Command::EnsureSystemAudio { article, voice } => {
+                self.ensure_system_audio(&article, &voice)
+            }
+            Command::EnsureAudio { article, operation } => self.ensure_audio(&article, &operation),
+            Command::AudioPause => self.audio_command(cijian_platform::audio::AudioCommand::Pause),
+            Command::AudioResume => {
+                self.audio_command(cijian_platform::audio::AudioCommand::Resume)
+            }
+            Command::AudioStop => self.audio_command(cijian_platform::audio::AudioCommand::Stop),
+            Command::AudioSeek { position } => {
+                self.audio_command(cijian_platform::audio::AudioCommand::Seek(position))
+            }
+            Command::AudioRate { rate } => {
+                self.audio_command(cijian_platform::audio::AudioCommand::Rate(rate))
+            }
+            Command::AudioStatus => {
+                self.audio_command(cijian_platform::audio::AudioCommand::Status)
+            }
             Command::ExportBackup => self.export_backup(),
             Command::RestoreBackup => self.restore_backup(),
             Command::LoadStats { page } => Ok(Response::Stats(Box::new(self.store.stats(

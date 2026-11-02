@@ -1,6 +1,7 @@
 //! GPUI views issue application commands; all IO runs on the background executor.
 #[cfg(test)]
 extern crate gpui_kit as gpui;
+mod audio;
 mod settings;
 mod stats;
 mod study;
@@ -46,6 +47,15 @@ struct Shell {
     review_started: Instant,
     settings: cijian_domain::settings::Settings,
     settings_revision: u64,
+    audio_poll_epoch: u64,
+    appearance_subscription: Option<gpui_kit::Subscription>,
+    system_voices: Vec<cijian_ports::audio::SystemVoice>,
+    system_voice_index: usize,
+    show_listening_text: bool,
+    playback: cijian_domain::audio::Playback,
+    provider_kind: cijian_domain::provider::ProviderKind,
+    tts_config: Option<cijian_domain::provider::ProviderConfig>,
+    has_tts_key: bool,
     provider_config: Option<cijian_domain::provider::ProviderConfig>,
     has_session_key: bool,
     settings_editor: Option<settings::Editor>,
@@ -102,6 +112,15 @@ impl Shell {
             review_started: Instant::now(),
             settings: Default::default(),
             settings_revision: 1,
+            audio_poll_epoch: 0,
+            appearance_subscription: None,
+            system_voices: Vec::new(),
+            system_voice_index: 0,
+            show_listening_text: false,
+            playback: Default::default(),
+            provider_kind: cijian_domain::provider::ProviderKind::Llm,
+            tts_config: None,
+            has_tts_key: false,
             provider_config: None,
             has_session_key: false,
             settings_editor: None,
@@ -139,6 +158,20 @@ impl Shell {
                 this.loading = false;
                 match response {
                     Err(error) => this.error = Some(error.message),
+                    Ok(Response::Preferences(value)) => {
+                        this.settings.theme = value.theme;
+                        this.settings.playback_rate = value.playback_rate;
+                        let _ = this.playback.set_rate(value.playback_rate);
+                        this.poll_audio(cx);
+                        if let Some(voice) = value.system_voice {
+                            this.system_voice_index = this
+                                .system_voices
+                                .iter()
+                                .position(|available| available.id == voice)
+                                .unwrap_or(0);
+                        }
+                    }
+                    Ok(Response::Audio(state)) => this.receive_audio(state, cx),
                     Ok(Response::BackupSaved) => {
                         this.notice = Some("学习备份已保存，不包含密钥和音频缓存".into())
                     }
@@ -203,11 +236,28 @@ impl Shell {
                         revision,
                         provider,
                         has_session_key,
+                        tts,
+                        has_tts_key,
+                        voices,
+                        system_voice,
                     }) => {
                         this.settings = value;
                         this.settings_revision = revision;
                         this.provider_config = provider;
                         this.has_session_key = has_session_key;
+                        this.tts_config = tts;
+                        this.has_tts_key = has_tts_key;
+                        this.system_voices = voices;
+                        this.system_voice_index = this
+                            .system_voice_index
+                            .min(this.system_voices.len().saturating_sub(1));
+                        if let Some(voice) = system_voice {
+                            this.system_voice_index = this
+                                .system_voices
+                                .iter()
+                                .position(|available| available.id == voice)
+                                .unwrap_or(0);
+                        }
                         this.settings_editor = None;
                         this.dark =
                             matches!(this.settings.theme, cijian_domain::settings::Theme::Dark);
@@ -270,6 +320,18 @@ impl Shell {
         }
     }
     fn navigate(&mut self, route: Route, cx: &mut Context<Self>) {
+        if matches!(self.navigation.current(), Route::Article { .. })
+            && self.navigation.current() != &route
+        {
+            self.playback.stop();
+            if let Some(backend) = self.backend.clone() {
+                cx.background_executor()
+                    .spawn(async move {
+                        let _ = backend.dispatch(Command::AudioStop).await;
+                    })
+                    .detach();
+            }
+        }
         self.navigation.navigate(route);
         match self.navigation.current() {
             Route::Articles => self.request(Command::LoadArticles { page: 0 }, cx),
@@ -566,6 +628,13 @@ fn format_interval(ms: i64) -> String {
 }
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.appearance_subscription.is_none() {
+            self.appearance_subscription =
+                Some(cx.observe_window_appearance(window, |this, window, cx| {
+                    this.apply_theme(window, cx)
+                }));
+        }
+        self.apply_theme(window, cx);
         if self.focus.is_none() {
             let focus = cx.focus_handle();
             window.focus(&focus, cx);
@@ -574,7 +643,11 @@ impl Render for Shell {
         if self.navigation.current() == &Route::Settings && self.settings_editor.is_none() {
             self.settings_editor = Some(settings::Editor::new(
                 &self.settings,
-                self.provider_config.as_ref(),
+                if self.provider_kind == cijian_domain::provider::ProviderKind::Tts {
+                    self.tts_config.as_ref()
+                } else {
+                    self.provider_config.as_ref()
+                },
                 window,
                 cx,
             ));

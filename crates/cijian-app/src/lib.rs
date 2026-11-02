@@ -1,7 +1,7 @@
 //! Application commands and queries; coordinates domain and ports.
 pub mod commands;
-pub mod gloss;
 pub mod generation;
+pub mod gloss;
 use cijian_domain::settings::{Settings, ValidatedSettings};
 use cijian_ports::{AppError, ErrorCode, Result, SaveSettings, SettingsRepository};
 

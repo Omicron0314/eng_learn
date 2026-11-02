@@ -40,6 +40,14 @@ fn offline_startup_and_settings_survive_reopen_without_network() {
                 operation: "settings".into(),
             })
             .unwrap();
+        backend
+            .execute(Command::SetTheme {
+                value: cijian_domain::settings::Theme::Dark,
+            })
+            .unwrap();
+        backend
+            .execute(Command::SetPlaybackRate { rate: 1.25 })
+            .unwrap();
         let config = ProviderConfig {
             kind: ProviderKind::Llm,
             endpoint: "https://example.invalid/v1".into(),
@@ -76,6 +84,6 @@ fn offline_startup_and_settings_survive_reopen_without_network() {
     }
     let reopened = DesktopBackend::open(directory.path()).unwrap();
     assert!(
-        matches!(reopened.execute(Command::LoadSettings).unwrap(),Response::Settings{value,has_session_key:false,..} if value.daily_new_limit==7)
+        matches!(reopened.execute(Command::LoadSettings).unwrap(),Response::Settings{value,has_session_key:false,..} if value.daily_new_limit==7 && value.theme==cijian_domain::settings::Theme::Dark && value.playback_rate==1.25)
     );
 }

@@ -28,7 +28,7 @@ impl RandomSource for Random {
         self.0
     }
 }
-struct Recorder(Arc<Store>);
+pub(super) struct Recorder(pub(super) Arc<Store>);
 impl CallRecorder for Recorder {
     async fn start(&self, call: CallStart) -> Result<()> {
         self.0.start(call).await

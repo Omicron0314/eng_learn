@@ -7,6 +7,33 @@ use cijian_ports::{
 use futures::future::BoxFuture;
 #[derive(Debug, Clone)]
 pub enum Command {
+    SetTheme {
+        value: cijian_domain::settings::Theme,
+    },
+    SetPlaybackRate {
+        rate: f64,
+    },
+    SetSystemVoice {
+        voice: String,
+    },
+    EnsureSystemAudio {
+        article: String,
+        voice: String,
+    },
+    EnsureAudio {
+        article: String,
+        operation: String,
+    },
+    AudioPause,
+    AudioResume,
+    AudioStop,
+    AudioSeek {
+        position: f64,
+    },
+    AudioRate {
+        rate: f64,
+    },
+    AudioStatus,
     ExportBackup,
     RestoreBackup,
     LoadStats {
@@ -102,6 +129,8 @@ pub struct SelectedFile {
 }
 #[derive(Debug, Clone)]
 pub enum Response {
+    Preferences(cijian_domain::settings::DevicePreferences),
+    Audio(cijian_domain::audio::Playback),
     BackupSaved,
     RestoreOpened,
     FileCancelled,
@@ -130,6 +159,10 @@ pub enum Response {
         revision: u64,
         provider: Option<cijian_domain::provider::ProviderConfig>,
         has_session_key: bool,
+        tts: Option<cijian_domain::provider::ProviderConfig>,
+        has_tts_key: bool,
+        voices: Vec<cijian_ports::audio::SystemVoice>,
+        system_voice: Option<String>,
     },
     Library(CardPage),
     Selected(Option<SelectedFile>),

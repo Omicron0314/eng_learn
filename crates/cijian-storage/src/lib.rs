@@ -17,6 +17,14 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use sha2::{Digest, Sha256};
 use std::{path::Path, sync::Mutex, time::Duration};
 
+fn study_settings_json(value: &Settings) -> Result<String> {
+    let mut value = serde_json::to_value(value).map_err(unavailable)?;
+    let object = value.as_object_mut().ok_or(invalid("学习设置结构无效"))?;
+    object.remove("theme");
+    object.remove("playbackRate");
+    serde_json::to_string(&value).map_err(unavailable)
+}
+
 const INITIAL: &str = include_str!("../migrations/0001_initial.sql");
 const MIGRATIONS: &[&str] = &[
     INITIAL,
@@ -115,7 +123,7 @@ impl Store {
         if inserted > 0 {
             tx.execute(
                 "INSERT INTO settings VALUES (?1,1,?2,1)",
-                params![id, serde_json::to_string(&Settings::default()).map_err(unavailable)?],
+                params![id, study_settings_json(&Settings::default())?],
             )
             .map_err(unavailable)?;
             tx.execute(
@@ -221,7 +229,7 @@ impl Store {
         Ok((settings, u64::try_from(revision).map_err(unavailable)?))
     }
     pub fn update_settings(&self, command: SaveSettings) -> Result<u64> {
-        let json = serde_json::to_string(command.value.get()).map_err(unavailable)?;
+        let json = study_settings_json(command.value.get())?;
         let request=serde_json::json!({"expectedRevision":command.expected_revision,"value":command.value.get()}).to_string();
         let revision = command
             .expected_revision

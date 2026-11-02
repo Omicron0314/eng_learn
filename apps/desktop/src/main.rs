@@ -1,5 +1,6 @@
 //! Desktop composition root. Optional --data-dir permits isolated acceptance runs.
 mod articles;
+mod audio;
 mod backend;
 mod backup;
 mod import_file;

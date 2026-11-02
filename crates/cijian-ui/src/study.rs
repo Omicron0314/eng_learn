@@ -172,17 +172,25 @@ impl Shell {
                     .child(diagnostic.clone()),
             );
         }
-        let ranges = tokenize(&article.body)
-            .into_iter()
-            .filter(|t| t.kind == TokenKind::Word)
-            .map(|t| t.start..t.end)
-            .collect::<Vec<_>>();
-        let click_ranges = ranges.clone();
-        let article_id = article.id.clone();
-        let body_hash = article.body_hash.clone();
-        let weak = cx.entity().downgrade();
-        body =
-            body.child(
+        body = body.child(self.audio_body(cx));
+        let listening = matches!(
+            self.navigation.current(),
+            Route::Article {
+                listening: true,
+                ..
+            }
+        );
+        if !listening || self.show_listening_text {
+            let ranges = tokenize(&article.body)
+                .into_iter()
+                .filter(|t| t.kind == TokenKind::Word)
+                .map(|t| t.start..t.end)
+                .collect::<Vec<_>>();
+            let click_ranges = ranges.clone();
+            let article_id = article.id.clone();
+            let body_hash = article.body_hash.clone();
+            let weak = cx.entity().downgrade();
+            body = body.child(
                 InteractiveText::new("article-body", StyledText::new(article.body.clone()))
                     .on_click(ranges, move |index, _, cx| {
                         let range = click_ranges[index].clone();
@@ -201,18 +209,21 @@ impl Shell {
                         });
                     }),
             );
+        }
         let completed = self
             .reading_session
             .as_ref()
             .is_some_and(|s| s.completed_at.is_some());
         body = body.child(
             material_button("complete-reading", ButtonVariant::Filled)
-                .child(if completed {
+                .child(if listening {
+                    "听完会自动记录"
+                } else if completed {
                     "本次阅读已完成"
                 } else {
                     "读完了"
                 })
-                .disabled(self.loading || completed)
+                .disabled(self.loading || completed || listening)
                 .on_click(cx.listener(|this, _, _, cx| {
                     if let (Some(article), Some(session)) = (&this.article, &this.reading_session) {
                         this.request(
@@ -243,7 +254,17 @@ impl Shell {
                                     article: article.id.clone(),
                                     body_hash: article.body_hash.clone(),
                                     value,
-                                    mode: FeedbackMode::Reading,
+                                    mode: if matches!(
+                                        this.navigation.current(),
+                                        Route::Article {
+                                            listening: true,
+                                            ..
+                                        }
+                                    ) {
+                                        FeedbackMode::Listening
+                                    } else {
+                                        FeedbackMode::Reading
+                                    },
                                     operation: this.operation("feedback"),
                                 },
                                 cx,

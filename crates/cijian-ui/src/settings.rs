@@ -11,6 +11,7 @@ pub(super) struct Editor {
     fields: BTreeMap<&'static str, Entity<InputState>>,
     endpoint: Entity<InputState>,
     model: Entity<InputState>,
+    voice: Entity<InputState>,
     key: Entity<InputState>,
 }
 impl Editor {
@@ -32,7 +33,6 @@ impl Editor {
             ("tts-limit", value.tts_daily_char_limit.to_string()),
             ("timezone", value.timezone.clone()),
             ("day-start", value.day_start_hour.to_string()),
-            ("playback-rate", value.playback_rate.to_string()),
         ];
         let fields = values
             .into_iter()
@@ -51,8 +51,13 @@ impl Editor {
             InputState::new(window, cx)
                 .default_value(provider.map(|p| p.model.clone()).unwrap_or_default())
         });
+        let voice = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(provider.and_then(|p| p.voice.clone()).unwrap_or_default())
+        });
         let key = cx.new(|cx| InputState::new(window, cx).masked(true));
         Self {
+            voice,
             fields,
             endpoint,
             model,
@@ -85,13 +90,27 @@ impl Editor {
         value.tts_daily_char_limit = integer("tts-limit")?;
         value.timezone = text("timezone");
         value.day_start_hour = integer("day-start")?;
-        value.playback_rate = number("playback-rate")?;
         cijian_domain::settings::ValidatedSettings::try_from(value.clone())
             .map_err(|e| AppError::new(cijian_ports::ErrorCode::InvalidInput, e.to_string()))?;
         Ok(value)
     }
 }
 impl Shell {
+    pub(super) fn apply_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let dark = match self.settings.theme {
+            Theme::Dark => true,
+            Theme::Light => false,
+            Theme::System => matches!(
+                window.appearance(),
+                gpui_kit::WindowAppearance::Dark | gpui_kit::WindowAppearance::VibrantDark
+            ),
+        };
+        if self.dark != dark {
+            self.dark = dark;
+            init_component_theme(theme::scheme(dark), 1., cx);
+            cx.notify();
+        }
+    }
     pub(super) fn settings_body(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         let mut body = div().flex().flex_col().gap_4();
         let Some(editor) = &self.settings_editor else {
@@ -106,11 +125,50 @@ impl Shell {
                     } else {
                         "切换深色"
                     })
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.settings.theme = if this.dark { Theme::Light } else { Theme::Dark };
+                        this.apply_theme(window, cx);
+                        if this.backend.is_some() {
+                            this.request(
+                                Command::SetTheme {
+                                    value: this.settings.theme,
+                                },
+                                cx,
+                            );
+                        }
+                    })),
+            )
+            .child(
+                material_button("system-theme", ButtonVariant::Text)
+                    .child("主题跟随系统")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.settings.theme = Theme::System;
+                        this.apply_theme(window, cx);
+                        if this.backend.is_some() {
+                            this.request(
+                                Command::SetTheme {
+                                    value: Theme::System,
+                                },
+                                cx,
+                            );
+                        }
+                    })),
+            )
+            .child(
+                material_button("device-rate", ButtonVariant::Tonal)
+                    .child(format!("本机播放速度：{}×", self.settings.playback_rate))
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.dark = !this.dark;
-                        this.settings.theme = if this.dark { Theme::Dark } else { Theme::Light };
-                        init_component_theme(theme::scheme(this.dark), 1.0, cx);
-                        cx.notify();
+                        let rates = [0.75, 1., 1.25, 1.5, 2.];
+                        let index = rates
+                            .iter()
+                            .position(|r| *r == this.settings.playback_rate)
+                            .unwrap_or(1);
+                        this.request(
+                            Command::SetPlaybackRate {
+                                rate: rates[(index + 1) % rates.len()],
+                            },
+                            cx,
+                        );
                     })),
             )
             .child(
@@ -155,7 +213,6 @@ impl Shell {
             ("tts-limit", "每日远程朗读字符额度"),
             ("timezone", "学习时区"),
             ("day-start", "学习日开始小时"),
-            ("playback-rate", "播放速度"),
         ] {
             body = body.child(TextField::new(key, &editor.fields[key]).label(label));
         }
@@ -188,14 +245,38 @@ impl Shell {
         );
         body = body
             .child("AI 服务")
+            .child(
+                material_button("provider-kind", ButtonVariant::Tonal)
+                    .child(if self.provider_kind == ProviderKind::Llm {
+                        "配置类型：文章与释义"
+                    } else {
+                        "配置类型：远程朗读"
+                    })
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.provider_kind = if this.provider_kind == ProviderKind::Llm {
+                            ProviderKind::Tts
+                        } else {
+                            ProviderKind::Llm
+                        };
+                        this.settings_editor = None;
+                        cx.notify();
+                    })),
+            )
             .child("保存配置不会调用模型。密钥仅保存在本次会话，退出后需重新输入。")
-            .child(if self.has_session_key {
-                "本次会话已设置密钥；留空表示保留"
-            } else {
-                "本次会话未设置密钥"
-            })
+            .child(
+                if (self.provider_kind == ProviderKind::Llm && self.has_session_key)
+                    || (self.provider_kind == ProviderKind::Tts && self.has_tts_key)
+                {
+                    "本次会话已设置密钥；留空表示保留"
+                } else {
+                    "本次会话未设置密钥"
+                },
+            )
             .child(TextField::new("provider-endpoint", &editor.endpoint).label("服务地址"))
             .child(TextField::new("provider-model", &editor.model).label("模型名称"))
+            .child(
+                TextField::new("provider-voice", &editor.voice).label("语音名称（远程朗读时必填）"),
+            )
             .child(TextField::new("provider-key", &editor.key).label("会话密钥"))
             .child(
                 material_button("save-provider", ButtonVariant::Filled)
@@ -238,12 +319,21 @@ impl Shell {
         let Some(editor) = &self.settings_editor else {
             return;
         };
-        let revision = self.provider_config.as_ref().map_or(0, |p| p.revision);
+        let revision = (if self.provider_kind == ProviderKind::Tts {
+            self.tts_config.as_ref()
+        } else {
+            self.provider_config.as_ref()
+        })
+        .map_or(0, |p| p.revision);
         let config = ProviderConfig {
-            kind: ProviderKind::Llm,
+            kind: self.provider_kind,
             endpoint: editor.endpoint.read(cx).value().trim().into(),
             model: editor.model.read(cx).value().trim().into(),
-            voice: None,
+            voice: if self.provider_kind == ProviderKind::Tts {
+                Some(editor.voice.read(cx).value().trim().into())
+            } else {
+                None
+            },
             revision: revision + 1,
         };
         if let Err(error) = config.validate() {
