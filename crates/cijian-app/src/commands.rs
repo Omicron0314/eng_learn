@@ -85,6 +85,12 @@ pub enum Command {
         mode: cijian_domain::reading::FeedbackMode,
         operation: String,
     },
+    FlagSentences {
+        article: String,
+        body_hash: String,
+        flag: cijian_ports::reading::SentenceFlag,
+        operation: String,
+    },
     Mark {
         article: String,
         body_hash: String,
@@ -196,6 +202,10 @@ pub enum Response {
     Job(cijian_ports::articles::GenerationJob),
     Completed(cijian_ports::reading::ReadingSession),
     FeedbackSaved(cijian_ports::reading::Feedback),
+    SentencesFlagged {
+        article: String,
+        body_hash: String,
+    },
     InboxProcessed(cijian_ports::inbox::BatchResult),
     LearningSettingsSaved {
         value: cijian_domain::settings::Settings,

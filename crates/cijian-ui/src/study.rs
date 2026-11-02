@@ -299,7 +299,19 @@ impl Shell {
                 })),
             );
         }
-        body = body.child(feedback);
+        body = body
+            .child(feedback)
+            .child(
+                material_button("flag-sentences", ButtonVariant::Text)
+                    .child("反馈不自然的句子")
+                    .disabled(self.loading)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.reader_flags.open = true;
+                        this.error = None;
+                        cx.notify();
+                    })),
+            )
+            .child(self.flag_dialog(cx));
         if let Some((context, _, meaning)) = &self.lookup {
             let mut sheet = MaterialSideSheet::new("word-sheet")
                 .open(true)

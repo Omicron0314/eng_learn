@@ -108,15 +108,53 @@ fn stale_body_partial_words_and_event_failure_are_rejected() {
     assert!(store.open_reading(failed, "failed-session").is_err());
     assert!(session(&store.connection.lock().unwrap(), "p", "failed-session").is_err());
     let ranges = reading::sentences(&store.article("p", "article").unwrap().body);
+    for _ in 0..2 {
+        store
+            .flag_sentences(
+                command(&store, "flag"),
+                SentenceFlag {
+                    ranges: ranges.clone(),
+                    note: "这句不自然".into(),
+                },
+            )
+            .unwrap();
+    }
+    let flag = SentenceFlag {
+        ranges,
+        note: "另一次原创反馈".into(),
+    };
+    let mut failed = command(&store, "failed-flag");
+    failed.event = "bootstrap-p".into();
+    assert!(store.flag_sentences(failed, flag.clone()).is_err());
+    assert_eq!(
+        store
+            .connection
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM events WHERE type='unnatural_flag'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        1
+    );
     store
-        .flag_sentences(
-            command(&store, "flag"),
-            SentenceFlag {
-                ranges,
-                note: "这句不自然".into(),
-            },
-        )
+        .flag_sentences(command(&store, "failed-flag"), flag)
         .unwrap();
+    assert_eq!(
+        store
+            .connection
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM events WHERE type='unnatural_flag'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        2
+    );
     assert!(
         store
             .flag_sentences(

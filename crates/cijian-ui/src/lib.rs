@@ -3,6 +3,7 @@
 extern crate gpui_kit as gpui;
 mod audio;
 mod library;
+mod reader_flags;
 mod settings;
 mod stats;
 mod study;
@@ -73,6 +74,7 @@ struct Shell {
     article: Option<cijian_ports::articles::Article>,
     reading_session: Option<cijian_ports::reading::ReadingSession>,
     reading_feedback: Vec<cijian_ports::reading::Feedback>,
+    reader_flags: reader_flags::FlagState,
     lookup: Option<(cijian_ports::reading::LookupContext, u64, String)>,
     generation_job: Option<cijian_ports::articles::GenerationJob>,
     inbox: Vec<cijian_ports::inbox::InboxItem>,
@@ -148,6 +150,7 @@ impl Shell {
             article: None,
             reading_session: None,
             reading_feedback: Vec::new(),
+            reader_flags: Default::default(),
             lookup: None,
             generation_job: None,
             inbox: Vec::new(),
@@ -235,6 +238,7 @@ impl Shell {
                         feedback,
                     }) => {
                         this.reading_feedback = feedback;
+                        this.reader_flags.open = false;
                         this.stored_audio = audio;
                         let listening=matches!(this.navigation.current(),Route::Article{id,listening:true} if id==&article.id);
                         this.navigation.navigate(Route::Article {
@@ -286,6 +290,7 @@ impl Shell {
                         this.reading_feedback.push(feedback);
                         this.notice = Some("反馈已保存".into());
                     }
+                    Ok(Response::SentencesFlagged {article,body_hash}) => this.flag_saved(article,body_hash),
                     Ok(Response::Job(job)) => this.receive_job(job, cx),
                     Ok(Response::LearningSettingsSaved {
                         mut value,
@@ -864,6 +869,7 @@ impl Shell {
             });
         }
         self.prepare_settings(window, cx);
+        self.prepare_flag(window, cx);
         let compact = window.viewport_size().width < px(600.);
         let selected = self.navigation.current().section();
         let entity = cx.entity().downgrade();

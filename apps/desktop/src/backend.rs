@@ -291,6 +291,18 @@ impl DesktopBackend {
                 )?;
                 Ok(Response::FeedbackSaved(feedback))
             }
+            Command::FlagSentences {
+                article,
+                body_hash,
+                flag,
+                operation,
+            } => {
+                self.store.flag_sentences(
+                    self.reader_command(article.clone(), body_hash.clone(), operation),
+                    flag,
+                )?;
+                Ok(Response::SentencesFlagged { article, body_hash })
+            }
             Command::Mark {
                 article,
                 body_hash,
