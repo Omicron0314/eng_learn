@@ -71,7 +71,7 @@ impl Playback {
         }
     }
     pub fn set_rate(&mut self, rate: f64) -> Result<(), ValidationError> {
-        if ![0.75, 1., 1.25, 1.5, 2.].contains(&rate) {
+        if !crate::settings::PLAYBACK_RATES.contains(&rate) {
             return Err(ValidationError::new("rate", "不支持的播放速度"));
         }
         self.rate = rate;

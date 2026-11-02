@@ -158,7 +158,7 @@ impl Shell {
                 material_button("device-rate", ButtonVariant::Tonal)
                     .child(format!("本机播放速度：{}×", self.settings.playback_rate))
                     .on_click(cx.listener(|this, _, _, cx| {
-                        let rates = [0.75, 1., 1.25, 1.5, 2.];
+                        let rates = cijian_domain::settings::PLAYBACK_RATES;
                         let index = rates
                             .iter()
                             .position(|r| *r == this.settings.playback_rate)

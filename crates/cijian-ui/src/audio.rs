@@ -223,7 +223,7 @@ impl Shell {
                     material_button("audio-speed", ButtonVariant::Tonal)
                         .child(format!("{}×", self.playback.rate))
                         .on_click(cx.listener(|this, _, _, cx| {
-                            let rates = [0.75, 1., 1.25, 1.5, 2.];
+                            let rates = cijian_domain::settings::PLAYBACK_RATES;
                             let index = rates
                                 .iter()
                                 .position(|r| *r == this.playback.rate)

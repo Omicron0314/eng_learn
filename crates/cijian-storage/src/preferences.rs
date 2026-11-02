@@ -61,6 +61,29 @@ impl Store {
 mod tests {
     use super::*;
     #[test]
+    fn first_device_preserves_older_legal_playback_rates() {
+        for rate in [0.9, 1.1] {
+            let store = Store::memory().unwrap();
+            store.create_profile("p", "测试", 0).unwrap();
+            let mut legacy = store.settings("p").unwrap().0;
+            legacy.playback_rate = rate;
+            legacy.theme = cijian_domain::settings::Theme::Dark;
+            store
+                .connection
+                .lock()
+                .unwrap()
+                .execute(
+                    "UPDATE settings SET json=?1 WHERE profile_id='p'",
+                    [serde_json::to_string(&legacy).unwrap()],
+                )
+                .unwrap();
+            store.ensure_device("p", "first", "test").unwrap();
+            let (value, _) = store.device_preferences("p", "first").unwrap();
+            assert_eq!(value.playback_rate, rate);
+            assert_eq!(value.theme, cijian_domain::settings::Theme::Dark);
+        }
+    }
+    #[test]
     fn preferences_are_device_local_and_event_failure_rolls_back() {
         let store = Store::memory().unwrap();
         store.create_profile("p", "测试", 0).unwrap();
