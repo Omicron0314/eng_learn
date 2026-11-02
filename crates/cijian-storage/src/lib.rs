@@ -1,6 +1,7 @@
 //! Native SQLite adapter. Its synchronous transaction stays inside the adapter;
 //! callers execute native IO on a background worker, never in GPUI render.
 mod calls;
+mod library;
 use cijian_domain::settings::{Settings, ValidatedSettings};
 use cijian_ports::{AppError, ErrorCode, Event, Result, SaveSettings, SettingsRepository};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};

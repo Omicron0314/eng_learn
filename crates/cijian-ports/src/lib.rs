@@ -1,4 +1,5 @@
 //! IO contracts. Platform resources stay behind these interfaces.
+pub mod library;
 pub mod provider;
 use serde::{Deserialize, Serialize};
 
