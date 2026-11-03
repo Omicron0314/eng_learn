@@ -1,0 +1,26 @@
+{
+  "task": ["R05", "R09", "R10", "R11"],
+  "date": "2026-11-03",
+  "command": "CARGO_TARGET_DIR=spikes/r00/target cargo test -p cijian-desktop local_stub_generation --locked --offline",
+  "result": "passed",
+  "environment": "test-only desktop backend with session secrets; loopback OpenAI-compatible stub on an ephemeral 127.0.0.1 port",
+  "flow": [
+    "import 120 original baseline words and one original study word",
+    "seed a same-day Again review so the study word becomes a generation candidate",
+    "save article length/target settings and an LLM provider pointing at the loopback stub",
+    "generate article, observe job until succeeded, open article and complete the reading session",
+    "lookup the target word, receive a validated gloss through the stub, save reading feedback",
+    "add the word to review and inspect exported audit tables"
+  ],
+  "asserted": [
+    "generated body has at least 100 words and article generation succeeds",
+    "lookup selects the expected lemma and records generation plus gloss calls",
+    "events include article_generate, article_complete, difficulty_feedback and add_to_review",
+    "no real endpoint, paid call, private data or system credential store is used"
+  ],
+  "does_not_prove": [
+    "real model quality, article naturalness or gloss accuracy",
+    "UI rendering of this flow or browser storage",
+    "human listening, reading comprehension or long-term learning effects"
+  ]
+}

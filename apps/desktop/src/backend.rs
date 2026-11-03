@@ -1,4 +1,6 @@
 #[cfg(test)]
+mod e2e_tests;
+#[cfg(test)]
 mod library_tests;
 #[cfg(test)]
 mod tests;
