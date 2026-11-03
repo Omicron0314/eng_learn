@@ -1,0 +1,15 @@
+{
+  "task": "R18",
+  "date": "2026-11-03",
+  "command": "CARGO_TARGET_DIR=spikes/r00/target cargo check -p cijian-ui --target wasm32-unknown-unknown --locked --offline",
+  "result": "passed",
+  "change": "cijian-ui enables getrandom/wasm_js for target_family=wasm",
+  "proves": ["shared domain/app/ports/UI type-check for wasm32-unknown-unknown"],
+  "does_not_prove": [
+    "browser repository persistence or replay",
+    "IndexedDB/OPFS, file import/export, credentials or audio adapters",
+    "URL/history, service worker/offline assets or PWA installation",
+    "Chinese IME, touch, soft-keyboard avoidance or real mobile browsers",
+    "a runnable browser product"
+  ]
+}

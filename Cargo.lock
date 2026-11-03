@@ -1042,6 +1042,7 @@ dependencies = [
  "cijian-app",
  "cijian-domain",
  "cijian-ports",
+ "getrandom 0.4.3",
  "gpui-kit",
  "gpui-kit-material",
  "serde_json",
