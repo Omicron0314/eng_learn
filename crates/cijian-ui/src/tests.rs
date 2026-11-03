@@ -1,5 +1,6 @@
 mod inbox;
 mod library;
+mod review;
 use super::*;
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{Bounds, TestAppContext, size};

@@ -21,7 +21,7 @@ use cijian_ports::{
     AppError,
     library::{CardPage, CardView, ImportReport},
 };
-use gpui_kit::{App, Context, Window, WindowOptions, div, prelude::*, px};
+use gpui_kit::{App, Context, TestSupportExt as _, Window, WindowOptions, div, prelude::*, px};
 use gpui_kit_material::{
     color::ColorRole,
     components::{ButtonVariant, NavIcon, NavItem, NavigationBar, NavigationRail, material_button},
@@ -800,7 +800,15 @@ impl Shell {
                             } else {
                                 card.meaning.clone()
                             })
-                            .child(card.example.clone());
+                            .child(card.example.clone())
+                            .child(
+                                div()
+                                    .id("review-source")
+                                    .test_support()
+                                    .role(gpui_kit::Role::Label)
+                                    .aria_label(format!("来源：{}", card.text_source))
+                                    .child(format!("来源：{}", card.text_source)),
+                            );
                         let mut ratings = div().flex().flex_wrap().gap_2();
                         for (index, (label, rating)) in [
                             ("重来", Rating::Again),
