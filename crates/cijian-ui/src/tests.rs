@@ -1,3 +1,4 @@
+mod inbox;
 mod library;
 use super::*;
 use gpui_kit::test::TestWindowExt;

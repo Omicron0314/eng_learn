@@ -478,6 +478,10 @@ impl Shell {
                 });
             if let Some(article_id) = &item.article_id {
                 let id = article_id.clone();
+                let reveal = item
+                    .range
+                    .zip(item.body_hash.clone())
+                    .map(|(range, hash)| (id.clone(), hash, range.start));
                 row = row.child(
                     material_button(
                         gpui_kit::ElementId::Name(format!("source-{}", item.id).into()),
@@ -489,6 +493,7 @@ impl Shell {
                             .unwrap_or("来源文章不可用".into()),
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
+                        this.source_reveal = reveal.clone();
                         this.request(Command::OpenArticle { id: id.clone() }, cx)
                     })),
                 );

@@ -43,6 +43,7 @@ struct Shell {
     reader_scroll: gpui_kit::ScrollHandle,
     heatmap_focus: std::cell::RefCell<Vec<gpui_kit::FocusHandle>>,
     positions: reader_positions::Positions,
+    source_reveal: Option<(String, String, usize)>,
     lookup_loading: bool,
     reader_text: Option<reader_text::ReaderText>,
     error: Option<String>,
@@ -126,6 +127,7 @@ impl Shell {
             reader_scroll: gpui_kit::ScrollHandle::new(),
             heatmap_focus: Default::default(),
             positions: Default::default(),
+            source_reveal: None,
             lookup_loading: false,
             reader_text: None,
             error: None,
@@ -255,6 +257,14 @@ impl Shell {
                         audio,
                         feedback,
                     }) => {
+                        if this
+                            .source_reveal
+                            .as_ref()
+                            .is_some_and(|(id, hash, _)| id != &article.id || hash != &article.body_hash)
+                        {
+                            this.source_reveal = None;
+                            this.notice = Some("来源文章正文已变化，无法定位原词".into());
+                        }
                         this.reading_feedback = feedback;
                         this.reader_flags.open = false;
                         this.stored_audio = audio;

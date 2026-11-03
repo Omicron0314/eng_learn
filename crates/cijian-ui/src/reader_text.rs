@@ -32,6 +32,12 @@ impl Shell {
             return;
         };
         let key = (article.id.clone(), article.body_hash.clone());
+        let reveal = self
+            .source_reveal
+            .as_ref()
+            .filter(|(id, hash, _)| id == &key.0 && hash == &key.1)
+            .map(|(_, _, position)| *position)
+            .filter(|position| *position <= article.body.len());
         let session = self
             .reading_session
             .as_ref()
@@ -49,6 +55,11 @@ impl Shell {
             .as_mut()
             .filter(|text| text.key == key && text.session == session_id)
         {
+            if let Some(position) = reveal {
+                text.restore = Some(position);
+                text.position = position;
+                self.source_reveal = None;
+            }
             if visible && !text.visible {
                 text.restore = Some(text.position);
             }
@@ -93,11 +104,14 @@ impl Shell {
             lines,
             length,
             position,
-            restore: (position > 0).then_some(position),
+            restore: reveal.or((position > 0).then_some(position)),
             width: None,
             visible,
             initial_save: position != saved,
         });
+        if reveal.is_some() {
+            self.source_reveal = None;
+        }
     }
     pub(super) fn reveal_word(&mut self, context: &cijian_ports::reading::LookupContext) {
         if let Some(reader) = self
@@ -152,7 +166,7 @@ impl Shell {
             } else {
                 inner.y
             };
-            if desired != inner.y {
+            if desired != inner.y && document.size.height > bounds.size.height + px(1.) {
                 let input = reader.input.clone();
                 input.update(cx, |input, cx| {
                     input.set_scroll_offset(gpui_kit::point(inner.x, desired), cx)
