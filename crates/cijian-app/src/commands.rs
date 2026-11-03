@@ -46,7 +46,9 @@ pub enum Command {
     ImportLegacy {
         selection: String,
     },
-    ExportBackup,
+    ExportBackup {
+        include_audio: bool,
+    },
     RestoreBackup,
     LoadStats {
         page: u32,

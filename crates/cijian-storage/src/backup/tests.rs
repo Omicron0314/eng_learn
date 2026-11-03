@@ -11,7 +11,7 @@ fn populated() -> Store {
 fn roundtrip_retains_articles_events_and_excludes_credentials_jobs() {
     let source = populated();
     source.connection.lock().unwrap().execute("INSERT INTO provider_configs VALUES ('provider','p','llm','https://example.invalid/v1','model',NULL,'private-reference',1)",[]).unwrap();
-    let package = source.export_profile("p").unwrap();
+    let package = source.export_profile("p", false).unwrap();
     let text = serde_json::to_string(&package).unwrap();
     assert!(!text.contains("private-reference"));
     assert!(
@@ -50,7 +50,7 @@ fn roundtrip_retains_articles_events_and_excludes_credentials_jobs() {
 #[test]
 fn corrupted_unknown_and_nonempty_restores_leave_destination_unchanged() {
     let source = populated();
-    let package = source.export_profile("p").unwrap();
+    let package = source.export_profile("p", false).unwrap();
     let target = Store::memory().unwrap();
     let mut corrupt = package.clone();
     corrupt.payload["tables"]["articles"][0]["body"] = "tampered".into();
@@ -86,7 +86,7 @@ fn corrupted_unknown_and_nonempty_restores_leave_destination_unchanged() {
 fn restores_v1_packages_without_losing_new_archive_validation() {
     let source = Store::memory().unwrap();
     source.create_profile("p", "原创", 0).unwrap();
-    let mut package = source.export_profile("p").unwrap();
+    let mut package = source.export_profile("p", false).unwrap();
     package.version = 1;
     let tables = package.payload["tables"].as_object_mut().unwrap();
     tables.remove("legacy_records");
@@ -106,7 +106,7 @@ fn restores_v1_packages_without_losing_new_archive_validation() {
             [payload.to_string()],
         )
         .unwrap();
-    assert!(source.export_profile("p").is_err());
+    assert!(source.export_profile("p", false).is_err());
 }
 
 #[test]
@@ -121,5 +121,62 @@ fn sensitive_event_payload_refuses_export() {
             [r#"{"apiKey":"original-test-secret"}"#],
         )
         .unwrap();
-    assert!(source.export_profile("p").is_err());
+    assert!(source.export_profile("p", false).is_err());
+}
+
+#[test]
+fn audio_inclusive_backup_requires_matching_verified_blob_entries() {
+    let source = populated();
+    let blob = format!("{}.wav", "a".repeat(64));
+    {
+        let db = source.connection.lock().unwrap();
+        db.execute(
+            "INSERT INTO audio_assets VALUES ('audio','p','cache','hash','fp','model','voice','wav',?1,1.0,2,1)",
+            [&blob],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO article_audio_links VALUES ('p','article','audio')",
+            [],
+        )
+        .unwrap();
+    }
+    let package = source.export_profile("p", true).unwrap();
+    assert_eq!(package.version, 3);
+    assert_eq!(package.payload["audioIncluded"], true);
+    assert!(
+        package.payload["tables"]
+            .as_object()
+            .unwrap()
+            .contains_key("audio_assets")
+    );
+    let target = Store::memory().unwrap();
+    assert!(
+        target
+            .restore_profile(package.clone(), "new", "event", "op", 1)
+            .is_err()
+    );
+    assert!(target.first_profile().unwrap().is_none());
+    let mut good = package;
+    good.payload["audioBlobs"] = json!([{
+        "blobKey": blob,
+        "sha256": "a".repeat(64),
+        "bytes": "AA=="
+    }]);
+    good.checksum = hash(&cijian_domain::json::canonical_json(&good.payload));
+    let result = target
+        .restore_profile(good, "new", "event", "op", 1)
+        .unwrap();
+    assert!(result.audio_included);
+    assert_eq!(result.counts["audio_assets"], 1);
+    assert_eq!(result.counts["article_audio_links"], 1);
+    let db = target.connection.lock().unwrap();
+    let audio: Option<String> = db
+        .query_row(
+            "SELECT audio_id FROM audio_sessions WHERE profile_id='new'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+    assert!(audio.is_none());
 }

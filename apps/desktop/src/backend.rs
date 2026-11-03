@@ -250,7 +250,7 @@ impl DesktopBackend {
                 self.select_legacy_profile(&selection, &profile)
             }
             Command::ImportLegacy { selection } => self.import_legacy(&selection),
-            Command::ExportBackup => self.export_backup(),
+            Command::ExportBackup { include_audio } => self.export_backup(include_audio),
             Command::RestoreBackup => self.restore_backup(),
             Command::LoadStats { page } => Ok(Response::Stats(Box::new(self.store.stats(
                 &self.profile,

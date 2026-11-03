@@ -182,7 +182,7 @@ fn wal_snapshot_preserves_ids_schedule_analysis_and_never_exports_credentials() 
             .0,
         snapshot.blobs[0].checksum
     );
-    let package = target.export_profile("p").unwrap();
+    let package = target.export_profile("p", false).unwrap();
     assert!(
         !serde_json::to_string(&package)
             .unwrap()

@@ -5,6 +5,7 @@ use cijian_ports::backup::*;
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+const AUDIO_TABLES: &[&str] = &["audio_assets", "article_audio_links"];
 const TABLES: &[&str] = &[
     "profiles",
     "devices",
@@ -16,6 +17,31 @@ const TABLES: &[&str] = &[
     "cards",
     "articles",
     "article_targets",
+    "reading_sessions",
+    "lexeme_marks",
+    "inbox",
+    "audio_reservations",
+    "audio_sessions",
+    "review_logs",
+    "events",
+    "llm_calls",
+    "legacy_records",
+    "legacy_imports",
+];
+/// Insert order must satisfy foreign keys; audio assets precede sessions and links.
+const RESTORE_ORDER: &[&str] = &[
+    "profiles",
+    "devices",
+    "settings",
+    "lexemes",
+    "word_books",
+    "imports",
+    "book_entries",
+    "cards",
+    "articles",
+    "article_targets",
+    "audio_assets",
+    "article_audio_links",
     "reading_sessions",
     "lexeme_marks",
     "inbox",
@@ -63,6 +89,13 @@ pub(super) fn sql_value(value: &Value) -> Result<SqlValue> {
         _ => Err(invalid("备份列类型无效")),
     }
 }
+fn valid_blob_key(key: &str) -> bool {
+    key.rsplit_once('.').is_some_and(|(stem, extension)| {
+        stem.len() == 64
+            && stem.bytes().all(|byte| byte.is_ascii_hexdigit())
+            && ["wav", "mp3"].contains(&extension)
+    })
+}
 fn columns(db: &Connection, table: &str) -> Result<Vec<String>> {
     let mut query = db
         .prepare(&format!("PRAGMA table_info({table})"))
@@ -74,8 +107,9 @@ fn columns(db: &Connection, table: &str) -> Result<Vec<String>> {
         .map_err(unavailable)
 }
 impl Store {
-    /// Consistent logical snapshot; credentials, cache blobs and unfinished jobs are excluded.
-    pub fn export_profile(&self, profile: &str) -> Result<BackupPackage> {
+    /// Consistent logical snapshot; credentials and unfinished jobs are excluded.
+    /// Audio metadata and links are included only when the caller will attach verified blobs.
+    pub fn export_profile(&self, profile: &str, include_audio: bool) -> Result<BackupPackage> {
         let mut db = self.connection.lock().map_err(unavailable)?;
         let tx = db.transaction().map_err(unavailable)?;
         let exists: bool = tx
@@ -88,8 +122,14 @@ impl Store {
         if !exists {
             return Err(AppError::new(ErrorCode::NotFound, "用户档案不存在"));
         }
+        let table_names = TABLES
+            .iter()
+            .copied()
+            .chain(include_audio.then_some("audio_assets"))
+            .chain(include_audio.then_some("article_audio_links"))
+            .collect::<Vec<_>>();
         let mut tables = serde_json::Map::new();
-        for table in TABLES {
+        for table in &table_names {
             let query = if *table == "profiles" {
                 format!("SELECT * FROM {table} WHERE id=?1")
             } else if *table == "lexemes" {
@@ -124,7 +164,7 @@ impl Store {
                     };
                     object.insert(name.clone(), value);
                 }
-                if *table == "audio_sessions" {
+                if *table == "audio_sessions" && !include_audio {
                     object.insert("audio_id".into(), Value::Null);
                 }
                 if *table == "llm_calls" {
@@ -148,15 +188,27 @@ impl Store {
             }
             tables.insert((*table).into(), Value::Array(rows));
         }
-        let payload = json!({"profile":profile,"tables":tables,"audioIncluded":false,"credentialsIncluded":false});
+        let payload = json!({"profile":profile,"tables":tables,"audioIncluded":include_audio,"audioBlobs":[],"credentialsIncluded":false});
         let checksum = hash(&cijian_domain::json::canonical_json(&payload));
         tx.commit().map_err(unavailable)?;
         Ok(BackupPackage {
             format: "cijian-profile".into(),
-            version: 2,
+            version: 3,
             checksum,
             payload,
         })
+    }
+    /// Cache files that a v3 audio backup must attach and verify.
+    pub fn audio_blob_keys(&self, profile: &str) -> Result<Vec<String>> {
+        let db = self.connection.lock().map_err(unavailable)?;
+        let mut statement = db
+            .prepare("SELECT blob_key FROM audio_assets WHERE profile_id=?1 ORDER BY blob_key")
+            .map_err(unavailable)?;
+        statement
+            .query_map([profile], |row| row.get::<_, String>(0))
+            .map_err(unavailable)?
+            .collect::<std::result::Result<_, _>>()
+            .map_err(unavailable)
     }
     /// Restore only into an empty new store; the caller publishes its directory after success.
     pub fn restore_profile(
@@ -168,7 +220,7 @@ impl Store {
         now: i64,
     ) -> Result<RestoreReport> {
         if package.format != "cijian-profile"
-            || ![1, 2].contains(&package.version)
+            || ![1, 2, 3].contains(&package.version)
             || hash(&if package.version == 1 {
                 package.payload.to_string()
             } else {
@@ -197,12 +249,75 @@ impl Store {
             tables.insert("legacy_records".into(), json!([]));
             tables.insert("legacy_imports".into(), json!([]));
         }
-        if tables.len() != TABLES.len()
-            || TABLES.iter().any(|t| !tables.contains_key(*t))
-            || package.payload["audioIncluded"] != false
-            || package.payload["credentialsIncluded"] != false
-        {
+        let audio_included = package.payload["audioIncluded"]
+            .as_bool()
+            .ok_or(invalid("备份音频标记无效"))?;
+        if package.payload["credentialsIncluded"] != false {
+            return Err(invalid("备份包含凭据"));
+        }
+        if audio_included && package.version < 3 {
+            return Err(invalid("旧版本备份不能声明音频内容"));
+        }
+        if audio_included {
+            if AUDIO_TABLES
+                .iter()
+                .any(|table| !tables.contains_key(*table))
+            {
+                return Err(invalid("音频备份缺少音频表"));
+            }
+        } else if AUDIO_TABLES.iter().any(|table| tables.contains_key(*table)) {
+            return Err(invalid("非音频备份包含音频表"));
+        }
+        let expected = TABLES.len()
+            + if audio_included {
+                AUDIO_TABLES.len()
+            } else {
+                0
+            };
+        if tables.len() != expected || TABLES.iter().any(|table| !tables.contains_key(*table)) {
             return Err(invalid("备份包含未知或缺失的内容"));
+        }
+        let blobs = package.payload.get("audioBlobs");
+        let blobs = match (audio_included, blobs) {
+            (false, None) => Vec::new(),
+            (false, Some(Value::Array(blobs))) if blobs.is_empty() => Vec::new(),
+            (true, Some(Value::Array(blobs))) => blobs.clone(),
+            _ => return Err(invalid("备份音频清单无效")),
+        };
+        let assets = tables
+            .get("audio_assets")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let mut asset_keys = std::collections::BTreeSet::new();
+        for asset in &assets {
+            let key = asset["blob_key"]
+                .as_str()
+                .filter(|key| valid_blob_key(key))
+                .ok_or(invalid("音频缓存键无效"))?;
+            if !asset_keys.insert(key.to_owned()) {
+                return Err(invalid("音频缓存键重复"));
+            }
+        }
+        let mut blob_keys = std::collections::BTreeSet::new();
+        for blob in &blobs {
+            let key = blob["blobKey"]
+                .as_str()
+                .filter(|key| valid_blob_key(key))
+                .ok_or(invalid("音频缓存键无效"))?;
+            let stem = key
+                .rsplit_once('.')
+                .map(|(stem, _)| stem)
+                .unwrap_or_default();
+            if blob["sha256"].as_str() != Some(stem)
+                || blob["bytes"].as_str().is_none_or(str::is_empty)
+                || !blob_keys.insert(key.to_owned())
+            {
+                return Err(invalid("音频缓存清单与校验和不一致"));
+            }
+        }
+        if asset_keys != blob_keys {
+            return Err(invalid("音频缓存与音频表不一致"));
         }
         let mut db = self.connection.lock().map_err(unavailable)?;
         let tx = db
@@ -216,7 +331,10 @@ impl Store {
             return Err(invalid("恢复目标必须为新的空学习库"));
         }
         let mut counts = BTreeMap::new();
-        for table in TABLES {
+        for table in RESTORE_ORDER {
+            if !tables.contains_key(*table) {
+                continue;
+            }
             let names = columns(&tx, table)?;
             let rows = tables[*table].as_array().ok_or(invalid("备份行结构无效"))?;
             if ["profiles", "settings"].contains(table) && rows.len() != 1 {
@@ -309,7 +427,7 @@ impl Store {
         Ok(RestoreReport {
             profile: new_profile.into(),
             counts,
-            audio_included: false,
+            audio_included,
             credentials_included: false,
         })
     }

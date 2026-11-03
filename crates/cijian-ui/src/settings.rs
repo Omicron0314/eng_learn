@@ -362,14 +362,37 @@ impl Shell {
                 body.child("请先保存或撤销 AI 草稿，再清除已保存密钥。")
             })
             .child("学习数据")
-            .child("备份包含学习记录和文章，不包含密钥或音频缓存。恢复会建立并打开新的学习库。")
+            .child("备份包含学习记录和文章，始终不包含密钥。恢复会建立并打开新的学习库。")
+            .child(
+                material_button("backup-audio", ButtonVariant::Tonal)
+                    .child(if self.backup_audio {
+                        "备份包含音频：是"
+                    } else {
+                        "备份包含音频：否"
+                    })
+                    .disabled(self.loading)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.backup_audio = !this.backup_audio;
+                        cx.notify();
+                    })),
+            )
+            .child(if self.backup_audio {
+                "音频缓存会逐个校验后写入备份，文件会明显变大；缺失或损坏的缓存会阻止导出。"
+            } else {
+                "默认不包含音频缓存，恢复后可按需重新合成或本机朗读。"
+            })
             .child(
                 material_button("export-backup", ButtonVariant::Tonal)
                     .child("导出学习备份")
                     .disabled(self.loading)
-                    .on_click(
-                        cx.listener(|this, _, _, cx| this.request(Command::ExportBackup, cx)),
-                    ),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.request(
+                            Command::ExportBackup {
+                                include_audio: this.backup_audio,
+                            },
+                            cx,
+                        )
+                    })),
             )
             .child(
                 material_button("restore-backup", ButtonVariant::Tonal)
