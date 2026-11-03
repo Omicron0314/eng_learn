@@ -29,5 +29,19 @@
     "X11, Windows, macOS, touch, screen reader and GPU recovery",
     "release performance trace and 10k-word interaction measurement",
     "packaged upgrade and restore on this host"
-  ]
+  ],
+  "package": {
+    "path": "dist/cijian-desktop-linux-x86_64.tar.gz (ignored build artifact, 45 MiB)",
+    "sha256": "cc8998181917825448c2d7a3310e22ec4f358abb0b5fb4a34a9f1619ada30102",
+    "checked": [
+      "sha256sum -c SHA256SUMS",
+      "extracted binary started with --data-dir",
+      "created cijian.sqlite, device-id and instance.lock"
+    ],
+    "not_checked": [
+      "upgrade from an older package",
+      "backup/restore using the packaged binary",
+      "signing, installation and auto-update"
+    ]
+  }
 }
