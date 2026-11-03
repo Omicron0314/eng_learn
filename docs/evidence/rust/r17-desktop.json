@@ -1,0 +1,33 @@
+{
+  "task": "R17",
+  "date": "2026-11-03",
+  "host": "Arch Linux x86_64, niri Wayland, output 1706x1066 logical at scale 1.5",
+  "binary": "release build of cijian-desktop at spikes/r00/target/release/cijian-desktop",
+  "data": "isolated /tmp directory; no private learning database, credentials, paid calls or user audio",
+  "seed": "40 original CSV rows inserted as an isolated SQLite fixture because the portal file chooser could not be driven reliably through the active IME; the import parser/transaction itself is covered by automated tests, not claimed as manually accepted here",
+  "verified": [
+    "light Today at 1440x900",
+    "dark Today at 1440x900 with 13x7 heatmap, selected day detail and 5 activity events",
+    "dark compact Today at 360x800 with bottom navigation",
+    "review front and revealed back with meaning, example, source and four interval buttons",
+    "pointer ratings wrote review_logs and review events; Today counts and heatmap changed",
+    "settings rendered in dark theme; saved dark preference survived page navigation",
+    "app exited without a residual process"
+  ],
+  "screenshots": [
+    "today-light-1440.png",
+    "today-dark-1440.png",
+    "today-dark-360.png",
+    "review-front-dark-1440.png",
+    "review-back-dark-1440.png",
+    "settings-dark-1440.png"
+  ],
+  "not_verified": [
+    "manual import through the desktop file chooser",
+    "article generation/reader lookup/inbox/audio end-to-end under this manual run",
+    "real Chinese IME composition inside product text fields",
+    "X11, Windows, macOS, touch, screen reader and GPU recovery",
+    "release performance trace and 10k-word interaction measurement",
+    "packaged upgrade and restore on this host"
+  ]
+}

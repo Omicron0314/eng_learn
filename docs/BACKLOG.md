@@ -21,10 +21,10 @@
 | R14 | [统计与对照实验](specs/R14-stats-experiment.md) | R10, R12, R13 | G3 | 进行中：统计与实验查询/UI 已接入，空分母与归因测试通过 |
 | R15 | [学习、外观与实验设置](specs/R15-preferences.md) | R02, R04, R05 | G3 | 进行中：设备偏好与重启恢复、独立草稿、校验/滑块、冲突重载和窗口主题隔离已通过增量验证；实机完整验收待完成 |
 | R16 | [旧数据迁入与备份恢复](specs/R16-migration-backup.md) | R03, R06, R08, R10, R11, R12, R15 | G3 | 进行中：WAL一致性旧库转换、报告、音频校验迁入和隔离备份恢复已接入；音频备份及完整故障矩阵待补 |
-| R17 | [桌面完整验收与本地打包](specs/R17-desktop-acceptance.md) | R14, R15, R16 | G3 | 未开始 |
+| R17 | [桌面完整验收与本地打包](specs/R17-desktop-acceptance.md) | R14, R15, R16 | G3 | 进行中：Linux Wayland release 浅深/1440/360、复习正反面与事件驱动统计已留证；文件选择/文章/音频人工链路、性能与其他OS待完成 |
 | R18 | [Web/WASM与手机浏览器适配](specs/R18-wasm-web.md) | R17 | G4 | 未开始 |
-| R19 | [Android/iOS原生可行性验证](specs/R19-mobile-native-spike.md) | R00 | G5 | 未开始（验证） |
-| R20 | [移动原生产品实现](specs/R20-mobile-native.md) | R19, R17 | G5 | 受R19结果约束 |
+| R19 | [Android/iOS原生可行性验证](specs/R19-mobile-native-spike.md) | R00 | G5 | 阻塞：锁定 GPUI 栈无 Android 后端，Android 记 no-go；iOS 需 macOS/真机，未判定；记录见 docs/spikes/R19-mobile.md |
+| R20 | [移动原生产品实现](specs/R20-mobile-native.md) | R19, R17 | G5 | 未开始：R19 无可进入的平台，不建立移动原生入口 |
 | R21 | [跨端同步协议设计](specs/R21-sync-design.md) | R18 | G6 | 草案已写；前置任务和协议验证尚未完成 |
 
 ## 如何执行
