@@ -1,13 +1,14 @@
 use super::*;
+use crate::design::Icon;
 use cijian_domain::{
     provider::{ProviderConfig, ProviderKind},
-    settings::{Genre, Level, LookupMode, Theme, Tier},
+    settings::{Level, LookupMode, Theme, Tier},
 };
 use cijian_ports::provider::{Secret, SecretPatch};
 use gpui_kit_material::components::TextField;
 mod drafts;
 mod editor;
-pub(super) use drafts::{PendingSettings, SettingsState};
+pub(super) use drafts::{PendingSettings, SettingsPage, SettingsState};
 pub(super) use editor::Editor;
 /// Copy must follow the store that actually accepted the secret.
 pub(crate) fn key_source_copy(
@@ -48,421 +49,1425 @@ impl Shell {
             cx.notify();
         }
     }
-    pub(super) fn settings_body(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
-        let mut body = div().flex().flex_col().gap_4();
-        let Some(editor) = &self.settings_editor else {
-            return body.child("正在读取设置…").into_any_element();
-        };
-        let (draft, errors) = editor.draft(&self.settings, cx);
-        let learning_dirty = editor.learning_dirty(&self.settings, cx);
-        let dirty = learning_dirty || editor.provider_dirty(cx);
-        body = body
-            .child(if dirty {
-                "有未保存的修改"
+    fn settings_nav(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+        let page = self.settings_ui.page;
+        let mut nav = design::pane()
+            .w(px(280.))
+            .flex_shrink_0()
+            .h_full()
+            .p(px(24.))
+            .px(px(12.))
+            .gap(px(4.));
+        nav = nav.child(
+            div()
+                .px(px(12.))
+                .mb(px(14.))
+                .child(design::title(36., 44., 780.).child("设置")),
+        );
+        for (target, icon, label) in [
+            (SettingsPage::Provider, Icon::Server, "AI 服务"),
+            (SettingsPage::Learning, Icon::Cards, "学习与阅读"),
+            (SettingsPage::Experiment, Icon::Beaker, "实验参数"),
+        ] {
+            let selected = page == target;
+            nav = nav.child(
+                div()
+                    .id(gpui_kit::SharedString::from(match target {
+                        SettingsPage::Provider => "settings-ai",
+                        SettingsPage::Learning => "settings-learning",
+                        SettingsPage::Experiment => "settings-experiment",
+                    }))
+                    .test_support()
+                    .role(gpui_kit::Role::Button)
+                    .aria_label(label)
+                    .cursor_pointer()
+                    .h(px(56.))
+                    .px(px(16.))
+                    .rounded(px(28.))
+                    .flex()
+                    .items_center()
+                    .gap(px(14.))
+                    .text_size(px(15.))
+                    .when(selected, |row| {
+                        row.bg(design::c(ColorRole::SECONDARY_CONTAINER))
+                            .text_color(design::c(ColorRole::ON_SECONDARY_CONTAINER))
+                            .font_weight(gpui_kit::FontWeight(700.))
+                    })
+                    .when(!selected, |row| {
+                        row.text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
+                            .font_weight(gpui_kit::FontWeight(500.))
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.settings_ui.page = target;
+                        this.settings_ui.advanced = target == SettingsPage::Experiment;
+                        cx.notify();
+                    }))
+                    .child(design::icon_role(
+                        icon,
+                        24.,
+                        if selected {
+                            ColorRole::ON_SECONDARY_CONTAINER
+                        } else {
+                            ColorRole::ON_SURFACE_VARIANT
+                        },
+                    ))
+                    .child(label),
+            );
+        }
+        nav = nav.child(div().flex_1());
+        nav = nav.child(
+            div()
+                .m(px(8.))
+                .p(px(14.))
+                .px(px(16.))
+                .rounded(px(20.))
+                .bg(design::c(ColorRole::SURFACE_CONTAINER_LOWEST))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .gap(px(2.))
+                        .child(design::text(15., 20., 650.).child("词间 MVP"))
+                        .child(design::muted_text(12., 16.).child("自用 · 本地数据")),
+                )
+                .child(self.settings_theme_button(cx)),
+        );
+        nav.into_any_element()
+    }
+
+    fn settings_theme_button(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+        div()
+            .id("theme")
+            .test_support()
+            .role(gpui_kit::Role::Button)
+            .aria_label(if self.dark {
+                "切换浅色"
             } else {
-                "设置已保存"
+                "切换深色"
             })
-            .child(
-                material_button("reset-settings-draft", ButtonVariant::Text)
-                    .child("撤销未保存修改")
-                    .disabled(self.loading || !dirty)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.settings_ui.pending = Some(PendingSettings::Reset);
-                        cx.notify();
-                    })),
-            )
-            .child(
-                material_button("reload-settings", ButtonVariant::Text)
-                    .child("重新载入已保存设置")
-                    .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        if !this.guard_settings_exit(PendingSettings::Reload, cx) {
-                            this.request(Command::LoadSettings, cx);
-                        }
-                    })),
-            )
-            .child(
-                material_button("advanced-settings", ButtonVariant::Tonal)
-                    .child(if errors.keys().any(|id| editor::advanced(id)) {
-                        "高级实验设置 · 有待修正项"
-                    } else if self.settings_ui.advanced {
-                        "收起高级实验设置"
-                    } else {
-                        "展开高级实验设置"
-                    })
-                    .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.settings_ui.advanced = !this.settings_ui.advanced;
-                        cx.notify();
-                    })),
-            );
-        if self.settings_ui.advanced {
-            body = body
-                .child("高级实验设置")
-                .child("对照词比例用于生成时划分出现组与对照组，修改后用于后续生成。");
-            for field in editor::FIELDS
-                .iter()
-                .filter(|field| editor::advanced(field.id))
-            {
-                body = body.child(editor.field(field, &errors, self.loading));
-            }
+            .cursor_pointer()
+            .w(px(40.))
+            .h(px(40.))
+            .rounded(px(20.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.settings.theme = if this.dark { Theme::Light } else { Theme::Dark };
+                this.apply_theme(window, cx);
+                if this.backend.is_some() {
+                    this.request(
+                        Command::SetTheme {
+                            value: this.settings.theme,
+                        },
+                        cx,
+                    );
+                }
+            }))
+            .child(design::icon_role(
+                Icon::Today,
+                24.,
+                ColorRole::ON_SURFACE_VARIANT,
+            ))
+            .into_any_element()
+    }
+
+    fn settings_header(
+        &self,
+        title: &'static str,
+        hint: &'static str,
+        cx: &mut Context<Self>,
+    ) -> gpui_kit::AnyElement {
+        let mut row = div()
+            .flex()
+            .items_center()
+            .child(design::title(30., 36., 780.).flex_1().child(title))
+            .child(design::muted_text(13., 18.).child(hint));
+        if self.compact {
+            row = row.child(self.settings_theme_button(cx));
         }
-        body = body
-            .child("外观与学习")
-            .child(
-                material_button("theme", ButtonVariant::Tonal)
-                    .child(if self.dark {
-                        "切换浅色"
-                    } else {
-                        "切换深色"
-                    })
-                    .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.settings.theme = if this.dark { Theme::Light } else { Theme::Dark };
-                        this.apply_theme(window, cx);
-                        if this.backend.is_some() {
-                            this.request(
-                                Command::SetTheme {
-                                    value: this.settings.theme,
-                                },
-                                cx,
-                            );
-                        }
-                    })),
-            )
-            .child(
-                material_button("system-theme", ButtonVariant::Text)
-                    .child("主题跟随系统")
-                    .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.settings.theme = Theme::System;
-                        this.apply_theme(window, cx);
-                        if this.backend.is_some() {
-                            this.request(
-                                Command::SetTheme {
-                                    value: Theme::System,
-                                },
-                                cx,
-                            );
-                        }
-                    })),
-            )
-            .child(
-                material_button("device-rate", ButtonVariant::Tonal)
-                    .child(format!("本机播放速度：{}×", self.settings.playback_rate))
-                    .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        let rates = cijian_domain::settings::PLAYBACK_RATES;
-                        let index = rates
-                            .iter()
-                            .position(|r| *r == this.settings.playback_rate)
-                            .unwrap_or(1);
-                        this.request(
-                            Command::SetPlaybackRate {
-                                rate: rates[(index + 1) % rates.len()],
-                            },
-                            cx,
-                        );
-                    })),
-            )
-            .child(
-                material_button("level", ButtonVariant::Tonal)
-                    .child(format!("英语等级：{:?}", self.settings.level))
-                    .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.settings.level = match this.settings.level {
-                            Level::A2 => Level::B1,
-                            Level::B1 => Level::B2,
-                            Level::B2 => Level::C1,
-                            Level::C1 => Level::A2,
-                        };
-                        cx.notify();
-                    })),
-            )
-            .child(
-                material_button("lookup-mode", ButtonVariant::Tonal)
-                    .child(if self.settings.lookup_mode == LookupMode::MarkOnly {
-                        "不认识时放入生词箱"
-                    } else {
-                        "不认识时自动加入复习"
-                    })
-                    .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.settings.lookup_mode =
-                            if this.settings.lookup_mode == LookupMode::MarkOnly {
-                                LookupMode::AutoAdd
-                            } else {
-                                LookupMode::MarkOnly
-                            };
-                        cx.notify();
-                    })),
-            );
-        if self.settings.lookup_mode == LookupMode::AutoAdd {
-            body = body.child("自动加入复习会把标为“不认识”的词直接加入学习流程，可能增加复习量。");
-        }
-        body = body
-            .child(
-                material_button("default-tier", ButtonVariant::Tonal)
-                    .child(format!(
-                        "默认难度：{}",
-                        match self.settings.tier {
-                            Tier::Easy => "轻松",
-                            Tier::Medium => "适中",
-                            Tier::Hard => "挑战",
-                        }
-                    ))
-                    .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.settings.tier = match this.settings.tier {
-                            Tier::Easy => Tier::Medium,
-                            Tier::Medium => Tier::Hard,
-                            Tier::Hard => Tier::Easy,
-                        };
-                        cx.notify();
-                    })),
-            )
-            .child(
-                material_button("default-genre", ButtonVariant::Tonal)
-                    .child(format!(
-                        "默认体裁：{}",
-                        match self.settings.genre {
-                            Genre::Auto => "自动",
-                            Genre::Story => "故事",
-                            Genre::Dialogue => "对话",
-                            Genre::Monologue => "独白",
-                        }
-                    ))
-                    .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.settings.genre = match this.settings.genre {
-                            Genre::Auto => Genre::Story,
-                            Genre::Story => Genre::Dialogue,
-                            Genre::Dialogue => Genre::Monologue,
-                            Genre::Monologue => Genre::Auto,
-                        };
-                        cx.notify();
-                    })),
-            );
-        for field in editor::FIELDS
-            .iter()
-            .filter(|field| !editor::advanced(field.id))
-        {
-            body = body.child(editor.field(field, &errors, self.loading));
-        }
-        body = body.child(
-            TextField::new("timezone", &editor.fields["timezone"])
-                .label("学习时区")
-                .disabled(self.loading)
-                .error(errors.contains_key("timezone"))
-                .supporting_text(
-                    errors
-                        .get("timezone")
-                        .cloned()
-                        .unwrap_or("使用 IANA 时区名称".into()),
+        row.into_any_element()
+    }
+
+    fn provider_summary(&self) -> gpui_kit::AnyElement {
+        let mut row = div().flex().gap(px(14.));
+        let llm = self.provider_config.as_ref();
+        let tts = self.tts_config.as_ref();
+        for (icon, title, configured, detail, color) in [
+            (
+                Icon::Spark,
+                "LLM · 写作与释义",
+                llm.is_some(),
+                llm.map(|config| config.endpoint.clone())
+                    .unwrap_or_else(|| "尚未配置".into()),
+                (
+                    ColorRole::PRIMARY_CONTAINER,
+                    ColorRole::ON_PRIMARY_CONTAINER,
                 ),
-        );
-        let saved = editor.baseline(&self.settings);
-        if draft.timezone != saved.timezone || draft.day_start_hour != saved.day_start_hour {
-            body = body
-                .child("改变时区或日界会按新边界重新统计活动与今日配额，已有复习时间保持不变。");
+            ),
+            (
+                Icon::Speaker,
+                "TTS · 整篇音频",
+                tts.is_some(),
+                tts.map(|config| config.endpoint.clone())
+                    .unwrap_or_else(|| "未配置 · 使用本机朗读".into()),
+                (
+                    ColorRole::SECONDARY_CONTAINER,
+                    ColorRole::ON_SECONDARY_CONTAINER,
+                ),
+            ),
+        ] {
+            let mut card = design::card()
+                .flex_1()
+                .min_w_0()
+                .rounded(px(28.))
+                .p(px(18.))
+                .gap(px(10.))
+                .flex()
+                .flex_col();
+            card = card.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .child(
+                        design::shaped([14., 14., 14., 14.], design::c(color.0))
+                            .w(px(44.))
+                            .h(px(44.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(design::c(color.1))
+                            .child(design::icon_color(icon, 18., design::c(color.1))),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .child(design::text(16., 22., 650.).child(title))
+                            .child(design::muted_text(12., 16.).text_ellipsis().child(detail)),
+                    )
+                    .child(if configured {
+                        design::tag(ColorRole::SUCCESS_BG, ColorRole::ON_SUCCESS)
+                            .child(design::dot(ColorRole::SUCCESS, 8.))
+                            .child("已配置")
+                    } else {
+                        design::tag(
+                            ColorRole::SURFACE_CONTAINER_HIGH,
+                            ColorRole::ON_SURFACE_VARIANT,
+                        )
+                        .child("未配置")
+                    }),
+            );
+            let model = if icon == Icon::Spark {
+                self.provider_config
+                    .as_ref()
+                    .map(|config| config.model.clone())
+            } else {
+                self.tts_config.as_ref().map(|config| config.model.clone())
+            };
+            card = card.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .rounded(px(12.))
+                    .bg(design::c(ColorRole::SURFACE_CONTAINER))
+                    .p(px(8.))
+                    .px(px(12.))
+                    .child(
+                        design::mono(13., 18., 400.)
+                            .flex_1()
+                            .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
+                            .text_ellipsis()
+                            .child(model.unwrap_or_else(|| "未设置模型".into())),
+                    ),
+            );
+            row = row.child(card);
         }
-        body = body.child(
-            material_button("save-settings", ButtonVariant::Filled)
-                .child("保存学习设置")
-                .disabled(self.loading || !learning_dirty || !errors.is_empty())
-                .on_click(cx.listener(|this, _, _, cx| {
-                    let Some(editor) = &this.settings_editor else {
-                        return;
-                    };
-                    match editor.value(&this.settings, cx) {
-                        Ok(value) => this.request(
-                            Command::SaveSettings {
-                                value,
-                                revision: this.settings_revision,
-                                operation: format!(
-                                    "settings-{}-{}",
-                                    this.settings_revision, this.request_id
-                                ),
-                            },
-                            cx,
-                        ),
-                        Err(error) => {
-                            this.error = Some(error.message);
-                            cx.notify();
-                        }
-                    }
-                })),
-        );
+        row.into_any_element()
+    }
+
+    fn provider_field(
+        &self,
+        label: &'static str,
+        value: Option<&str>,
+        input: Option<gpui_kit::AnyElement>,
+    ) -> gpui_kit::AnyElement {
+        if let Some(input) = input {
+            return input;
+        }
+        let text = value.unwrap_or("未配置");
+        design::field_label(label)
+            .w_full()
+            .child(
+                design::mono(15., 22., 400.)
+                    .text_color(design::c(if value.is_some() {
+                        ColorRole::ON_SURFACE
+                    } else {
+                        ColorRole::OUTLINE
+                    }))
+                    .text_ellipsis()
+                    .child(text.to_owned()),
+            )
+            .into_any_element()
+    }
+
+    fn provider_page(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+        let Some(editor) = &self.settings_editor else {
+            return design::muted_text(16., 24.)
+                .child("正在读取设置…")
+                .into_any_element();
+        };
+        let llm = self.provider_config.as_ref();
+        let tts = self.tts_config.as_ref();
+        let llm_active = self.provider_kind == ProviderKind::Llm;
+        let tts_active = self.provider_kind == ProviderKind::Tts;
         let has_key = if self.provider_kind == ProviderKind::Llm {
             self.has_session_key
         } else {
             self.has_tts_key
         };
-        body = body
-            .child("AI 服务")
+        let (key_hint, key_field) = key_source_copy(self.key_source, has_key);
+        let mut page = div()
+            .id("provider-page")
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .gap(px(18.))
+            .when(self.compact, |page| page.overflow_y_scroll().pb(px(90.)));
+        page = page.child(self.settings_header(
+            "AI 服务",
+            "保存后立即生效，无需重启 · 此页不会发起测试调用",
+            cx,
+        ));
+        page = page.child(self.provider_summary());
+        let provider_dirty = editor.provider_dirty(cx);
+
+        let mut llm_form = design::card()
+            .w_full()
+            .rounded(px(28.))
+            .p(px(22.))
+            .px(px(24.))
+            .gap(px(18.))
+            .flex()
+            .flex_col();
+        llm_form = llm_form
             .child(
-                material_button("provider-kind", ButtonVariant::Tonal)
-                    .child(if self.provider_kind == ProviderKind::Llm {
-                        "配置类型：文章与释义"
-                    } else {
-                        "配置类型：远程朗读"
-                    })
-                    .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        let kind = if this.provider_kind == ProviderKind::Llm {
-                            ProviderKind::Tts
-                        } else {
-                            ProviderKind::Llm
-                        };
-                        this.switch_provider(kind, window, cx);
-                    })),
-            )
-            .child(key_source_copy(self.key_source, has_key).0)
-            .child(key_source_copy(self.key_source, has_key).1)
-            .child(
-                TextField::new("provider-endpoint", &editor.endpoint)
-                    .label("服务地址")
-                    .disabled(self.loading),
-            )
-            .child(
-                TextField::new("provider-model", &editor.model)
-                    .label("模型名称")
-                    .disabled(self.loading),
-            )
-            .when(self.provider_kind == ProviderKind::Tts, |body| {
-                body.child(
-                    TextField::new("provider-voice", &editor.voice)
-                        .label("语音名称")
-                        .disabled(self.loading),
-                )
-            })
-            .child(
-                TextField::new("provider-key", &editor.key)
-                    .label("会话密钥")
-                    .disabled(self.loading),
+                div()
+                    .flex()
+                    .items_center()
+                    .child(design::text(16., 22., 650.).flex_1().child("LLM"))
+                    .child(design::muted_text(12., 16.).child("全部必填 · 无默认模型")),
             )
             .child(
-                material_button("save-provider", ButtonVariant::Filled)
-                    .child("保存 AI 配置")
-                    .disabled(self.loading || !editor.provider_dirty(cx))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.save_provider(false, cx);
-                    })),
+                div()
+                    .flex()
+                    .gap(px(12.))
+                    .child(div().flex_grow(1.4).flex_basis(px(0.)).min_w_0().child(
+                        self.provider_field(
+                            "端点 Base URL",
+                            llm.map(|config| config.endpoint.as_str()),
+                            llm_active.then(|| {
+                                TextField::new("provider-endpoint", &editor.endpoint)
+                                    .outlined()
+                                    .label("端点 Base URL")
+                                    .disabled(self.loading)
+                                    .w_full()
+                                    .into_any_element()
+                            }),
+                        ),
+                    ))
+                    .child(div().flex_grow(1.).flex_basis(px(0.)).min_w_0().child(
+                        self.provider_field(
+                            "模型",
+                            llm.map(|config| config.model.as_str()),
+                            llm_active.then(|| {
+                                TextField::new("provider-model", &editor.model)
+                                    .outlined()
+                                    .label("模型")
+                                    .disabled(self.loading)
+                                    .w_full()
+                                    .into_any_element()
+                            }),
+                        ),
+                    )),
             )
+            .child(self.provider_field(
+                "API 密钥",
+                if has_key {
+                    Some("已设置，留空则保持不变")
+                } else {
+                    None
+                },
+                llm_active.then(|| {
+                    TextField::new("provider-key", &editor.key)
+                        .outlined()
+                        .label("API 密钥")
+                        .disabled(self.loading)
+                        .w_full()
+                        .into_any_element()
+                }),
+            ))
             .child(
-                material_button("clear-provider-key", ButtonVariant::Text)
-                    .child("清除已保存的会话密钥")
-                    .disabled(self.loading || !has_key || editor.provider_dirty(cx))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.save_provider(true, cx);
-                    })),
-            );
-        body = body
-            .when(has_key && editor.provider_dirty(cx), |body| {
-                body.child("请先保存或撤销 AI 草稿，再清除已保存密钥。")
-            })
-            .child("学习数据")
-            .child("备份包含学习记录和文章，始终不包含密钥。恢复会建立并打开新的学习库。")
-            .child(
-                material_button("backup-audio", ButtonVariant::Tonal)
-                    .child(if self.backup_audio {
-                        "备份包含音频：是"
-                    } else {
-                        "备份包含音频：否"
-                    })
-                    .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.backup_audio = !this.backup_audio;
-                        cx.notify();
-                    })),
-            )
-            .child(if self.backup_audio {
-                "音频缓存会逐个校验后写入备份，文件会明显变大；缺失或损坏的缓存会阻止导出。"
-            } else {
-                "默认不包含音频缓存，恢复后可按需重新合成或本机朗读。"
-            })
-            .child(
-                material_button("export-backup", ButtonVariant::Tonal)
-                    .child("导出学习备份")
-                    .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.request(
-                            Command::ExportBackup {
-                                include_audio: this.backup_audio,
-                            },
-                            cx,
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .child(
+                        design::text(12., 16., 400.)
+                            .flex_1()
+                            .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
+                            .child(key_hint),
+                    )
+                    .when(llm_active, |row| {
+                        row.child(
+                            div()
+                                .id("clear-provider-key")
+                                .test_support()
+                                .role(gpui_kit::Role::Button)
+                                .aria_label("清除已保存密钥")
+                                .cursor_pointer()
+                                .h(px(32.))
+                                .px(px(12.))
+                                .rounded(px(16.))
+                                .flex()
+                                .items_center()
+                                .text_color(design::c(ColorRole::ERROR))
+                                .text_size(px(12.))
+                                .when(self.loading || provider_dirty || !has_key, |button| {
+                                    button.opacity(0.38)
+                                })
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    if !this.loading && has_key && !provider_dirty {
+                                        this.save_provider(true, cx);
+                                    }
+                                }))
+                                .child("清除密钥"),
                         )
-                    })),
+                    }),
+            );
+        page = page.child(llm_form);
+
+        let mut tts_form = design::card()
+            .w_full()
+            .rounded(px(28.))
+            .p(px(22.))
+            .px(px(24.))
+            .gap(px(16.))
+            .flex()
+            .flex_col();
+        let mut tts_switch = div().flex().gap(px(2.)).w(px(420.));
+        for (kind, label, selected) in [
+            (ProviderKind::Llm, "不配置 · 用本机朗读", !tts_active),
+            (ProviderKind::Tts, "OpenAI 兼容接口", tts_active),
+        ] {
+            let first = kind == ProviderKind::Llm;
+            let radii = if first {
+                [20., 6., 6., 20.]
+            } else {
+                [6., 20., 20., 6.]
+            };
+            let cell = design::shaped(
+                radii,
+                design::c(if selected {
+                    ColorRole::SECONDARY
+                } else {
+                    ColorRole::SURFACE_CONTAINER_HIGH
+                }),
             )
-            .child(
-                material_button("restore-backup", ButtonVariant::Tonal)
-                    .child("恢复到新学习库并打开")
+            .id(if selected {
+                gpui_kit::SharedString::from(if first {
+                    "provider-kind-tts-none"
+                } else {
+                    "provider-kind-tts"
+                })
+            } else {
+                gpui_kit::SharedString::from("provider-kind")
+            })
+            .test_support()
+            .role(gpui_kit::Role::Button)
+            .aria_label(label)
+            .cursor_pointer()
+            .h(px(40.))
+            .flex_1()
+            .flex()
+            .items_center()
+            .justify_center()
+            .gap(px(6.))
+            .text_color(design::c(if selected {
+                ColorRole::SURFACE_CONTAINER_LOWEST
+            } else {
+                ColorRole::ON_SURFACE_VARIANT
+            }))
+            .text_size(px(14.))
+            .font_weight(gpui_kit::FontWeight(if selected { 700. } else { 600. }))
+            .on_click(cx.listener(move |this, _, window, cx| {
+                if this.provider_kind != kind {
+                    this.switch_provider(kind, window, cx);
+                }
+            }))
+            .when(selected, |cell| {
+                cell.child(design::icon_role(
+                    Icon::Check,
+                    18.,
+                    ColorRole::SURFACE_CONTAINER_LOWEST,
+                ))
+            })
+            .child(label);
+            tts_switch = tts_switch.child(cell);
+        }
+        tts_form = tts_form.child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(16.))
+                .child(design::text(16., 22., 650.).flex_1().child("TTS"))
+                .child(tts_switch),
+        );
+        let mut tts_fields = div().flex().gap(px(12.));
+        tts_fields =
+            tts_fields
+                .child(div().flex_grow(1.4).flex_basis(px(0.)).min_w_0().child(
+                    self.provider_field(
+                        "端点 Base URL",
+                        tts.map(|config| config.endpoint.as_str()),
+                        tts_active.then(|| {
+                            TextField::new("provider-endpoint", &editor.endpoint)
+                                .outlined()
+                                .label("端点 Base URL")
+                                .disabled(self.loading)
+                                .w_full()
+                                .into_any_element()
+                        }),
+                    ),
+                ))
+                .child(
+                    div()
+                        .flex_grow(1.)
+                        .flex_basis(px(0.))
+                        .min_w_0()
+                        .child(self.provider_field(
+                            "模型",
+                            tts.map(|config| config.model.as_str()),
+                            tts_active.then(|| {
+                                TextField::new("provider-model", &editor.model)
+                                    .outlined()
+                                    .label("模型")
+                                    .disabled(self.loading)
+                                    .w_full()
+                                    .into_any_element()
+                            }),
+                        )),
+                )
+                .child(div().flex_grow(0.8).flex_basis(px(0.)).min_w_0().child(
+                    self.provider_field(
+                        "声音",
+                        tts.and_then(|config| config.voice.as_deref()),
+                        tts_active.then(|| {
+                            TextField::new("provider-voice", &editor.voice)
+                                .outlined()
+                                .label("声音")
+                                .disabled(self.loading)
+                                .w_full()
+                                .into_any_element()
+                        }),
+                    ),
+                ));
+        tts_form = tts_form.child(tts_fields);
+        tts_form = tts_form.child(self.provider_field(
+            "API 密钥",
+            if has_key && tts_active {
+                Some("已设置，留空则保持不变")
+            } else {
+                None
+            },
+            tts_active.then(|| {
+                TextField::new("provider-key", &editor.key)
+                    .outlined()
+                    .label("API 密钥")
                     .disabled(self.loading)
-                    .on_click(
-                        cx.listener(|this, _, _, cx| this.request(Command::RestoreBackup, cx)),
+                    .w_full()
+                    .into_any_element()
+            }),
+        ));
+        if tts_active {
+            tts_form = tts_form.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .child(
+                        design::text(12., 16., 400.)
+                            .flex_1()
+                            .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
+                            .child(if has_key {
+                                "本次会话已设置朗读密钥；留空表示保留"
+                            } else {
+                                "本次会话未设置朗读密钥"
+                            }),
+                    )
+                    .child(
+                        div()
+                            .id("clear-provider-key")
+                            .test_support()
+                            .role(gpui_kit::Role::Button)
+                            .aria_label("清除已保存密钥")
+                            .cursor_pointer()
+                            .h(px(32.))
+                            .px(px(12.))
+                            .rounded(px(16.))
+                            .flex()
+                            .items_center()
+                            .text_color(design::c(ColorRole::ERROR))
+                            .text_size(px(12.))
+                            .when(self.loading || provider_dirty || !has_key, |button| {
+                                button.opacity(0.38)
+                            })
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if !this.loading && has_key && !provider_dirty {
+                                    this.save_provider(true, cx);
+                                }
+                            }))
+                            .child("清除密钥"),
                     ),
             );
-        body = body
-            .child("旧版学习库迁入")
-            .child("先只读预检，再确认迁入新的学习库。密钥不会迁入，新库增量不会回写旧 Web。")
+        }
+        page = page.child(tts_form);
+
+        page = page.child(div().flex_1());
+        page = page.child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(design::muted_text(12., 16.).flex_1().child(key_field))
+                .child(
+                    div()
+                        .id("reset-provider-draft")
+                        .role(gpui_kit::Role::Button)
+                        .aria_label("撤销 AI 配置修改")
+                        .cursor_pointer()
+                        .h(px(40.))
+                        .px(px(12.))
+                        .rounded(px(20.))
+                        .flex()
+                        .items_center()
+                        .text_color(design::c(ColorRole::PRIMARY))
+                        .when(self.loading || !provider_dirty, |button| {
+                            button.opacity(0.38)
+                        })
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            if this.loading {
+                                return;
+                            }
+                            let kind = this.provider_kind;
+                            let provider = if kind == ProviderKind::Tts {
+                                this.tts_config.clone()
+                            } else {
+                                this.provider_config.clone()
+                            };
+                            if let Some(editor) = &mut this.settings_editor {
+                                editor.reset_provider(kind, provider.as_ref(), window, cx);
+                            }
+                            cx.notify();
+                        }))
+                        .child("撤销修改"),
+                )
+                .child(
+                    div()
+                        .id("save-provider")
+                        .test_support()
+                        .role(gpui_kit::Role::Button)
+                        .aria_label("保存 AI 配置")
+                        .cursor_pointer()
+                        .h(px(56.))
+                        .px(px(28.))
+                        .rounded(px(28.))
+                        .bg(design::c(ColorRole::PRIMARY))
+                        .text_color(design::c(ColorRole::ON_PRIMARY))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .text_size(px(16.))
+                        .font_weight(gpui_kit::FontWeight(650.))
+                        .when(self.loading || !provider_dirty, |button| {
+                            button.opacity(0.38)
+                        })
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            if !this.loading {
+                                this.save_provider(false, cx);
+                            }
+                        }))
+                        .child(design::icon_role(Icon::Check, 18., ColorRole::ON_PRIMARY))
+                        .child("保存并生效"),
+                ),
+        );
+        page.into_any_element()
+    }
+
+    fn learning_page(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+        let Some(editor) = &self.settings_editor else {
+            return design::muted_text(16., 24.)
+                .child("正在读取设置…")
+                .into_any_element();
+        };
+        let (_, errors) = editor.draft(&self.settings, cx);
+        let learning_dirty = editor.learning_dirty(&self.settings, cx);
+        let mut page = div()
+            .id("learning-page")
+            .track_scroll(&self.page_scroll)
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .gap(px(18.))
+            .overflow_y_scroll();
+        page = page.child(self.settings_header("学习与阅读", "合理的上限，让学习更轻一点", cx));
+        let mut level = design::card()
+            .rounded(px(28.))
+            .p(px(20.))
+            .px(px(22.))
+            .gap(px(14.))
+            .flex()
+            .flex_col();
+        level = level.child(
+            div()
+                .flex()
+                .flex_col()
+                .child(design::text(16., 22., 650.).child("英语等级"))
+                .child(design::muted_text(13., 18.).child("用于估计已知词与选择生成难度")),
+        );
+        let mut levels = div().flex().gap(px(10.));
+        for (value, label, hint) in [
+            (Level::A2, "A2", "约初中水平"),
+            (Level::B1, "B1", "约大学英语四级"),
+            (Level::B2, "B2", "约六级水平"),
+            (Level::C1, "C1", "高级"),
+        ] {
+            let selected = self.settings.level == value;
+            levels = levels.child(
+                div()
+                    .id(gpui_kit::SharedString::from(format!(
+                        "level-{}",
+                        label.to_lowercase()
+                    )))
+                    .role(gpui_kit::Role::Button)
+                    .aria_label(label)
+                    .cursor_pointer()
+                    .flex_1()
+                    .rounded(px(20.))
+                    .p(px(14.))
+                    .px(px(16.))
+                    .gap(px(2.))
+                    .flex()
+                    .flex_col()
+                    .when(selected, |card| {
+                        card.bg(design::c(ColorRole::SECONDARY))
+                            .text_color(design::c(ColorRole::SURFACE_CONTAINER_LOWEST))
+                    })
+                    .when(!selected, |card| {
+                        card.border_1()
+                            .border_color(design::c(ColorRole::OUTLINE_VARIANT))
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.settings.level = value;
+                        cx.notify();
+                    }))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .child(design::title(22., 28., 750.).flex_1().child(label))
+                            .when(selected, |row| {
+                                row.child(design::icon_role(
+                                    Icon::Check,
+                                    18.,
+                                    ColorRole::ON_PRIMARY,
+                                ))
+                            }),
+                    )
+                    .child(
+                        design::text(12., 16., 400.)
+                            .opacity(if selected { 0.85 } else { 1. })
+                            .text_color(if selected {
+                                design::c(ColorRole::SURFACE_CONTAINER_LOW)
+                            } else {
+                                design::c(ColorRole::ON_SURFACE_VARIANT)
+                            })
+                            .child(hint),
+                    ),
+            );
+        }
+        level = level.child(levels);
+        page = page.child(level);
+
+        let mut two = div().flex().gap(px(14.)).items_stretch();
+        let mut preferences = design::card()
+            .flex_1()
+            .min_w_0()
+            .rounded(px(28.))
+            .p(px(20.))
+            .px(px(22.))
+            .gap(px(12.))
+            .flex()
+            .flex_col();
+        preferences = preferences.child(
+            div()
+                .flex()
+                .flex_col()
+                .child(design::text(16., 22., 650.).child("默认难度"))
+                .child(design::muted_text(13., 18.).child("文章页生成时预选")),
+        );
+        let mut tiers = div().flex().gap(px(2.));
+        for (index, tier) in [Tier::Easy, Tier::Medium, Tier::Hard]
+            .into_iter()
+            .enumerate()
+        {
+            let selected = self.settings.tier == tier;
+            let label = match tier {
+                Tier::Easy => "轻松",
+                Tier::Medium => "适中",
+                Tier::Hard => "挑战",
+            };
+            let radii = match index {
+                0 => [20., 6., 6., 20.],
+                2 => [6., 20., 20., 6.],
+                _ => [6., 6., 6., 6.],
+            };
+            let mut cell = design::shaped(
+                radii,
+                design::c(if selected {
+                    ColorRole::SECONDARY
+                } else {
+                    ColorRole::SURFACE_CONTAINER_HIGH
+                }),
+            )
+            .id(gpui_kit::SharedString::from(format!(
+                "default-tier-{}",
+                index
+            )))
+            .role(gpui_kit::Role::Button)
+            .aria_label(label)
+            .cursor_pointer()
+            .flex_1()
+            .h(px(40.))
+            .text_color(design::c(if selected {
+                ColorRole::SURFACE_CONTAINER_LOWEST
+            } else {
+                ColorRole::ON_SURFACE_VARIANT
+            }))
+            .text_size(px(14.))
+            .font_weight(gpui_kit::FontWeight(if selected { 700. } else { 600. }))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.settings.tier = tier;
+                cx.notify();
+            }));
+            cell = cell.child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .gap(px(6.))
+                    .when(selected, |row| {
+                        row.child(design::icon_role(Icon::Check, 18., ColorRole::ON_PRIMARY))
+                    })
+                    .child(label),
+            );
+            tiers = tiers.child(cell);
+        }
+        preferences = preferences.child(tiers);
+        preferences = preferences
             .child(
-                material_button("inspect-legacy", ButtonVariant::Tonal)
-                    .child("选择旧库并预检")
-                    .disabled(self.loading)
-                    .on_click(
-                        cx.listener(|this, _, _, cx| this.request(Command::InspectLegacy, cx)),
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .mt(px(6.))
+                    .child(design::text(16., 22., 650.).child("点词模式"))
+                    .child(design::muted_text(13., 18.).child("阅读时点“不认识”会发生什么")),
+            )
+            .child(
+                div()
+                    .id("lookup-mode")
+                    .role(gpui_kit::Role::Button)
+                    .aria_label("点词模式：只标记")
+                    .cursor_pointer()
+                    .rounded(px(20.))
+                    .p(px(12.))
+                    .px(px(14.))
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .when(self.settings.lookup_mode == LookupMode::MarkOnly, |row| {
+                        row.bg(design::c(ColorRole::SECONDARY_CONTAINER))
+                            .text_color(design::c(ColorRole::ON_SECONDARY_CONTAINER))
+                    })
+                    .when(self.settings.lookup_mode != LookupMode::MarkOnly, |row| {
+                        row.border_1()
+                            .border_color(design::c(ColorRole::OUTLINE_VARIANT))
+                    })
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.settings.lookup_mode = LookupMode::MarkOnly;
+                        cx.notify();
+                    }))
+                    .child(if self.settings.lookup_mode == LookupMode::MarkOnly {
+                        design::dot(ColorRole::PRIMARY, 20.)
+                    } else {
+                        div()
+                            .w(px(20.))
+                            .h(px(20.))
+                            .rounded(px(10.))
+                            .border_2()
+                            .border_color(design::c(ColorRole::ON_SURFACE_VARIANT))
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .child(design::text(15., 20., 650.).child("只标记 → 生词箱"))
+                            .child(
+                                design::text(12., 16., 400.)
+                                    .opacity(0.85)
+                                    .child("之后在生词箱里批量决定"),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .id("lookup-mode-auto")
+                    .role(gpui_kit::Role::Button)
+                    .aria_label("点词模式：自动建卡")
+                    .cursor_pointer()
+                    .rounded(px(20.))
+                    .p(px(12.))
+                    .px(px(14.))
+                    .flex()
+                    .items_start()
+                    .gap(px(12.))
+                    .when(self.settings.lookup_mode == LookupMode::AutoAdd, |row| {
+                        row.bg(design::c(ColorRole::SECONDARY_CONTAINER))
+                            .text_color(design::c(ColorRole::ON_SECONDARY_CONTAINER))
+                    })
+                    .when(self.settings.lookup_mode != LookupMode::AutoAdd, |row| {
+                        row.border_1()
+                            .border_color(design::c(ColorRole::OUTLINE_VARIANT))
+                    })
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.settings.lookup_mode = LookupMode::AutoAdd;
+                        cx.notify();
+                    }))
+                    .child(div().mt(px(2.)).child(
+                        if self.settings.lookup_mode == LookupMode::AutoAdd {
+                            design::dot(ColorRole::PRIMARY, 20.)
+                        } else {
+                            div()
+                                .w(px(20.))
+                                .h(px(20.))
+                                .rounded(px(10.))
+                                .border_2()
+                                .border_color(design::c(ColorRole::ON_SURFACE_VARIANT))
+                        },
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .gap(px(4.))
+                            .child(design::text(15., 20., 650.).child("自动建卡"))
+                            .child(design::muted_text(12., 16.).child("直接加入复习"))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.))
+                                    .text_color(design::c(ColorRole::WARNING))
+                                    .text_size(px(12.))
+                                    .child(design::icon_role(Icon::Alert, 16., ColorRole::WARNING))
+                                    .child("点错也会建卡，并计入每日新词上限"),
+                            ),
+                    ),
+            );
+        two = two.child(preferences);
+
+        let mut limits = design::card()
+            .flex_1()
+            .min_w_0()
+            .rounded(px(28.))
+            .p(px(4.))
+            .px(px(22.))
+            .flex()
+            .flex_col();
+        let mut first_limit = true;
+        for field in editor::FIELDS
+            .iter()
+            .filter(|field| matches!(field.id, "daily-new" | "daily-review" | "retention"))
+        {
+            if !first_limit {
+                limits = limits.child(design::divider());
+            }
+            first_limit = false;
+            limits = limits.child(editor.design_field(field, &errors, self.loading, cx));
+        }
+        limits = limits
+            .child(design::divider())
+            .child(editor.design_range_field(self.loading, cx));
+        two = two.child(limits);
+        page = page.child(two);
+
+        let mut tts = design::card()
+            .rounded(px(28.))
+            .p(px(4.))
+            .px(px(22.))
+            .flex()
+            .flex_col();
+        for field in editor::FIELDS
+            .iter()
+            .filter(|field| matches!(field.id, "tts-limit"))
+        {
+            tts = tts.child(editor.design_field(field, &errors, self.loading, cx));
+        }
+        tts = tts.child(design::divider()).child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(12.))
+                .py(px(8.))
+                .child(
+                    div()
+                        .w(px(200.))
+                        .flex_shrink_0()
+                        .flex()
+                        .flex_col()
+                        .child(design::text(15., 20., 650.).child("学习日与时区"))
+                        .child(design::muted_text(12., 16.).child("决定“今天”从几点开始")),
+                )
+                .child(
+                    div().flex_1().child(
+                        TextField::new("timezone", &editor.fields["timezone"])
+                            .outlined()
+                            .label("时区")
+                            .disabled(self.loading)
+                            .error(errors.contains_key("timezone"))
+                            .supporting_text(
+                                errors
+                                    .get("timezone")
+                                    .cloned()
+                                    .unwrap_or("使用 IANA 时区名称".into()),
+                            ),
+                    ),
+                )
+                .child(
+                    div().w(px(180.)).child(
+                        TextField::new("day-start", &editor.fields["day-start"])
+                            .outlined()
+                            .label("学习日开始")
+                            .disabled(self.loading),
+                    ),
+                ),
+        );
+        page = page.child(tts);
+
+        if self.settings_ui.advanced {
+            let mut advanced = design::card()
+                .rounded(px(28.))
+                .p(px(20.))
+                .px(px(22.))
+                .gap(px(12.))
+                .flex()
+                .flex_col();
+            advanced = advanced.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(design::icon_role(
+                        Icon::Beaker,
+                        20.,
+                        ColorRole::ON_SURFACE_VARIANT,
+                    ))
+                    .child(design::text(16., 22., 650.).child("高级 · 实验参数"))
+                    .child(div().flex_1())
+                    .child(design::muted_text(12., 16.).child("影响选词与对照实验")),
+            );
+            for field in editor::FIELDS
+                .iter()
+                .filter(|field| editor::advanced(field.id))
+            {
+                advanced = advanced.child(editor.field(field, &errors, self.loading));
+            }
+            page = page.child(advanced);
+        }
+
+        let footer = div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .mt(px(4.))
+            .child(
+                div()
+                    .id("advanced-settings")
+                    .role(gpui_kit::Role::Button)
+                    .aria_label("高级实验设置")
+                    .cursor_pointer()
+                    .h(px(40.))
+                    .px(px(16.))
+                    .rounded(px(20.))
+                    .bg(design::c(ColorRole::SECONDARY_CONTAINER))
+                    .text_color(design::c(ColorRole::ON_SECONDARY_CONTAINER))
+                    .flex()
+                    .items_center()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.settings_ui.advanced = !this.settings_ui.advanced;
+                        cx.notify();
+                    }))
+                    .child(if self.settings_ui.advanced {
+                        "收起高级实验设置"
+                    } else {
+                        "展开高级实验设置"
+                    }),
+            )
+            .child(div().flex_1())
+            .child(
+                div()
+                    .id("reload-settings")
+                    .test_support()
+                    .role(gpui_kit::Role::Button)
+                    .aria_label("重新载入已保存设置")
+                    .cursor_pointer()
+                    .h(px(40.))
+                    .px(px(12.))
+                    .rounded(px(20.))
+                    .flex()
+                    .items_center()
+                    .text_color(design::c(ColorRole::PRIMARY))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if !this.guard_settings_exit(PendingSettings::Reload, cx) {
+                            this.request(Command::LoadSettings, cx);
+                        }
+                    }))
+                    .child("重新载入"),
+            )
+            .child(
+                div()
+                    .id("reset-settings-draft")
+                    .test_support()
+                    .role(gpui_kit::Role::Button)
+                    .aria_label("撤销未保存修改")
+                    .cursor_pointer()
+                    .h(px(40.))
+                    .px(px(12.))
+                    .rounded(px(20.))
+                    .flex()
+                    .items_center()
+                    .text_color(design::c(ColorRole::PRIMARY))
+                    .when(self.loading || !learning_dirty, |button| {
+                        button.opacity(0.38)
+                    })
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if this.loading || !this.settings_dirty(cx) {
+                            return;
+                        }
+                        this.settings_ui.pending = Some(PendingSettings::Reset);
+                        cx.notify();
+                    }))
+                    .child("撤销修改"),
+            )
+            .child(
+                div()
+                    .id("save-settings")
+                    .test_support()
+                    .role(gpui_kit::Role::Button)
+                    .aria_label("保存学习设置")
+                    .cursor_pointer()
+                    .h(px(56.))
+                    .px(px(28.))
+                    .rounded(px(28.))
+                    .bg(design::c(ColorRole::PRIMARY))
+                    .text_color(design::c(ColorRole::ON_PRIMARY))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .text_size(px(16.))
+                    .font_weight(gpui_kit::FontWeight(650.))
+                    .when(
+                        self.loading || !learning_dirty || !errors.is_empty(),
+                        |button| button.opacity(0.38),
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if this.loading {
+                            return;
+                        }
+                        if let Some(editor) = &this.settings_editor {
+                            match editor.value(&this.settings, cx) {
+                                Ok(value) => this.request(
+                                    Command::SaveSettings {
+                                        value,
+                                        revision: this.settings_revision,
+                                        operation: format!(
+                                            "settings-{}-{}",
+                                            this.settings_revision, this.request_id
+                                        ),
+                                    },
+                                    cx,
+                                ),
+                                Err(error) => {
+                                    this.error = Some(error.message);
+                                    cx.notify();
+                                }
+                            }
+                        }
+                    }))
+                    .child(design::icon_role(Icon::Check, 18., ColorRole::ON_PRIMARY))
+                    .child("保存并生效"),
+            );
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .child(page)
+            .child(footer)
+            .into_any_element()
+    }
+
+    fn experiment_page(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+        let Some(editor) = &self.settings_editor else {
+            return design::muted_text(16., 24.)
+                .child("正在读取设置…")
+                .into_any_element();
+        };
+        let (_, errors) = editor.draft(&self.settings, cx);
+        let mut page = div()
+            .id("experiment-page")
+            .track_scroll(&self.page_scroll)
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .gap(px(18.))
+            .overflow_y_scroll();
+        page = page.child(self.settings_header("实验参数", "影响选词与对照实验，一般无需修改", cx));
+        let mut experiment = design::card()
+            .rounded(px(28.))
+            .p(px(20.))
+            .px(px(22.))
+            .gap(px(12.))
+            .flex()
+            .flex_col();
+        experiment = experiment.child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(design::icon_role(
+                    Icon::Beaker,
+                    20.,
+                    ColorRole::ON_SURFACE_VARIANT,
+                ))
+                .child(design::text(16., 22., 650.).child("高级实验参数"))
+                .child(div().flex_1())
+                .child(design::muted_text(12., 16.).child("对照组用于观察，不代表因果")),
+        );
+        for field in editor::FIELDS
+            .iter()
+            .filter(|field| editor::advanced(field.id))
+        {
+            experiment = experiment.child(editor.field(field, &errors, self.loading));
+        }
+        page = page.child(experiment);
+        let mut data = design::card()
+            .rounded(px(28.))
+            .p(px(20.))
+            .px(px(22.))
+            .gap(px(12.))
+            .flex()
+            .flex_col();
+        data = data
+            .child(design::text(16., 22., 650.).child("学习数据"))
+            .child(
+                design::muted_text(12., 16.)
+                    .child("备份包含学习记录和文章，始终不包含密钥。恢复会建立并打开新的学习库。"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .flex_wrap()
+                    .child(
+                        div()
+                            .id("backup-audio")
+                            .role(gpui_kit::Role::Button)
+                            .aria_label("备份是否包含音频")
+                            .cursor_pointer()
+                            .h(px(40.))
+                            .px(px(16.))
+                            .rounded(px(20.))
+                            .bg(design::c(ColorRole::SECONDARY_CONTAINER))
+                            .text_color(design::c(ColorRole::ON_SECONDARY_CONTAINER))
+                            .flex()
+                            .items_center()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.backup_audio = !this.backup_audio;
+                                cx.notify();
+                            }))
+                            .child(if self.backup_audio {
+                                "备份包含音频：是"
+                            } else {
+                                "备份包含音频：否"
+                            }),
+                    )
+                    .child(
+                        div()
+                            .id("export-backup")
+                            .role(gpui_kit::Role::Button)
+                            .aria_label("导出学习备份")
+                            .cursor_pointer()
+                            .h(px(40.))
+                            .px(px(16.))
+                            .rounded(px(20.))
+                            .border_1()
+                            .border_color(design::c(ColorRole::OUTLINE_VARIANT))
+                            .flex()
+                            .items_center()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.request(
+                                    Command::ExportBackup {
+                                        include_audio: this.backup_audio,
+                                    },
+                                    cx,
+                                )
+                            }))
+                            .child("导出学习备份"),
+                    )
+                    .child(
+                        div()
+                            .id("restore-backup")
+                            .role(gpui_kit::Role::Button)
+                            .aria_label("恢复备份")
+                            .cursor_pointer()
+                            .h(px(40.))
+                            .px(px(16.))
+                            .rounded(px(20.))
+                            .border_1()
+                            .border_color(design::c(ColorRole::OUTLINE_VARIANT))
+                            .flex()
+                            .items_center()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.request(Command::RestoreBackup, cx)
+                            }))
+                            .child("恢复到新学习库"),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .flex_wrap()
+                    .child(
+                        div()
+                            .id("inspect-legacy")
+                            .role(gpui_kit::Role::Button)
+                            .aria_label("选择旧库并预检")
+                            .cursor_pointer()
+                            .h(px(40.))
+                            .px(px(16.))
+                            .rounded(px(20.))
+                            .bg(design::c(ColorRole::SECONDARY_CONTAINER))
+                            .text_color(design::c(ColorRole::ON_SECONDARY_CONTAINER))
+                            .flex()
+                            .items_center()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.request(Command::InspectLegacy, cx)
+                            }))
+                            .child("选择旧库并预检"),
+                    )
+                    .child(
+                        design::muted_text(12., 16.).child("先只读预检，再确认迁入新的学习库。"),
                     ),
             );
         if let Some(selection) = &self.legacy_selection {
             for (index, profile) in self.legacy_profiles.iter().enumerate() {
                 let selection = selection.clone();
                 let profile_id = profile.id.clone();
-                body = body.child(
-                    material_button(
-                        gpui_kit::SharedString::from(format!("legacy-profile-{index}")),
-                        ButtonVariant::Tonal,
-                    )
-                    .child(format!(
-                        "档案 {}：{} 张卡 / {} 篇文章",
-                        index + 1,
-                        profile.cards,
-                        profile.articles
-                    ))
-                    .disabled(self.loading)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.request(
-                            Command::SelectLegacyProfile {
-                                selection: selection.clone(),
-                                profile: profile_id.clone(),
-                            },
-                            cx,
-                        )
-                    })),
+                data = data.child(
+                    div()
+                        .id(gpui_kit::SharedString::from(format!(
+                            "legacy-profile-{index}"
+                        )))
+                        .role(gpui_kit::Role::Button)
+                        .aria_label(format!("档案 {}", index + 1))
+                        .cursor_pointer()
+                        .h(px(40.))
+                        .px(px(16.))
+                        .rounded(px(20.))
+                        .bg(design::c(ColorRole::SURFACE_CONTAINER))
+                        .flex()
+                        .items_center()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.request(
+                                Command::SelectLegacyProfile {
+                                    selection: selection.clone(),
+                                    profile: profile_id.clone(),
+                                },
+                                cx,
+                            )
+                        }))
+                        .child(format!(
+                            "档案 {}：{} 张卡 / {} 篇文章",
+                            index + 1,
+                            profile.cards,
+                            profile.articles
+                        )),
                 );
             }
         }
         if let Some(report) = &self.legacy_report {
-            body = body.child(format!(
-                "预检：{} 张旧词卡，{} 条旧评分，{} 篇旧文章，{} 字节音频",
-                report.source_counts.get("cards").copied().unwrap_or(0),
-                report
-                    .source_counts
-                    .get("review_logs")
-                    .copied()
-                    .unwrap_or(0),
-                report.source_counts.get("articles").copied().unwrap_or(0),
-                report.audio_bytes
-            ));
-            for message in report.blockers.iter().chain(&report.warnings).take(20) {
-                body = body.child(message.clone());
+            data = data.child(design::muted_text(12., 16.).child(format!(
+                    "预检：{} 张旧词卡，{} 条旧评分，{} 篇旧文章，{} 字节音频",
+                    report.source_counts.get("cards").copied().unwrap_or(0),
+                    report
+                        .source_counts
+                        .get("review_logs")
+                        .copied()
+                        .unwrap_or(0),
+                    report
+                        .source_counts
+                        .get("articles")
+                        .copied()
+                        .unwrap_or(0),
+                    report.audio_bytes
+                )));
+            for message in report.blockers.iter().chain(&report.warnings).take(12) {
+                data = data.child(design::muted_text(12., 16.).child(message.clone()));
             }
-            if report.blockers.len() + report.warnings.len() > 20 {
-                body = body.child("更多提示可复制完整预检报告查看。");
-            }
-            body = body
+            data = data
                 .child(
-                    material_button("copy-legacy-report", ButtonVariant::Text)
-                        .child("复制完整预检报告")
+                    div()
+                        .id("copy-legacy-report")
+                        .role(gpui_kit::Role::Button)
+                        .aria_label("复制预检报告")
+                        .cursor_pointer()
+                        .h(px(40.))
+                        .px(px(16.))
+                        .rounded(px(20.))
+                        .bg(design::c(ColorRole::SECONDARY_CONTAINER))
+                        .flex()
+                        .items_center()
                         .on_click(cx.listener(|this, _, _, cx| {
                             if let Some(report) = &this.legacy_report
                                 && let Ok(text) = serde_json::to_string_pretty(report)
@@ -471,21 +1476,183 @@ impl Shell {
                                 this.notice = Some("预检报告已复制，不包含密钥".into());
                                 cx.notify();
                             }
-                        })),
+                        }))
+                        .child("复制完整预检报告"),
                 )
                 .child(
-                    material_button("confirm-legacy-import", ButtonVariant::Filled)
-                        .child("确认迁入预览快照并打开新库")
-                        .disabled(self.loading || !report.blockers.is_empty())
+                    div()
+                        .id("confirm-legacy-import")
+                        .role(gpui_kit::Role::Button)
+                        .aria_label("确认迁入")
+                        .cursor_pointer()
+                        .h(px(56.))
+                        .px(px(28.))
+                        .rounded(px(28.))
+                        .bg(design::c(ColorRole::PRIMARY))
+                        .text_color(design::c(ColorRole::ON_PRIMARY))
+                        .flex()
+                        .items_center()
+                        .when(self.loading || !report.blockers.is_empty(), |button| {
+                            button.opacity(0.38)
+                        })
                         .on_click(cx.listener(|this, _, _, cx| {
                             if let Some(selection) = this.legacy_selection.clone() {
                                 this.request(Command::ImportLegacy { selection }, cx);
                             }
-                        })),
+                        }))
+                        .child("确认迁入预览快照并打开新库"),
                 );
         }
-        body.child(self.settings_dialog(cx)).into_any_element()
+        page = page.child(data);
+        let footer = div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .mt(px(4.))
+            .child(div().flex_1())
+            .child(
+                div()
+                    .id("reload-settings")
+                    .role(gpui_kit::Role::Button)
+                    .aria_label("重新载入已保存设置")
+                    .cursor_pointer()
+                    .h(px(40.))
+                    .px(px(12.))
+                    .rounded(px(20.))
+                    .flex()
+                    .items_center()
+                    .text_color(design::c(ColorRole::PRIMARY))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if !this.guard_settings_exit(PendingSettings::Reload, cx) {
+                            this.request(Command::LoadSettings, cx);
+                        }
+                    }))
+                    .child("重新载入"),
+            )
+            .child(
+                div()
+                    .id("save-settings")
+                    .test_support()
+                    .role(gpui_kit::Role::Button)
+                    .aria_label("保存实验参数")
+                    .cursor_pointer()
+                    .h(px(56.))
+                    .px(px(28.))
+                    .rounded(px(28.))
+                    .bg(design::c(ColorRole::PRIMARY))
+                    .text_color(design::c(ColorRole::ON_PRIMARY))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if let Some(editor) = &this.settings_editor {
+                            match editor.value(&this.settings, cx) {
+                                Ok(value) => this.request(
+                                    Command::SaveSettings {
+                                        value,
+                                        revision: this.settings_revision,
+                                        operation: format!(
+                                            "settings-{}-{}",
+                                            this.settings_revision, this.request_id
+                                        ),
+                                    },
+                                    cx,
+                                ),
+                                Err(error) => {
+                                    this.error = Some(error.message);
+                                    cx.notify();
+                                }
+                            }
+                        }
+                    }))
+                    .child(design::icon_role(Icon::Check, 18., ColorRole::ON_PRIMARY))
+                    .child("保存并生效"),
+            );
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .child(page)
+            .child(footer)
+            .into_any_element()
     }
+
+    pub(super) fn settings_body(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+        if self.settings_editor.is_none() {
+            return design::pane()
+                .flex_1()
+                .h_full()
+                .p(px(28.))
+                .child(design::muted_text(16., 24.).child("正在读取设置…"))
+                .into_any_element();
+        }
+        let content = match self.settings_ui.page {
+            SettingsPage::Provider => self.provider_page(cx),
+            SettingsPage::Learning => self.learning_page(cx),
+            SettingsPage::Experiment => self.experiment_page(cx),
+        };
+        let content = design::pane()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .p(px(28.))
+            .px(px(if self.compact { 18. } else { 36. }))
+            .gap(px(18.))
+            .child(content);
+        if self.compact {
+            let mut tabs = div().flex().gap(px(8.)).w_full().px(px(16.)).pt(px(12.));
+            for (page, label) in [
+                (SettingsPage::Provider, "AI 服务"),
+                (SettingsPage::Learning, "学习与阅读"),
+                (SettingsPage::Experiment, "实验参数"),
+            ] {
+                let selected = self.settings_ui.page == page;
+                tabs = tabs.child(
+                    div()
+                        .id(gpui_kit::SharedString::from(match page {
+                            SettingsPage::Provider => "settings-ai",
+                            SettingsPage::Learning => "settings-learning",
+                            SettingsPage::Experiment => "settings-experiment",
+                        }))
+                        .test_support()
+                        .role(gpui_kit::Role::Button)
+                        .aria_label(label)
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.settings_ui.page = page;
+                            this.settings_ui.advanced = page == SettingsPage::Experiment;
+                            cx.notify();
+                        }))
+                        .child(design::chip(selected, label, None)),
+                );
+            }
+            return div()
+                .flex()
+                .flex_col()
+                .w_full()
+                .h_full()
+                .child(tabs)
+                .child(div().flex_1().min_h_0().overflow_hidden().child(content))
+                .into_any_element();
+        }
+        let main = div()
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .gap(px(12.))
+            .child(self.settings_nav(cx))
+            .child(content);
+        div()
+            .flex()
+            .w_full()
+            .h_full()
+            .child(main)
+            .child(self.settings_dialog(cx))
+            .into_any_element()
+    }
+
     fn save_provider(&mut self, clear: bool, cx: &mut Context<Self>) {
         let Some(editor) = &self.settings_editor else {
             return;

@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests;
 use super::*;
+use crate::design;
 use cijian_domain::settings::{Settings, numeric_rule};
 use gpui_kit::{
     Entity, Focusable,
@@ -60,7 +61,7 @@ pub(super) const FIELDS: [Field; 10] = [
     Field {
         id: "tts-limit",
         name: "ttsDailyCharLimit",
-        label: "每日远程朗读字符额度",
+        label: "每日语音字符上限",
     },
     Field {
         id: "day-start",
@@ -351,6 +352,320 @@ impl Editor {
         let focus = self.fields["control-ratio"].read(cx).focus_handle(cx);
         window.focus(&focus, cx);
     }
+    fn format_value(rule: &cijian_domain::settings::NumericRule, value: f64) -> String {
+        if rule.field == "ttsDailyCharLimit" {
+            let raw = format!("{value:.0}");
+            let mut out = String::new();
+            for (index, ch) in raw.chars().rev().enumerate() {
+                if index > 0 && index % 3 == 0 {
+                    out.push(',');
+                }
+                out.push(ch);
+            }
+            return out.chars().rev().collect();
+        }
+        if rule.integer {
+            format!("{value:.0}")
+        } else {
+            format!("{value:.2}")
+        }
+    }
+
+    fn slider_visual(
+        &self,
+        rule: &cijian_domain::settings::NumericRule,
+        field_id: &'static str,
+        cx: &App,
+    ) -> gpui_kit::AnyElement {
+        let value = self.fields[field_id]
+            .read(cx)
+            .value()
+            .trim()
+            .parse::<f64>()
+            .unwrap_or(rule.min);
+        let fraction = if rule.max > rule.min {
+            ((value - rule.min) / (rule.max - rule.min)).clamp(0., 1.) as f32
+        } else {
+            0.
+        };
+        div()
+            .relative()
+            .h(px(44.))
+            .flex_1()
+            .min_w(px(80.))
+            .child(
+                div()
+                    .absolute()
+                    .top(px(14.))
+                    .left(px(0.))
+                    .right(px(0.))
+                    .h(px(16.))
+                    .rounded(px(8.))
+                    .bg(design::c(ColorRole::SECONDARY_CONTAINER)),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(14.))
+                    .left(px(0.))
+                    .w(gpui_kit::relative(fraction))
+                    .h(px(16.))
+                    .rounded(px(8.))
+                    .bg(design::c(ColorRole::PRIMARY)),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(0.))
+                    .left(gpui_kit::relative(fraction))
+                    .ml(px(-2.))
+                    .w(px(4.))
+                    .h(px(44.))
+                    .rounded(px(2.))
+                    .bg(design::c(ColorRole::PRIMARY)),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(21.))
+                    .right(px(4.))
+                    .w(px(4.))
+                    .h(px(4.))
+                    .rounded(px(2.))
+                    .bg(design::c(ColorRole::ON_SECONDARY_CONTAINER)),
+            )
+            .into_any_element()
+    }
+
+    fn hidden_input(&self, field: &Field, loading: bool) -> gpui_kit::AnyElement {
+        div()
+            .absolute()
+            .right(px(0.))
+            .top(px(14.))
+            .w(px(200.))
+            .h(px(44.))
+            .overflow_hidden()
+            .opacity(0.)
+            .child(
+                TextField::new(field.id, &self.fields[field.id])
+                    .label(field.label)
+                    .disabled(loading),
+            )
+            .into_any_element()
+    }
+
+    pub(super) fn design_range_field(&self, loading: bool, cx: &App) -> gpui_kit::AnyElement {
+        let min_rule = numeric_rule("articleMinWords").expect("numeric setting");
+        let max_rule = numeric_rule("articleMaxWords").expect("numeric setting");
+        let min = self.fields["min-words"]
+            .read(cx)
+            .value()
+            .trim()
+            .parse::<f64>()
+            .unwrap_or(min_rule.min);
+        let max = self.fields["max-words"]
+            .read(cx)
+            .value()
+            .trim()
+            .parse::<f64>()
+            .unwrap_or(max_rule.max);
+        let min_fraction = ((min - 100.) / (1000. - 100.)).clamp(0., 1.) as f32;
+        let max_fraction = ((max - 100.) / (1000. - 100.)).clamp(0., 1.) as f32;
+        let row = div()
+            .relative()
+            .flex()
+            .items_center()
+            .gap(px(16.))
+            .min_h(px(72.))
+            .py(px(8.))
+            .child(
+                div()
+                    .w(px(150.))
+                    .flex_shrink_0()
+                    .flex()
+                    .flex_col()
+                    .child(design::text(15., 20., 650.).child("文章长度"))
+                    .child(design::muted_text(12., 16.).child("最少 / 最多词数")),
+            )
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_w(px(80.))
+                    .h(px(44.))
+                    .child(
+                        div()
+                            .absolute()
+                            .top(px(14.))
+                            .left(px(0.))
+                            .right(px(0.))
+                            .h(px(16.))
+                            .rounded(px(8.))
+                            .bg(design::c(ColorRole::SECONDARY_CONTAINER)),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .top(px(14.))
+                            .left(gpui_kit::relative(min_fraction))
+                            .w(gpui_kit::relative((max_fraction - min_fraction).max(0.01)))
+                            .h(px(16.))
+                            .bg(design::c(ColorRole::PRIMARY)),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .top(px(0.))
+                            .left(gpui_kit::relative(min_fraction))
+                            .ml(px(-2.))
+                            .w(px(4.))
+                            .h(px(44.))
+                            .rounded(px(2.))
+                            .bg(design::c(ColorRole::PRIMARY)),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .top(px(0.))
+                            .left(gpui_kit::relative(max_fraction))
+                            .ml(px(-2.))
+                            .w(px(4.))
+                            .h(px(44.))
+                            .rounded(px(2.))
+                            .bg(design::c(ColorRole::PRIMARY)),
+                    )
+                    .child(
+                        div().absolute().inset_0().opacity(0.).child(
+                            MaterialSlider::new(&self.sliders["min-words"], "文章最少词数")
+                                .id(gpui_kit::SharedString::from("slider-min-words"))
+                                .disabled(loading),
+                        ),
+                    )
+                    .child(
+                        div().absolute().inset_0().opacity(0.).child(
+                            MaterialSlider::new(&self.sliders["max-words"], "文章最多词数")
+                                .id(gpui_kit::SharedString::from("slider-max-words"))
+                                .disabled(loading),
+                        ),
+                    ),
+            )
+            .child(
+                design::mono(13., 18., 400.)
+                    .w(px(76.))
+                    .flex_shrink_0()
+                    .text_align(gpui_kit::TextAlign::Right)
+                    .child(format!("{min:.0}–{max:.0}")),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .right(px(0.))
+                    .top(px(0.))
+                    .w(px(200.))
+                    .h(px(44.))
+                    .overflow_hidden()
+                    .opacity(0.)
+                    .child(
+                        TextField::new("min-words", &self.fields["min-words"])
+                            .label("文章最少词数")
+                            .disabled(loading),
+                    ),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .right(px(0.))
+                    .top(px(28.))
+                    .w(px(200.))
+                    .h(px(44.))
+                    .overflow_hidden()
+                    .opacity(0.)
+                    .child(
+                        TextField::new("max-words", &self.fields["max-words"])
+                            .label("文章最多词数")
+                            .disabled(loading),
+                    ),
+            );
+        let _ = min_rule;
+        let _ = max_rule;
+        row.into_any_element()
+    }
+
+    pub(super) fn design_field(
+        &self,
+        field: &Field,
+        errors: &BTreeMap<&'static str, String>,
+        loading: bool,
+        cx: &App,
+    ) -> gpui_kit::AnyElement {
+        let rule = *numeric_rule(field.name).expect("numeric setting");
+        let value = self.fields[field.id]
+            .read(cx)
+            .value()
+            .trim()
+            .parse::<f64>()
+            .unwrap_or(rule.min);
+        let mut row = div()
+            .relative()
+            .flex()
+            .items_center()
+            .gap(px(16.))
+            .min_h(px(72.))
+            .py(px(8.))
+            .child(
+                div()
+                    .w(px(150.))
+                    .flex_shrink_0()
+                    .flex()
+                    .flex_col()
+                    .child(design::text(15., 20., 650.).child(field.label))
+                    .child(design::muted_text(12., 16.).child(format!(
+                        "{}–{}",
+                        if rule.integer {
+                            format!("{:.0}", rule.min)
+                        } else {
+                            format!("{:.2}", rule.min)
+                        },
+                        if rule.integer {
+                            format!("{:.0}", rule.max)
+                        } else {
+                            format!("{:.2}", rule.max)
+                        }
+                    ))),
+            )
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_w(px(80.))
+                    .h(px(44.))
+                    .child(self.slider_visual(&rule, field.id, cx))
+                    .child(
+                        div().absolute().inset_0().opacity(0.).child(
+                            MaterialSlider::new(&self.sliders[field.id], field.label)
+                                .id(gpui_kit::SharedString::from(format!("slider-{}", field.id)))
+                                .disabled(loading),
+                        ),
+                    ),
+            )
+            .child(
+                design::mono(13., 18., 400.)
+                    .w(px(64.))
+                    .flex_shrink_0()
+                    .text_align(gpui_kit::TextAlign::Right)
+                    .child(Self::format_value(&rule, value)),
+            )
+            .child(self.hidden_input(field, loading));
+        if let Some(error) = errors.get(field.id) {
+            row = row.child(
+                design::text(11., 14., 400.)
+                    .text_color(design::c(ColorRole::ERROR))
+                    .child(error.clone()),
+            );
+        }
+        row.into_any_element()
+    }
+
     pub(super) fn field(
         &self,
         field: &Field,

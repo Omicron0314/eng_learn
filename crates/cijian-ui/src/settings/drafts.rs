@@ -9,9 +9,17 @@ pub(crate) enum PendingSettings {
     Reload,
     Provider(ProviderKind),
 }
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SettingsPage {
+    #[default]
+    Provider,
+    Learning,
+    Experiment,
+}
 #[derive(Default)]
 pub(crate) struct SettingsState {
     pub pending: Option<PendingSettings>,
+    pub page: SettingsPage,
     pub advanced: bool,
     pub focus_advanced: bool,
     pub refresh_learning: bool,
@@ -99,6 +107,7 @@ impl Shell {
         }
         if self.settings_ui.focus_advanced && !self.loading {
             self.settings_ui.focus_advanced = false;
+            self.settings_ui.page = SettingsPage::Experiment;
             self.page_scroll.set_offset(Default::default());
             if let Some(editor) = &self.settings_editor {
                 editor.focus_advanced(window, cx);

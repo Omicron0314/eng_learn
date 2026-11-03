@@ -9,7 +9,8 @@ use gpui_kit::{
     base::input::{BufferPoint, DisplayPoint, TextareaState},
     component::input::Textarea,
 };
-const READER_LINE_HEIGHT: f32 = 32.;
+use gpui_kit_material::color::ColorRole as cijian_ui_color;
+const READER_LINE_HEIGHT: f32 = 34.;
 
 pub(super) struct ReaderText {
     key: (String, String),
@@ -111,15 +112,6 @@ impl Shell {
         });
         if reveal.is_some() {
             self.source_reveal = None;
-        }
-    }
-    pub(super) fn reveal_word(&mut self, context: &cijian_ports::reading::LookupContext) {
-        if let Some(reader) = self
-            .reader_text
-            .as_mut()
-            .filter(|reader| reader.key == (context.article_id.clone(), context.body_hash.clone()))
-        {
-            reader.restore = Some(context.selection.range.start);
         }
     }
     fn capture_reader_frame(&mut self, cx: &mut Context<Self>) {
@@ -256,43 +248,79 @@ impl Shell {
             return div().into_any_element();
         };
         let weak = cx.entity().downgrade();
-        div()
+        let highlight = self.lookup.as_ref().and_then(|(context, _, _)| {
+            reader
+                .input
+                .read(cx)
+                .range_to_bounds(&(context.selection.range.start..context.selection.range.end))
+                .map(|bounds| (bounds.origin, bounds.size))
+        });
+        let (reader_size, reader_line) = if self.compact { (18., 30.) } else { (20., 34.) };
+        let mut text = div()
             .id("reader-text")
+            .relative()
             .w_full()
-            .text_size(px(20.))
-            .line_height(px(32.))
-            .child(
-                Textarea::new(&reader.input)
-                    .appearance(false)
-                    .readonly(true)
-                    .aria_label("文章正文，按Alt+Enter查看光标所在词")
-                    .p_0()
-                    .text_size(px(20.))
-                    .line_height(px(32.)),
-            )
-            .child(
+            .text_size(px(reader_size))
+            .line_height(px(reader_line));
+        if let Some((origin, size)) = highlight {
+            text = text.child(
                 gpui_kit::canvas(
                     |_, _, _| (),
-                    move |_, _, _, cx| {
-                        let _ = weak.update(cx, |this, cx| this.capture_reader_frame(cx));
+                    move |canvas_bounds, _, window, _| {
+                        let rect = gpui_kit::Bounds {
+                            origin: gpui_kit::point(
+                                origin.x - canvas_bounds.origin.x - px(3.),
+                                origin.y - canvas_bounds.origin.y - px(1.),
+                            ),
+                            size: gpui_kit::size(size.width + px(6.), size.height + px(2.)),
+                        };
+                        window.paint_quad(gpui_kit::quad(
+                            rect,
+                            gpui_kit::Corners::all(px(6.)),
+                            crate::design::c(cijian_ui_color::PRIMARY_CONTAINER),
+                            gpui_kit::Edges::all(px(2.)),
+                            crate::design::c(cijian_ui_color::PRIMARY),
+                            gpui_kit::BorderStyle::Solid,
+                        ));
                     },
                 )
                 .absolute()
-                .size_0(),
+                .inset_0(),
+            );
+        }
+        text.child(
+            Textarea::new(&reader.input)
+                .appearance(false)
+                .readonly(true)
+                .aria_label("文章正文，按Alt+Enter查看光标所在词")
+                .p_0()
+                .text_size(px(20.))
+                .line_height(px(34.))
+                .letter_spacing(px(-0.2)),
+        )
+        .child(
+            gpui_kit::canvas(
+                |_, _, _| (),
+                move |_, _, _, cx| {
+                    let _ = weak.update(cx, |this, cx| this.capture_reader_frame(cx));
+                },
             )
-            .on_mouse_up(
-                gpui_kit::MouseButton::Left,
-                cx.listener(|this, event: &gpui_kit::MouseUpEvent, _, cx| {
-                    this.lookup_reader_word(Some(event.position), cx)
-                }),
-            )
-            .on_key_down(cx.listener(|this, event: &gpui_kit::KeyDownEvent, _, cx| {
-                if event.keystroke.key == "enter" && event.keystroke.modifiers.alt {
-                    this.lookup_reader_word(None, cx);
-                    cx.stop_propagation();
-                }
-            }))
-            .into_any_element()
+            .absolute()
+            .size_0(),
+        )
+        .on_mouse_up(
+            gpui_kit::MouseButton::Left,
+            cx.listener(|this, event: &gpui_kit::MouseUpEvent, _, cx| {
+                this.lookup_reader_word(Some(event.position), cx)
+            }),
+        )
+        .on_key_down(cx.listener(|this, event: &gpui_kit::KeyDownEvent, _, cx| {
+            if event.keystroke.key == "enter" && event.keystroke.modifiers.alt {
+                this.lookup_reader_word(None, cx);
+                cx.stop_propagation();
+            }
+        }))
+        .into_any_element()
     }
     pub(super) fn dismiss_lookup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.loading && !self.lookup_loading {

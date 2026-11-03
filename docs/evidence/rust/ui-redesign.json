@@ -1,0 +1,54 @@
+{
+  "task": "R04",
+  "also_relevant": [
+    "R08",
+    "R10",
+    "R12",
+    "R13",
+    "R15",
+    "R17"
+  ],
+  "date": "2026-11-03",
+  "design": "docs/cijian-m3.html, rendered after its script (not the obsolete initial Today source)",
+  "host": "Arch Linux x86_64, Xvfb X11 1600x1000 at scale 1",
+  "binary": "debug build of cijian-desktop at spikes/r00/target/debug/cijian-desktop",
+  "data": "isolated /tmp/cijian-ui-run SQLite fixture with original synthetic cards, books, articles, inbox items, reviews and provider configuration; no private learning database, user audio or real credentials",
+  "verified": [
+    "light Today, Review (revealed), Articles, Library (editor open), Inbox (multi-select), Stats, Settings AI, Settings learning, Reader with lookup side sheet, and Listen at 1440x900",
+    "dark Today at 1440x900 using the same role palette",
+    "compact Today, Review and reader lookup bottom sheet at 412x892; listening at 1440x900",
+    "512px compact review card height, 36px card radius and centered book chip match the mobile frame",
+    "Library search is a 56dp pill; selected table row and editor side panel use the design surface roles",
+    "Reader lookup is a 384dp side panel on desktop and a drag-handled bottom sheet on compact widths",
+    "all visible controls keep existing stable IDs used by behavior tests"
+  ],
+  "screenshots": [
+    "ui-redesign/today-light-1440.png",
+    "ui-redesign/today-dark-1440.png",
+    "ui-redesign/review-light-1440.png",
+    "ui-redesign/articles-light-1440.png",
+    "ui-redesign/library-light-1440.png",
+    "ui-redesign/inbox-light-1440.png",
+    "ui-redesign/stats-light-1440.png",
+    "ui-redesign/settings-ai-light-1440.png",
+    "ui-redesign/settings-learning-light-1440.png",
+    "ui-redesign/reader-lookup-light-1440.png",
+    "ui-redesign/listening-light-1440.png",
+    "ui-redesign/mobile-today-light-412.png",
+    "ui-redesign/mobile-review-light-412.png",
+    "ui-redesign/mobile-read-sheet-light-412.png"
+  ],
+  "checks": [
+    "cargo fmt --all --check",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "cargo test --workspace"
+  ],
+  "not_verified": [
+    "automated pixel diff against the HTML board",
+    "real IME composition, touch input, screen readers and GPU/display recovery",
+    "Wayland, X11 without Xvfb, macOS, Windows and native mobile",
+    "real paid model or TTS quality; the seeded provider endpoint was unreachable and lookup therefore stored no generated meaning",
+    "exact Roboto Flex variable-axis rendering beyond the static instances bundled for the UI"
+  ],
+  "font_note": "The UI bundles static instances derived from the Roboto Flex and Roboto Mono WOFF2 subsets embedded in docs/cijian-m3.html under SIL OFL 1.1. The license text is in crates/cijian-ui/assets/fonts/OFL.txt. Chinese text falls back to system Noto Sans CJK SC and is not bundled."
+}

@@ -2,11 +2,13 @@
 #[cfg(test)]
 extern crate gpui_kit as gpui;
 mod audio;
+mod design;
 mod library;
 mod reader_flags;
 mod reader_positions;
 mod reader_text;
 mod settings;
+mod shell;
 mod stats;
 mod study;
 #[cfg(test)]
@@ -24,16 +26,19 @@ use cijian_ports::{
 use gpui_kit::{App, Context, TestSupportExt as _, Window, WindowOptions, div, prelude::*, px};
 use gpui_kit_material::{
     color::ColorRole,
-    components::{ButtonVariant, NavIcon, NavItem, NavigationBar, NavigationRail, material_button},
-    icons::{Assets, Symbol},
-    theme::{color, init_component_theme},
+    components::{ButtonVariant, material_button},
+    icons::Assets,
+    theme::init_component_theme,
 };
 use std::{sync::Arc, time::Instant};
 
 struct Shell {
     focus: Option<gpui_kit::FocusHandle>,
     navigation: Navigation,
-    items: Vec<NavItem>,
+    nav_focus: std::cell::RefCell<Vec<gpui_kit::FocusHandle>>,
+    compact: bool,
+    viewport_width: f32,
+    viewport_height: f32,
     dark: bool,
     #[cfg(test)]
     rendered_dark: bool,
@@ -59,6 +64,8 @@ struct Shell {
     intervals: Option<[i64; 4]>,
     revealed: bool,
     review_started: Instant,
+    review_done: u32,
+    key_intercept: Option<gpui_kit::Subscription>,
     settings: cijian_domain::settings::Settings,
     settings_revision: u64,
     legacy_selection: Option<String>,
@@ -87,6 +94,7 @@ struct Shell {
     reading_feedback: Vec<cijian_ports::reading::Feedback>,
     reader_flags: reader_flags::FlagState,
     lookup: Option<(cijian_ports::reading::LookupContext, u64, String)>,
+    mark_result: Option<cijian_ports::inbox::MarkResult>,
     generation_job: Option<cijian_ports::articles::GenerationJob>,
     inbox: Vec<cijian_ports::inbox::InboxItem>,
     inbox_total: u64,
@@ -98,27 +106,13 @@ struct Shell {
 }
 impl Shell {
     fn new() -> Self {
-        let items = [
-            ("today", "今日", "today"),
-            ("review", "复习", "school"),
-            ("articles", "文章", "article"),
-            ("library", "词库", "menu_book"),
-            ("inbox", "生词箱", "inbox"),
-            ("stats", "统计", "bar_chart"),
-        ]
-        .into_iter()
-        .map(|(value, label, icon)| {
-            NavItem::new(
-                value,
-                label,
-                NavIcon::symbol(Symbol::named(icon).expect("bundled Material symbol")),
-            )
-        })
-        .collect();
         Self {
             focus: None,
             navigation: Navigation::default(),
-            items,
+            nav_focus: Default::default(),
+            compact: false,
+            viewport_width: 1440.,
+            viewport_height: 900.,
             dark: false,
             #[cfg(test)]
             rendered_dark: false,
@@ -144,6 +138,8 @@ impl Shell {
             intervals: None,
             revealed: false,
             review_started: Instant::now(),
+            review_done: 0,
+            key_intercept: None,
             settings: Default::default(),
             settings_revision: 1,
             legacy_selection: None,
@@ -172,6 +168,7 @@ impl Shell {
             reading_feedback: Vec::new(),
             reader_flags: Default::default(),
             lookup: None,
+            mark_result: None,
             generation_job: None,
             inbox: Vec::new(),
             inbox_total: 0,
@@ -278,12 +275,19 @@ impl Shell {
                         this.article = Some(*article);
                         this.reading_session = Some(session);
                         this.lookup = None;
+                        cx.spawn(async move |this, cx| {
+                            cx.background_executor()
+                                .timer(std::time::Duration::from_millis(24))
+                                .await;
+                            let _ = this.update(cx, |_, cx| cx.notify());
+                        })
+                        .detach();
                     }
                     Ok(Response::Lookup {
                         context,
                         revision,
                         meaning,
-                    }) => {this.reveal_word(&context);this.lookup = Some((context, revision, meaning));},
+                    }) => {this.mark_result = None;this.lookup = Some((context, revision, meaning));},
                     Ok(Response::Marked(result)) => {
                         if let Some((_, revision, _)) = &mut this.lookup {
                             *revision = result.revision;
@@ -463,11 +467,15 @@ impl Shell {
                         this.stats = Some(*stats);
                         this.books = books;
                         this.inbox_total = inbox_pending;
+                        let empty_inbox = this.inbox.is_empty();
                         this.review = cards;
                         this.waiting = waiting;
                         this.intervals = intervals;
                         this.revealed = false;
                         this.review_started = Instant::now();
+                        if this.navigation.current() == &Route::Today && empty_inbox && inbox_pending > 0 {
+                            this.request(Command::LoadInbox { page: 0 }, cx);
+                        }
                     }
                     Ok(Response::Rated(_)) => this.request(Command::LoadReview, cx),
                 }
@@ -590,6 +598,7 @@ impl Shell {
             return;
         }
         if let Some(card) = self.review.first() {
+            self.review_done = self.review_done.saturating_add(1);
             self.request(
                 Command::Rate {
                     card: card.id.clone(),
@@ -605,267 +614,6 @@ impl Shell {
                 cx,
             );
         }
-    }
-    fn body(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
-        let mut body = div().flex().flex_col().gap_4();
-        match self.navigation.current() {
-            Route::Today => {
-                body = body.child(self.today_metrics(cx));
-                body = body.child(div().text_size(px(24.)).child("一点复习，一段故事。"));
-                if !self.loading {
-                    body = body.child(format!("当前可复习 {} 张词卡", self.review.len()));
-                }
-                body = body
-                    .child(
-                        material_button("start-review", ButtonVariant::Filled)
-                            .child("开始复习")
-                            .disabled(self.loading || self.review.is_empty())
-                            .on_click(
-                                cx.listener(|this, _, _, cx| this.navigate(Route::Review, cx)),
-                            ),
-                    )
-                    .child(
-                        material_button("open-library", ButtonVariant::Tonal)
-                            .child("管理词库")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.navigate(
-                                    Route::Library {
-                                        book: None,
-                                        search: String::new(),
-                                    },
-                                    cx,
-                                )
-                            })),
-                    );
-            }
-            Route::Library { .. } => {
-                body = body.child(self.library_controls(cx));
-                if self.library_ui.import_open {
-                    body = body.child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .child(
-                                material_button(
-                                    "mode-cards",
-                                    if self.word_list {
-                                        ButtonVariant::Tonal
-                                    } else {
-                                        ButtonVariant::Filled
-                                    },
-                                )
-                                .child("词卡")
-                                .disabled(self.loading)
-                                .on_click(cx.listener(
-                                    |this, _, _, cx| {
-                                        this.word_list = false;
-                                        this.import_kind = BookKind::Study;
-                                        this.library_ui.target = None;
-                                        this.selected = None;
-                                        cx.notify();
-                                    },
-                                )),
-                            )
-                            .child(
-                                material_button(
-                                    "mode-wordlist",
-                                    if self.word_list {
-                                        ButtonVariant::Filled
-                                    } else {
-                                        ButtonVariant::Tonal
-                                    },
-                                )
-                                .child("词表")
-                                .disabled(self.loading)
-                                .on_click(cx.listener(
-                                    |this, _, _, cx| {
-                                        this.word_list = true;
-                                        this.selected = None;
-                                        cx.notify();
-                                    },
-                                )),
-                            ),
-                    );
-                    if self.word_list {
-                        body = body.child(
-                            div()
-                                .flex()
-                                .gap_2()
-                                .child(
-                                    material_button(
-                                        "kind-baseline",
-                                        if self.import_kind == BookKind::Baseline {
-                                            ButtonVariant::Filled
-                                        } else {
-                                            ButtonVariant::Tonal
-                                        },
-                                    )
-                                    .child("基线：作为已知词")
-                                    .disabled(self.loading)
-                                    .on_click(cx.listener(
-                                        |this, _, _, cx| {
-                                            this.import_kind = BookKind::Baseline;
-                                            this.library_ui.target = None;
-                                            cx.notify();
-                                        },
-                                    )),
-                                )
-                                .child(
-                                    material_button(
-                                        "kind-study",
-                                        if self.import_kind == BookKind::Study {
-                                            ButtonVariant::Filled
-                                        } else {
-                                            ButtonVariant::Tonal
-                                        },
-                                    )
-                                    .child("学习：加入复习")
-                                    .disabled(self.loading)
-                                    .on_click(cx.listener(
-                                        |this, _, _, cx| {
-                                            this.import_kind = BookKind::Study;
-                                            this.library_ui.target = None;
-                                            cx.notify();
-                                        },
-                                    )),
-                                ),
-                        );
-                    }
-                    body = body.child(self.import_controls(cx));
-                    body = body.child(
-                        material_button("choose-file", ButtonVariant::Tonal)
-                            .child(if self.word_list {
-                                "选择词表 CSV / TXT"
-                            } else {
-                                "选择词卡 CSV / APKG"
-                            })
-                            .disabled(self.loading)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.request(
-                                    Command::ChooseImport {
-                                        word_list: this.word_list,
-                                    },
-                                    cx,
-                                )
-                            })),
-                    );
-                    if let Some(selected) = &self.selected {
-                        body = body.child(format!("词书：{}", selected.name));
-                    }
-                    body = body.child(
-                        material_button("import-file", ButtonVariant::Filled)
-                            .child("开始导入")
-                            .disabled(self.loading || self.selected.is_none())
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                if let Some(file) = this.selected.clone() {
-                                    this.request(
-                                        Command::ImportSelected {
-                                            target_book: this.library_ui.target.clone(),
-                                            handle: file.handle,
-                                            name: this
-                                                .library_ui
-                                                .import_name
-                                                .as_ref()
-                                                .map(|input| {
-                                                    input.read(cx).value().trim().to_owned()
-                                                })
-                                                .unwrap_or(file.name),
-                                            kind: this.import_kind,
-                                            word_list: this.word_list,
-                                        },
-                                        cx,
-                                    );
-                                }
-                            })),
-                    );
-                }
-                if self.report.is_some() && self.library_ui.report_open {
-                    body = body.child(self.import_report(cx));
-                }
-                if self.library_ui.entries.is_some() {
-                    body = body.child(self.baseline_entries(cx));
-                } else if let Some(page) = &self.library {
-                    body = body.child(format!("共 {} 张词卡", page.total));
-                    for card in &page.cards {
-                        body = body.child(self.library_card(card, cx));
-                    }
-                }
-                body = body.child(self.library_dialogs(cx));
-            }
-            Route::Review => {
-                if let Some(card) = self.review.first() {
-                    body = body.child(div().text_size(px(36.)).child(card.front.clone()));
-                    if self.revealed {
-                        body = body
-                            .child(if card.meaning.is_empty() {
-                                "暂无释义，可继续评分".to_owned()
-                            } else {
-                                card.meaning.clone()
-                            })
-                            .child(card.example.clone())
-                            .child(
-                                div()
-                                    .id("review-source")
-                                    .test_support()
-                                    .role(gpui_kit::Role::Label)
-                                    .aria_label(format!("来源：{}", card.text_source))
-                                    .child(format!("来源：{}", card.text_source)),
-                            );
-                        let mut ratings = div().flex().flex_wrap().gap_2();
-                        for (index, (label, rating)) in [
-                            ("重来", Rating::Again),
-                            ("困难", Rating::Hard),
-                            ("记得", Rating::Good),
-                            ("轻松", Rating::Easy),
-                        ]
-                        .into_iter()
-                        .enumerate()
-                        {
-                            let interval = self
-                                .intervals
-                                .map(|values| format_interval(values[index]))
-                                .unwrap_or_default();
-                            ratings = ratings.child(
-                                material_button(
-                                    ("rating", index),
-                                    if rating == Rating::Good {
-                                        ButtonVariant::Filled
-                                    } else {
-                                        ButtonVariant::Tonal
-                                    },
-                                )
-                                .child(format!("{label} · {interval}"))
-                                .disabled(self.loading)
-                                .on_click(cx.listener(move |this, _, _, cx| this.rate(rating, cx))),
-                            );
-                        }
-                        body = body.child(ratings);
-                    } else {
-                        body = body.child(
-                            material_button("reveal", ButtonVariant::Filled)
-                                .child("显示答案")
-                                .disabled(self.loading)
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.revealed = true;
-                                    cx.notify();
-                                })),
-                        );
-                    }
-                } else if !self.loading {
-                    body = body.child(if self.waiting {
-                        "学习步骤尚未到期，请稍后再来"
-                    } else {
-                        "当前没有待复习词卡，可以导入词书或稍后再来"
-                    });
-                }
-            }
-            Route::Settings => return self.settings_body(cx),
-            Route::Articles => return self.articles_body(cx),
-            Route::Article { .. } => return self.reader_body(cx),
-            Route::Inbox => return self.inbox_body(cx),
-            Route::Stats => return self.stats_body(cx),
-        }
-        body.into_any_element()
     }
 }
 fn format_interval(ms: i64) -> String {
@@ -894,216 +642,39 @@ impl Render for Shell {
         scope.child(content)
     }
 }
-impl Shell {
-    fn render_content(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> gpui_kit::AnyElement {
-        #[cfg(test)]
-        {
-            self.rendered_dark = gpui_kit_material::theme::is_dark();
-        }
-        self.prepare_library_inputs(window, cx);
-        if self.focus.is_none() {
-            let focus = cx.focus_handle();
-            window.focus(&focus, cx);
-            self.focus = Some(focus);
-            let weak = cx.entity().downgrade();
-            window.on_window_should_close(cx, move |window, cx| {
-                weak.update(cx, |this, cx| {
-                    this.may_close(cx) && this.close_reader_when_saved(window, cx)
-                })
-                .unwrap_or(true)
-            });
-        }
-        self.initialize_positions(cx);
-        self.prepare_settings(window, cx);
-        self.prepare_flag(window, cx);
-        self.prepare_reader(window, cx);
-        let compact = window.viewport_size().width < px(600.);
-        self.compact_reader = window.viewport_size().width
-            < gpui_kit_material::tokens::typography::rem(840.).to_pixels(window.rem_size());
-        let is_reader = matches!(self.navigation.current(), Route::Article { .. });
-        let selected = self.navigation.current().section();
-        let entity = cx.entity().downgrade();
-        let on_change = move |value: &gpui_kit::SharedString, _: &mut Window, cx: &mut App| {
-            if let Some(route) = Route::section_route(value.as_ref()) {
-                let _ = entity.update(cx, |this, cx| this.navigate(route, cx));
-            }
-        };
-        let navigation = if compact {
-            NavigationBar::new("main-nav", "主导航")
-                .items(self.items.clone())
-                .selected(selected)
-                .on_change(on_change)
-                .into_any_element()
-        } else {
-            NavigationRail::new("main-nav", "主导航")
-                .items(self.items.clone())
-                .selected(selected)
-                .on_change(on_change)
-                .into_any_element()
-        };
-        let mut header = div().flex().items_center().justify_between().gap_4().child(
-            div()
-                .text_size(px(32.))
-                .child(self.navigation.current().label()),
-        );
-        if compact {
-            header = header.child(
-                material_button("settings", ButtonVariant::Text)
-                    .child("设置")
-                    .on_click(cx.listener(|this, _, _, cx| this.navigate(Route::Settings, cx))),
-            );
-        }
-        let mut content = div()
-            .id("page")
-            .when(!is_reader, |content| {
-                content.track_scroll(&self.page_scroll).overflow_y_scroll()
-            })
-            .when(is_reader, |content| content.overflow_hidden())
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            .p_6()
-            .flex()
-            .flex_col()
-            .gap_6()
-            .child(header);
-        if self.navigation.can_back() {
-            content = content.child(
-                material_button("back", ButtonVariant::Text)
-                    .child("返回")
-                    .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
-            )
-        }
-        if let Some(notice) = &self.notice {
-            content = content.child(notice.clone());
-        }
-        if self.loading {
-            content = content.child("正在处理，请稍候…");
-        }
-        if let Some(error) = &self.error {
-            content = content.child(
-                div()
-                    .p_4()
-                    .rounded(px(16.))
-                    .bg(color(ColorRole::ERROR_CONTAINER))
-                    .text_color(color(ColorRole::ON_ERROR_CONTAINER))
-                    .child(error.clone()),
-            );
-        }
-        content = content.when_some(self.position_notice(cx), |content, notice| {
-            content.child(notice)
-        });
-        content = content.child(
-            div()
-                .when(is_reader, |surface| {
-                    surface.flex_1().min_h_0().overflow_hidden()
-                })
-                .rounded(px(28.))
-                .p_6()
-                .bg(color(ColorRole::SURFACE_CONTAINER_LOW))
-                .child(self.body(cx)),
-        );
-        let background = div()
-            .capture_key_down(
-                cx.listener(|this, event: &gpui_kit::KeyDownEvent, window, cx| {
-                    if event.keystroke.key == "escape"
-                        && !this.compact_reader
-                        && !this.reader_flags.open
-                        && this.lookup.is_some()
-                        && matches!(this.navigation.current(), Route::Article { .. })
-                        && (!this.loading || this.lookup_loading)
-                    {
-                        this.dismiss_lookup(window, cx);
-                        cx.stop_propagation();
-                    }
-                }),
-            )
-            .track_focus(self.focus.as_ref().expect("initialized focus"))
-            .tab_stop(false)
-            .on_key_down(cx.listener(|this, event: &gpui_kit::KeyDownEvent, _, cx| {
-                if this.navigation.current() == &Route::Review && !this.loading {
-                    match event.keystroke.key.as_str() {
-                        "space" if !this.revealed => {
-                            this.revealed = true;
-                            cx.notify();
-                            cx.stop_propagation();
-                        }
-                        "1" => this.rate(Rating::Again, cx),
-                        "2" => this.rate(Rating::Hard, cx),
-                        "3" => this.rate(Rating::Good, cx),
-                        "4" => this.rate(Rating::Easy, cx),
-                        _ => {}
-                    }
-                }
-            }))
-            .w(window.viewport_size().width)
-            .h(window.viewport_size().height)
-            .flex()
-            .bg(color(ColorRole::SURFACE))
-            .text_color(color(ColorRole::ON_SURFACE));
-        let background = background.child(self.position_dialog(cx));
-        if compact {
-            background
-                .flex_col()
-                .child(content)
-                .child(navigation)
-                .into_any_element()
-        } else {
-            background
-                .child(
-                    div()
-                        .w(px(96.))
-                        .h_full()
-                        .flex()
-                        .flex_col()
-                        .justify_between()
-                        .child(
-                            div()
-                                .flex_1()
-                                .flex_basis(px(0.))
-                                .min_h_0()
-                                .overflow_hidden()
-                                .child(navigation),
-                        )
-                        .child(
-                            div().flex_shrink_0().pb_2().child(
-                                material_button("settings", ButtonVariant::Text)
-                                    .child("设置")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.navigate(Route::Settings, cx)
-                                    })),
-                            ),
-                        ),
-                )
-                .child(content)
-                .into_any_element()
-        }
-    }
-}
+
 pub fn run(application: gpui_kit::Application, backend: Result<Arc<dyn CommandBus>, AppError>) {
     application
         .with_assets(Assets::new())
         .run(move |cx: &mut App| {
             gpui_kit::init(cx);
             gpui_kit_material::init(cx);
+            design::install_fonts(cx);
             init_component_theme(theme::scheme(false), 1.0, cx);
-            gpui_kit::open_window(WindowOptions::default(), cx, move |window, cx| {
-                window.set_window_title("词间");
-                let view = cx.new(|_| {
-                    let mut shell = Shell::new();
-                    match backend {
-                        Ok(backend) => shell.backend = Some(backend),
-                        Err(error) => shell.error = Some(error.message),
-                    }
-                    shell
-                });
-                view.update(cx, |shell, cx| shell.request(Command::LoadSettings, cx));
-                view
-            })
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(gpui_kit::Bounds::new(
+                        gpui_kit::point(gpui_kit::px(0.), gpui_kit::px(0.)),
+                        gpui_kit::size(gpui_kit::px(1440.), gpui_kit::px(900.)),
+                    ))),
+                    window_min_size: Some(gpui_kit::size(gpui_kit::px(360.), gpui_kit::px(600.))),
+                    ..Default::default()
+                },
+                cx,
+                move |window, cx| {
+                    window.set_window_title("词间");
+                    let view = cx.new(|_| {
+                        let mut shell = Shell::new();
+                        match backend {
+                            Ok(backend) => shell.backend = Some(backend),
+                            Err(error) => shell.error = Some(error.message),
+                        }
+                        shell
+                    });
+                    view.update(cx, |shell, cx| shell.request(Command::LoadSettings, cx));
+                    view
+                },
+            )
             .expect("无法创建词间窗口");
             cx.activate(true);
         });

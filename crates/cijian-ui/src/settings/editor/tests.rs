@@ -159,6 +159,8 @@ fn independent_saves_preserve_other_drafts_and_validate_every_field(cx: &mut Tes
         .unwrap();
     cx.update_window(handle, |_, window, cx| {
         window.render_frame(cx);
+        window.click("settings-learning", cx);
+        window.render_frame(cx);
         input(window, "daily-new", "27", cx);
     })
     .unwrap();
@@ -192,6 +194,8 @@ fn independent_saves_preserve_other_drafts_and_validate_every_field(cx: &mut Tes
     );
     cx.update_window(handle, |_, window, cx| {
         input(window, "daily-new", "27", cx);
+        window.click("settings-ai", cx);
+        window.render_frame(cx);
         button(window, "provider-kind", cx);
     })
     .unwrap();
@@ -213,6 +217,8 @@ fn independent_saves_preserve_other_drafts_and_validate_every_field(cx: &mut Tes
         );
         input(window, "provider-model", "original-model", cx);
         input(window, "provider-key", "original-only-test-key", cx);
+        window.click("settings-learning", cx);
+        window.render_frame(cx);
         button(window, "save-settings", cx);
     })
     .unwrap();
@@ -228,6 +234,8 @@ fn independent_saves_preserve_other_drafts_and_validate_every_field(cx: &mut Tes
     assert_eq!(bus.0.lock().unwrap().value.daily_new_limit, 27);
     cx.update_window(handle, |_, window, cx| {
         input(window, "daily-new", "31", cx);
+        window.click("settings-ai", cx);
+        window.render_frame(cx);
         button(window, "save-provider", cx);
     })
     .unwrap();
@@ -269,8 +277,12 @@ fn independent_saves_preserve_other_drafts_and_validate_every_field(cx: &mut Tes
         state.revision += 1;
         state.value.daily_new_limit = 29;
     }
-    cx.update_window(handle, |_, window, cx| button(window, "save-settings", cx))
-        .unwrap();
+    cx.update_window(handle, |_, window, cx| {
+        window.click("settings-learning", cx);
+        window.render_frame(cx);
+        button(window, "save-settings", cx);
+    })
+    .unwrap();
     cx.run_until_parked();
     cx.update_window(handle, |_, window, cx| window.render_frame(cx))
         .unwrap();
