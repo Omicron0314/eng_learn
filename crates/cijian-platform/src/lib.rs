@@ -6,9 +6,130 @@ pub mod files;
 pub mod speech;
 use cijian_ports::{
     AppError, ErrorCode, Result,
-    provider::{Secret, SecretPatch, SecretStore},
+    provider::{Secret, SecretPatch, SecretSource, SecretStore},
 };
-use std::{collections::HashMap, sync::Mutex};
+#[cfg(test)]
+use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{
+        Mutex,
+        atomic::{AtomicU8, Ordering},
+    },
+};
+
+/// Credentials use the operating system's store when it works, otherwise only this process.
+/// The source is observable so the product never claims persistence that did not happen.
+pub struct RuntimeSecrets {
+    system: Option<SystemBackend>,
+    session: SessionSecrets,
+    source: AtomicU8,
+}
+enum SystemBackend {
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    Keyring(SystemSecrets),
+    #[cfg(test)]
+    Memory(Arc<SessionSecrets>),
+    #[cfg(test)]
+    Unavailable,
+}
+const UNKNOWN: u8 = 0;
+const SYSTEM: u8 = 1;
+const SESSION: u8 = 2;
+impl SystemBackend {
+    async fn read(&self, reference: &str) -> Result<Option<Secret>> {
+        match self {
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+            Self::Keyring(store) => store.read(reference).await,
+            #[cfg(test)]
+            Self::Memory(store) => store.read(reference).await,
+            #[cfg(test)]
+            Self::Unavailable => Err(AppError::new(
+                ErrorCode::UnsupportedCapability,
+                "原创测试系统凭据不可用",
+            )),
+        }
+    }
+    async fn write(&self, reference: &str, patch: SecretPatch) -> Result<()> {
+        match self {
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+            Self::Keyring(store) => store.write(reference, patch).await,
+            #[cfg(test)]
+            Self::Memory(store) => store.write(reference, patch).await,
+            #[cfg(test)]
+            Self::Unavailable => Err(AppError::new(
+                ErrorCode::UnsupportedCapability,
+                "原创测试系统凭据不可用",
+            )),
+        }
+    }
+}
+impl RuntimeSecrets {
+    /// Prefer the system store; operations that fail fall back to session memory.
+    pub fn system_or_session() -> Self {
+        Self {
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+            system: Some(SystemBackend::Keyring(SystemSecrets)),
+            #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+            system: None,
+            session: SessionSecrets::default(),
+            source: AtomicU8::new(UNKNOWN),
+        }
+    }
+    /// Never touches the operating system store. Tests and explicit session-only use.
+    pub fn session_only() -> Self {
+        Self {
+            system: None,
+            session: SessionSecrets::default(),
+            source: AtomicU8::new(SESSION),
+        }
+    }
+    #[cfg(test)]
+    fn with_system(system: SystemBackend) -> Self {
+        Self {
+            system: Some(system),
+            session: SessionSecrets::default(),
+            source: AtomicU8::new(UNKNOWN),
+        }
+    }
+    pub fn source(&self) -> SecretSource {
+        if self.source.load(Ordering::Acquire) == SYSTEM {
+            SecretSource::System
+        } else {
+            SecretSource::Session
+        }
+    }
+}
+impl SecretStore for RuntimeSecrets {
+    async fn read(&self, reference: &str) -> Result<Option<Secret>> {
+        if let Some(system) = &self.system {
+            match system.read(reference).await {
+                Ok(value) => {
+                    self.source.store(SYSTEM, Ordering::Release);
+                    return Ok(value);
+                }
+                Err(_) => {
+                    self.source.store(SESSION, Ordering::Release);
+                }
+            }
+        }
+        self.session.read(reference).await
+    }
+    async fn write(&self, reference: &str, patch: SecretPatch) -> Result<()> {
+        if let Some(system) = &self.system {
+            match system.write(reference, patch.clone()).await {
+                Ok(()) => {
+                    self.source.store(SYSTEM, Ordering::Release);
+                    return Ok(());
+                }
+                Err(_) => {
+                    self.source.store(SESSION, Ordering::Release);
+                }
+            }
+        }
+        self.session.write(reference, patch).await
+    }
+}
 
 /// A real session-only secret store, used when persistence is unavailable or unwanted.
 /// It does not simulate a remote provider or survive a process restart.
@@ -98,6 +219,45 @@ impl SecretStore for SystemSecrets {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn runtime_prefers_a_working_system_store_and_reports_its_source() {
+        let system = Arc::new(SessionSecrets::default());
+        let store = RuntimeSecrets::with_system(SystemBackend::Memory(system.clone()));
+        store
+            .write(
+                "p/llm",
+                SecretPatch::Replace(Secret::new("original-system".into()).unwrap()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(store.source(), SecretSource::System);
+        assert!(store.read("p/llm").await.unwrap().is_some());
+        store.write("p/llm", SecretPatch::Clear).await.unwrap();
+        assert!(store.read("p/llm").await.unwrap().is_none());
+        assert_eq!(store.source(), SecretSource::System);
+        assert!(system.read("p/llm").await.unwrap().is_none());
+    }
+    #[tokio::test]
+    async fn unavailable_system_store_falls_back_to_session_memory() {
+        let store = RuntimeSecrets::with_system(SystemBackend::Unavailable);
+        store
+            .write(
+                "p/llm",
+                SecretPatch::Replace(Secret::new("original-session".into()).unwrap()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(store.source(), SecretSource::Session);
+        assert_eq!(
+            store.read("p/llm").await.unwrap().unwrap().expose(),
+            "original-session"
+        );
+        assert_eq!(store.source(), SecretSource::Session);
+        assert_eq!(
+            RuntimeSecrets::session_only().source(),
+            SecretSource::Session
+        );
+    }
     #[tokio::test]
     async fn keep_replace_clear_and_new_session() {
         let store = SessionSecrets::default();

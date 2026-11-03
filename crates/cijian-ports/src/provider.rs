@@ -1,5 +1,6 @@
 use crate::{AppError, ErrorCode, Result};
 use cijian_domain::provider::ProviderConfig;
+use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 /// Never serialized or printed. The only exposure is to the authenticated transport.
@@ -23,6 +24,14 @@ impl Secret {
     pub fn expose(&self) -> &str {
         &self.0
     }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecretSource {
+    /// Persisted by the operating system's credential service.
+    System,
+    /// Kept only in process memory; it does not survive a restart or another window.
+    Session,
 }
 #[derive(Debug, Clone)]
 pub enum SecretPatch {
