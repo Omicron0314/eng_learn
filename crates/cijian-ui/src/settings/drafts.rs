@@ -158,7 +158,11 @@ impl Shell {
         match pending {
             PendingSettings::Navigate(route) => self.navigate(route, cx),
             PendingSettings::Back => self.go_back(cx),
-            PendingSettings::Close => window.remove_window(),
+            PendingSettings::Close => {
+                if self.close_reader_when_saved(window, cx) {
+                    window.remove_window();
+                }
+            }
             PendingSettings::Reset => {}
             PendingSettings::Reload => self.request(Command::LoadSettings, cx),
             PendingSettings::Provider(_) => unreachable!(),

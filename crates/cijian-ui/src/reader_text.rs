@@ -4,12 +4,25 @@ use super::*;
 use cijian_domain::analysis::{TokenKind, tokenize};
 use cijian_domain::reading::TextRange;
 use gpui_kit::Focusable;
-use gpui_kit::{Entity, base::input::TextareaState, component::input::Textarea};
+use gpui_kit::{
+    Entity,
+    base::input::{BufferPoint, DisplayPoint, TextareaState},
+    component::input::Textarea,
+};
+const READER_LINE_HEIGHT: f32 = 32.;
 
 pub(super) struct ReaderText {
     key: (String, String),
-    input: Entity<TextareaState>,
+    pub(super) input: Entity<TextareaState>,
     words: Vec<std::ops::Range<usize>>,
+    session: Option<String>,
+    lines: Vec<usize>,
+    length: usize,
+    position: usize,
+    restore: Option<usize>,
+    width: Option<gpui_kit::Pixels>,
+    visible: bool,
+    initial_save: bool,
 }
 impl Shell {
     pub(super) fn prepare_reader(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -19,13 +32,47 @@ impl Shell {
             return;
         };
         let key = (article.id.clone(), article.body_hash.clone());
-        if self
-            .reader_text
+        let session = self
+            .reading_session
             .as_ref()
-            .is_some_and(|text| text.key == key)
+            .filter(|session| session.article_id == article.id);
+        let session_id = session.map(|session| session.id.clone());
+        let visible = !matches!(
+            self.navigation.current(),
+            Route::Article {
+                listening: true,
+                ..
+            }
+        ) || self.show_listening_text;
+        if let Some(text) = self
+            .reader_text
+            .as_mut()
+            .filter(|text| text.key == key && text.session == session_id)
         {
+            if visible && !text.visible {
+                text.restore = Some(text.position);
+            }
+            text.visible = visible;
             return;
         }
+        let saved = session.map_or(0, |session| session.position);
+        let mut position = self
+            .local_reading_position(&article.id, &article.body_hash)
+            .unwrap_or(saved)
+            .min(article.body.len());
+        if !article.body.is_char_boundary(position) {
+            position = 0;
+        }
+        let length = article.body.len();
+        let lines = std::iter::once(0)
+            .chain(
+                article
+                    .body
+                    .match_indices('\n')
+                    .map(|(offset, _)| offset + 1),
+            )
+            .collect();
+        self.reader_scroll.set_offset(Default::default());
         let input = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .default_value(article.body.clone())
@@ -37,7 +84,118 @@ impl Shell {
             .filter(|token| token.kind == TokenKind::Word)
             .map(|token| token.start..token.end)
             .collect();
-        self.reader_text = Some(ReaderText { key, input, words });
+        cx.observe(&input, |_, _, cx| cx.notify()).detach();
+        self.reader_text = Some(ReaderText {
+            key,
+            input,
+            words,
+            session: session_id,
+            lines,
+            length,
+            position,
+            restore: (position > 0).then_some(position),
+            width: None,
+            visible,
+            initial_save: position != saved,
+        });
+    }
+    pub(super) fn reveal_word(&mut self, context: &cijian_ports::reading::LookupContext) {
+        if let Some(reader) = self
+            .reader_text
+            .as_mut()
+            .filter(|reader| reader.key == (context.article_id.clone(), context.body_hash.clone()))
+        {
+            reader.restore = Some(context.selection.range.start);
+        }
+    }
+    fn capture_reader_frame(&mut self, cx: &mut Context<Self>) {
+        if self.reader_close_pending() {
+            return;
+        }
+        let viewport = self.reader_scroll.bounds();
+        let Some(reader) = self.reader_text.as_mut().filter(|reader| reader.visible) else {
+            return;
+        };
+        let input = reader.input.read(cx);
+        let rows = input.display_map().display_row_count();
+        let bounds = input.input_bounds();
+        let Some(document) = input.text_bounds() else {
+            return;
+        };
+        if rows == 0 || viewport.size.height <= px(0.) || bounds.size.height <= px(0.) {
+            return;
+        }
+        let line_height = input
+            .prepaint_caret_geometry()
+            .map_or(px(READER_LINE_HEIGHT), |geometry| geometry.line_height());
+        if reader.width.is_some_and(|width| width != bounds.size.width) && reader.restore.is_none()
+        {
+            reader.restore = Some(reader.position);
+        }
+        reader.width = Some(bounds.size.width);
+        if let Some(position) = reader.restore {
+            let line = reader
+                .lines
+                .partition_point(|start| *start <= position)
+                .saturating_sub(1);
+            let row = input
+                .display_map()
+                .buffer_pos_to_display_pos(BufferPoint::new(line, position - reader.lines[line]))
+                .row;
+            let target = line_height * row;
+            let inner = input.scroll_offset();
+            let visible_top = -inner.y;
+            let desired = if target < visible_top {
+                -target
+            } else if target + line_height > visible_top + bounds.size.height {
+                -(target - bounds.size.height / 2.)
+            } else {
+                inner.y
+            };
+            if desired != inner.y {
+                let input = reader.input.clone();
+                input.update(cx, |input, cx| {
+                    input.set_scroll_offset(gpui_kit::point(inner.x, desired), cx)
+                });
+                cx.notify();
+                return;
+            }
+            let offset = self.reader_scroll.offset();
+            self.reader_scroll.set_offset(gpui_kit::point(
+                offset.x,
+                offset.y + viewport.top() + px(8.) - document.top() - target,
+            ));
+            reader.restore = None;
+            cx.notify();
+            return;
+        }
+        if bounds.top() >= viewport.bottom() {
+            return;
+        }
+        let position = if bounds.bottom() <= viewport.top() {
+            reader.length
+        } else {
+            let top = viewport.top().max(bounds.top());
+            let row =
+                (((top - document.top()) / line_height).ceil().max(0.) as usize).min(rows - 1);
+            let point = input
+                .display_map()
+                .display_pos_to_buffer_pos(DisplayPoint::new(row, 0));
+            reader
+                .lines
+                .get(point.line)
+                .map_or(reader.length, |start| start + point.col)
+                .min(reader.length)
+        };
+        if position == reader.position && !reader.initial_save {
+            return;
+        }
+        reader.position = position;
+        reader.initial_save = false;
+        if let Some(session) = reader.session.clone() {
+            let (article, hash) = reader.key.clone();
+            self.queue_reading_position(article, hash, session, position, cx);
+        }
     }
     fn lookup_reader_word(
         &mut self,
@@ -83,6 +241,7 @@ impl Shell {
         let Some(reader) = &self.reader_text else {
             return div().into_any_element();
         };
+        let weak = cx.entity().downgrade();
         div()
             .id("reader-text")
             .w_full()
@@ -96,6 +255,16 @@ impl Shell {
                     .p_0()
                     .text_size(px(20.))
                     .line_height(px(32.)),
+            )
+            .child(
+                gpui_kit::canvas(
+                    |_, _, _| (),
+                    move |_, _, _, cx| {
+                        let _ = weak.update(cx, |this, cx| this.capture_reader_frame(cx));
+                    },
+                )
+                .absolute()
+                .size_0(),
             )
             .on_mouse_up(
                 gpui_kit::MouseButton::Left,

@@ -4,6 +4,7 @@ extern crate gpui_kit as gpui;
 mod audio;
 mod library;
 mod reader_flags;
+mod reader_positions;
 mod reader_text;
 mod settings;
 mod stats;
@@ -40,6 +41,7 @@ struct Shell {
     loading: bool,
     compact_reader: bool,
     reader_scroll: gpui_kit::ScrollHandle,
+    positions: reader_positions::Positions,
     lookup_loading: bool,
     reader_text: Option<reader_text::ReaderText>,
     error: Option<String>,
@@ -120,6 +122,7 @@ impl Shell {
             loading: false,
             compact_reader: false,
             reader_scroll: gpui_kit::ScrollHandle::new(),
+            positions: Default::default(),
             lookup_loading: false,
             reader_text: None,
             error: None,
@@ -264,7 +267,7 @@ impl Shell {
                         context,
                         revision,
                         meaning,
-                    }) => this.lookup = Some((context, revision, meaning)),
+                    }) => {this.reveal_word(&context);this.lookup = Some((context, revision, meaning));},
                     Ok(Response::Marked(result)) => {
                         if let Some((_, revision, _)) = &mut this.lookup {
                             *revision = result.revision;
@@ -528,6 +531,7 @@ impl Shell {
         if matches!(self.navigation.current(), Route::Article { .. })
             && self.navigation.current() != &route
         {
+            self.flush_positions(cx);
             self.playback.stop();
             if let Some(backend) = self.backend.clone() {
                 cx.background_executor()
@@ -875,11 +879,14 @@ impl Shell {
             window.focus(&focus, cx);
             self.focus = Some(focus);
             let weak = cx.entity().downgrade();
-            window.on_window_should_close(cx, move |_, cx| {
-                weak.update(cx, |this, cx| this.may_close(cx))
-                    .unwrap_or(true)
+            window.on_window_should_close(cx, move |window, cx| {
+                weak.update(cx, |this, cx| {
+                    this.may_close(cx) && this.close_reader_when_saved(window, cx)
+                })
+                .unwrap_or(true)
             });
         }
+        self.initialize_positions(cx);
         self.prepare_settings(window, cx);
         self.prepare_flag(window, cx);
         self.prepare_reader(window, cx);
@@ -956,6 +963,9 @@ impl Shell {
                     .child(error.clone()),
             );
         }
+        content = content.when_some(self.position_notice(cx), |content, notice| {
+            content.child(notice)
+        });
         content = content.child(
             div()
                 .when(is_reader, |surface| {
@@ -1004,6 +1014,7 @@ impl Shell {
             .flex()
             .bg(color(ColorRole::SURFACE))
             .text_color(color(ColorRole::ON_SURFACE));
+        let background = background.child(self.position_dialog(cx));
         if compact {
             background
                 .flex_col()

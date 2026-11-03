@@ -601,7 +601,9 @@ impl Shell {
                             let pending = this.library_ui.pending_route.take();
                             let back = std::mem::take(&mut this.library_ui.pending_back);
                             if std::mem::take(&mut this.library_ui.pending_close) {
-                                window.remove_window();
+                                if this.close_reader_when_saved(window, cx) {
+                                    window.remove_window();
+                                }
                                 return;
                             }
                             if back {
