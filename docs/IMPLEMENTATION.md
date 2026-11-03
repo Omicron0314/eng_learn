@@ -44,7 +44,11 @@ UI harness 已覆盖导航、设置入口及 Tab 焦点；新词库用例在360/
 
 [R17 桌面验收记录](evidence/rust/r17-desktop.json) 使用临时学习库和 release 二进制，截图与限制见该记录；它不是完整 R17 通过。
 
+桌面交付脚本 `tools/package-desktop.sh` 会构建 release、刷新 `dist/cijian-desktop-linux-x86_64.tar.gz`，并安装当前用户的启动器项与图标（`~/.local/bin/cijian-desktop`、`~/.local/share/applications/cijian.desktop`）。它是本地构建/分发辅助，不是签名安装器或自动更新方案。
+
 [原生音频证据](evidence/rust/native-audio.json) 使用临时目录生成的低音量原创 WAV，验证真实输出设备、暂停、定位、1.25 倍速、停止和自然结束。另以系统 espeak-ng 1.52.0 将原创英文句子合成为可解码 WAV。本机安装已记入用户运维日志；没有改动音频设备、服务或用户配置。两个设备测试默认 ignored，需在明确的本机能力验证中单独执行；不把人工听感标为通过。
+
+UI 已按 `docs/cijian-m3.html` 的脚本后画板重做：96dp 导航轨、28dp 分区面板、Today/Stats 主辅双栏、Review 大卡与四段评分、Articles 生成/列表、Library 三栏与编辑 side sheet、Inbox 多选卡片、Settings 分类 rail/滑块/固定保存栏、Reader 点词 side sheet 与移动端 bottom sheet。界面字体由画板内嵌 Roboto Flex/Mono 子集静态实例化并附 OFL；中文字体仍走系统 fallback。截图和限制见 [UI 重做证据](evidence/rust/ui-redesign.json)；这是视觉/交互人工对照，不是自动像素 diff，也不证明真实 IME、触摸或其他平台。`cargo test --workspace`、clippy 与 fmt 通过；原有行为测试使用的稳定 ID 得到保留，设置页改为分类后对应测试改为先进入学习页，实验入口仍从统计页定位。
 
 测试只用原创、临时学习库和测试凭据。没有调用真实付费 AI、读取私人学习库或迁移真实密钥。APKG 使用临时只读集合，不迁入媒体或 Anki 调度；WordNet 数据和字体保留第三方许可。
 

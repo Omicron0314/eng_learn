@@ -2,7 +2,7 @@
 
 词间围绕「复习 → 阅读／听力 → 整理生词」组织学习。新的产品与界面基线是 [cijian-m3 设计稿](docs/cijian-m3.html)，重构采用 Rust、GPUI 与 [gpui-kit-material](https://github.com/mizorewww/gpui-kit-material)。
 
-**当前处于文档重规划完成、原生重构尚未开始的阶段。** 仓库可运行的仍是 TypeScript / Next.js Web 版本；尚无 Cargo workspace。下文的目标架构不代表已经实现。
+**当前已有可运行的 Rust/GPUI 桌面端与 Cargo workspace，界面按 `docs/cijian-m3.html` 重做；TypeScript / Next.js Web 版本仍保留为迁移对照。** 桌面端验收仍在进行，真实 AI 质量、IME/触摸和其他平台尚未通过。
 
 ## 新规划入口
 
@@ -14,6 +14,24 @@
 - [任务表](docs/BACKLOG.md)、[任务规格](docs/specs/README.md)、[验收方案](docs/TESTING.md)。
 
 桌面端按 Linux → Windows / macOS 验证与交付；Web/WASM 承担浏览器和手机浏览器形态。Android / iOS 原生是目标，但上游材料不足以证明直接可用，必须先完成平台验证。多端可运行与跨端同步分别规划。
+
+## 运行桌面版本
+
+Rust workspace 使用锁定工具链。开发运行：
+
+```sh
+CARGO_TARGET_DIR=spikes/r00/target cargo run -p cijian-desktop
+# 隔离学习库：
+CARGO_TARGET_DIR=spikes/r00/target cargo run -p cijian-desktop -- --data-dir /tmp/cijian-dev
+```
+
+每版交付后运行下列脚本，会构建 release、更新 `dist/cijian-desktop-linux-x86_64.tar.gz`，并安装当前用户的启动器项（`~/.local/share/applications/cijian.desktop`）与图标：
+
+```sh
+CARGO_TARGET_DIR=spikes/r00/target tools/package-desktop.sh
+```
+
+脚本安装的 `~/.local/bin/cijian-desktop` 指向最新本地 release；学习数据默认写入 `$XDG_DATA_HOME/org.cijian.cijian`。桌面包未签名、无自动更新；真实模型和 TTS 凭据不随包分发。
 
 ## 运行现有 Web 版本
 
