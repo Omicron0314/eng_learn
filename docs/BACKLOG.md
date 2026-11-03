@@ -25,7 +25,7 @@
 | R18 | [Web/WASM与手机浏览器适配](specs/R18-wasm-web.md) | R17 | G4 | 未开始 |
 | R19 | [Android/iOS原生可行性验证](specs/R19-mobile-native-spike.md) | R00 | G5 | 阻塞：锁定 GPUI 栈无 Android 后端，Android 记 no-go；iOS 需 macOS/真机，未判定；记录见 docs/spikes/R19-mobile.md |
 | R20 | [移动原生产品实现](specs/R20-mobile-native.md) | R19, R17 | G5 | 未开始：R19 无可进入的平台，不建立移动原生入口 |
-| R21 | [跨端同步协议设计](specs/R21-sync-design.md) | R18 | G6 | 草案已写；前置任务和协议验证尚未完成 |
+| R21 | [跨端同步协议设计](specs/R21-sync-design.md) | R18 | G6 | 受阻：状态机、冲突规则、选项代价与12条故障向量已成稿；待R18两端存储验证与实现批准，无服务部署 |
 
 ## 如何执行
 
