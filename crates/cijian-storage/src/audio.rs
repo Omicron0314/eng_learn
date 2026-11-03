@@ -88,7 +88,7 @@ impl Store {
     }
     pub fn open_audio_session(&self, c: AudioSessionCommand) -> Result<()> {
         if !["remote", "system", "browser"].contains(&c.source.as_str())
-            || ![0.75, 1., 1.25, 1.5, 2.].contains(&c.rate)
+            || !cijian_domain::settings::PLAYBACK_RATES.contains(&c.rate)
             || (c.source == "remote" && c.audio.is_none())
         {
             return Err(invalid("音频会话参数无效"));

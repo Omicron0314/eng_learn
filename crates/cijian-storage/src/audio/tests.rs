@@ -117,3 +117,44 @@ fn audio_save_event_failure_leaves_reservation_charged() {
     command.event = "saved".into();
     store.save_audio(command).unwrap();
 }
+
+#[test]
+fn every_supported_playback_rate_opens_a_session() {
+    let store = Store::memory().unwrap();
+    populate(&store);
+    for (index, rate) in cijian_domain::settings::PLAYBACK_RATES
+        .into_iter()
+        .enumerate()
+    {
+        store
+            .open_audio_session(AudioSessionCommand {
+                profile: "p".into(),
+                operation: format!("system-{index}"),
+                event: format!("system-event-{index}"),
+                session: format!("system-session-{index}"),
+                article: "a".into(),
+                audio: None,
+                source: "system".into(),
+                rate,
+                now: 1,
+            })
+            .unwrap_or_else(|error| panic!("rate {rate} rejected: {error:?}"));
+    }
+    assert_eq!(
+        store
+            .open_audio_session(AudioSessionCommand {
+                profile: "p".into(),
+                operation: "unsupported".into(),
+                event: "unsupported-event".into(),
+                session: "unsupported-session".into(),
+                article: "a".into(),
+                audio: None,
+                source: "system".into(),
+                rate: 1.3,
+                now: 1,
+            })
+            .unwrap_err()
+            .code,
+        ErrorCode::InvalidInput
+    );
+}
