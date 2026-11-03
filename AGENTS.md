@@ -1,8 +1,9 @@
 # AGENTS.md
 
-Cijian is being replanned as a multi-platform English-learning app using Rust,
-GPUI, and gpui-kit-material. The current executable product is still the legacy
-TypeScript/Next.js app. No Rust workspace exists yet.
+Cijian is migrating to a multi-platform English-learning app using Rust,
+GPUI, and gpui-kit-material. A Rust workspace and desktop application now exist;
+implementation and acceptance are in progress. The legacy TypeScript/Next.js app
+remains available until migration acceptance. See `docs/IMPLEMENTATION.md`.
 
 ## Authority and scope
 
@@ -14,8 +15,9 @@ TypeScript/Next.js app. No Rust workspace exists yet.
 - `docs/neko.html` is a secondary visual reference. Preserve both HTML originals.
 - Current tasks are R00–R21 in `docs/BACKLOG.md`. Legacy T/S tasks and evidence
   remain in git history at commit `46f499a` and impose no current approval workflow.
-- This revision authorizes documentation replanning only. Do not infer that
-  the old MVP execution approval authorizes the new Rust implementation.
+- The user subsequently authorized actual Rust implementation. The previous
+  documentation-only restriction is historical; platform acceptance still needs
+  evidence and must not be inferred from compilation or legacy tests.
 - Preserve pre-existing worktree changes. Do not stage, commit, publish, access
   secrets, make paid calls, or operate on real user data without matching scope.
 
@@ -36,8 +38,11 @@ pnpm report:experiment
 paid-call authorization. Never run it as routine validation. Keep dev logs
 outside the repository to avoid Turbopack refresh loops.
 
-Rust commands in `docs/TESTING.md` are planned, not runnable until R01 exists.
-R00 must validate and pin the GPUI Kit/Material revisions and root patches.
+Rust commands are available through the root workspace and pinned toolchain.
+Use `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+and `cargo test --workspace`. GPUI tests need the test-support feature where
+specified in `docs/TESTING.md`. R00 pins the Kit/Material revisions and root patches;
+its outstanding platform checks remain acceptance limitations.
 
 ## Target boundaries
 

@@ -1,6 +1,6 @@
 # 数据模型与事件契约
 
-这是新 Rust 存储的逻辑模型，**尚未创建新迁移**。旧实物 schema 在 `packages/db/src/schema.ts`，不可通过改写旧迁移达到新结构。转换见 [MIGRATION](MIGRATION.md)。Native SQLite 与浏览器仓储共用业务约束，不要求物理实现完全相同。
+这是新 Rust 存储的逻辑模型，独立迁移位于 `crates/cijian-storage/migrations`。旧实物 schema 在 `packages/db/src/schema.ts`，不可通过改写旧迁移达到新结构。转换见 [MIGRATION](MIGRATION.md)。Native SQLite 与浏览器仓储共用业务约束，不要求物理实现完全相同。
 
 ## 身份与通用规则
 
@@ -37,6 +37,7 @@
 | audio_sessions | id、profile_id、article_id、audio_id?、source remote/system/browser、started_at、completed_at?、rate；完成去重 |
 | llm_calls | id、profile_id、job_id?、purpose、provider、model、prompt_version、tokens_in/out?、cost_usd?、latency_ms、status、sanitized_error?、ts |
 | jobs | id、profile_id、operation_id UNIQUE、kind、phase、config_revision、status、result_ref?、error?、timestamps；重启将未完成任务标interrupted，不自动付费重试 |
+| generation_snapshots | job_id PK/FK、snapshot_json；固定目标/对照、KnownSet、学习设置及公开 provider 配置，不保存 secret；未完成 job 不进入学习备份 |
 | migrations / legacy_imports | schema版本／checksum；源库fingerprint、映射版本、报告hash、目标profile、完成时间，防止重复迁入 |
 
 FSRS 状态含 state、due、stability、difficulty、reps、lapses、last_review、elapsed_days、scheduled_days、learning_steps 等锁定版本所需字段。升级算法不能只保留 due；无法转换的状态报告阻塞，不全量重置词卡。

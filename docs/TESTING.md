@@ -1,6 +1,6 @@
 # 验证与验收
 
-本文件定义未来实现的验证要求。**本次文档改写没有执行Rust构建、真实AI评测或用户数据迁移。** 旧Web历史证据见 git 历史（提交 46f499a），不得转写为新端通过。
+本文件定义实现的验证要求。Rust 工程已进入实现与本地验证，已执行证据见 [IMPLEMENTATION](IMPLEMENTATION.md)。未执行真实付费 AI 评测或用户数据迁移。旧 Web 历史证据见 git 历史（提交 46f499a），不得转写为新端通过。
 
 ## 验证分层
 
@@ -42,7 +42,7 @@
 
 现有Web维护可用：`pnpm lint`、`pnpm typecheck`、`pnpm test`；改到Web运行行为才加build/e2e。文档修改无需为凑结果重跑所有产品测试。
 
-下列是R01建立workspace后的目标命令，**当前不能作为仓库可运行说明**：
+根 workspace 已建立，以下原生命令可运行；WASM 产品包须等 R18 建立后使用对应命令：
 
 ```sh
 cargo fmt --all --check
