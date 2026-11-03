@@ -64,6 +64,16 @@ fn heatmap_cells_show_their_day_by_pointer_keyboard_and_reject_future_days(
     cx.update_window(handle, |_, window, cx| {
         window.render_frame(cx);
         assert!(window.try_find_by_label("day-10：0 次活动").is_some());
+        let first = window.find("activity-0").bounds();
+        let last = window.find("activity-90").bounds();
+        assert!(
+            last.origin.y > first.origin.y,
+            "weeks must stack vertically"
+        );
+        assert!(
+            first.origin.x >= px(0.) && last.origin.x + last.size.width <= px(360.),
+            "heatmap must fit a 360dp viewport: first={first:?} last={last:?}"
+        );
         window.click("activity-10", cx);
     })
     .unwrap();

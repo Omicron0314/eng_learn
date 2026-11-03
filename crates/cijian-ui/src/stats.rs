@@ -55,83 +55,89 @@ impl Shell {
             }
         }
         let mut weeks = div().flex().gap_1();
-        for (index, day) in stats.heatmap.iter().enumerate() {
-            let role = match day.count {
-                0 => ColorRole::SURFACE_CONTAINER_HIGHEST,
-                1..=13 => ColorRole::PRIMARY_CONTAINER,
-                14..=26 => ColorRole::SECONDARY_CONTAINER,
-                27..=39 => ColorRole::TERTIARY_CONTAINER,
-                _ => ColorRole::PRIMARY,
-            };
-            let label = format!(
-                "{}：{} 次活动{}",
-                day.date,
-                day.count,
-                if day.future {
-                    "，未来日期不可选择"
-                } else {
-                    ""
-                }
-            );
-            let mut cell = div()
-                .id(gpui_kit::SharedString::from(format!("activity-{index}")))
-                .test_support()
-                .role(gpui_kit::Role::Button)
-                .aria_label(label)
-                .w(px(24.))
-                .h(px(24.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(12.))
-                .bg(if index == selected && !day.future {
-                    color(ColorRole::SURFACE_CONTAINER_HIGHEST)
-                } else {
-                    color(ColorRole::SURFACE)
-                })
-                .child(
-                    div()
-                        .w(px(14.))
-                        .h(px(14.))
-                        .rounded(px(3.))
-                        .bg(color(role))
-                        .opacity(if day.future { 0.25 } else { 1. }),
+        for (week_index, week) in stats.heatmap.chunks(7).enumerate() {
+            let mut column = div().flex().flex_col().gap_1();
+            for (offset, day) in week.iter().enumerate() {
+                let index = week_index * 7 + offset;
+                let role = match day.count {
+                    0 => ColorRole::SURFACE_CONTAINER_HIGHEST,
+                    1..=13 => ColorRole::PRIMARY_CONTAINER,
+                    14..=26 => ColorRole::SECONDARY_CONTAINER,
+                    27..=39 => ColorRole::TERTIARY_CONTAINER,
+                    _ => ColorRole::PRIMARY,
+                };
+                let label = format!(
+                    "{}：{} 次活动{}",
+                    day.date,
+                    day.count,
+                    if day.future {
+                        "，未来日期不可选择"
+                    } else {
+                        ""
+                    }
                 );
-            if !day.future {
-                let focus = self.heatmap_focus.borrow()[index].clone();
-                let click_focus = focus.clone();
-                cell = cell
-                    .track_focus(&focus)
-                    .tab_stop(index == selected)
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.heatmap_day = Some(index);
-                        window.focus(&click_focus, cx);
-                        cx.notify();
-                    }))
-                    .on_key_down(cx.listener(
-                        move |this, event: &gpui_kit::KeyDownEvent, window, cx| {
-                            let next = match event.keystroke.key.as_str() {
-                                "left" => index.checked_sub(1),
-                                "right" => Some((index + 1).min(today)),
-                                "up" => index.checked_sub(7),
-                                "down" => Some((index + 7).min(today)),
-                                "home" => Some(0),
-                                "end" => Some(today),
-                                _ => return,
-                            };
-                            if let Some(next) = next.filter(|next| *next != index) {
-                                this.heatmap_day = Some(next);
-                                if let Some(focus) = this.heatmap_focus.borrow().get(next).cloned()
-                                {
-                                    window.focus(&focus, cx);
+                let mut cell = div()
+                    .id(gpui_kit::SharedString::from(format!("activity-{index}")))
+                    .test_support()
+                    .role(gpui_kit::Role::Button)
+                    .aria_label(label)
+                    .w(px(18.))
+                    .h(px(18.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(9.))
+                    .bg(if index == selected && !day.future {
+                        color(ColorRole::SURFACE_CONTAINER_HIGHEST)
+                    } else {
+                        color(ColorRole::SURFACE)
+                    })
+                    .child(
+                        div()
+                            .w(px(12.))
+                            .h(px(12.))
+                            .rounded(px(3.))
+                            .bg(color(role))
+                            .opacity(if day.future { 0.25 } else { 1. }),
+                    );
+                if !day.future {
+                    let focus = self.heatmap_focus.borrow()[index].clone();
+                    let click_focus = focus.clone();
+                    cell = cell
+                        .track_focus(&focus)
+                        .tab_stop(index == selected)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.heatmap_day = Some(index);
+                            window.focus(&click_focus, cx);
+                            cx.notify();
+                        }))
+                        .on_key_down(cx.listener(
+                            move |this, event: &gpui_kit::KeyDownEvent, window, cx| {
+                                let next = match event.keystroke.key.as_str() {
+                                    "left" => index.checked_sub(1),
+                                    "right" => Some((index + 1).min(today)),
+                                    "up" => index.checked_sub(7),
+                                    "down" => Some((index + 7).min(today)),
+                                    "home" => Some(0),
+                                    "end" => Some(today),
+                                    _ => return,
+                                };
+                                if let Some(next) = next.filter(|next| *next != index) {
+                                    this.heatmap_day = Some(next);
+                                    if let Some(focus) =
+                                        this.heatmap_focus.borrow().get(next).cloned()
+                                    {
+                                        window.focus(&focus, cx);
+                                    }
+                                    cx.notify();
                                 }
-                                cx.notify();
-                            }
-                            cx.stop_propagation();
-                        },
-                    ));
+                                cx.stop_propagation();
+                            },
+                        ));
+                }
+                column = column.child(cell);
             }
-            weeks = weeks.child(cell);
+            weeks = weeks.child(column);
         }
         let Some(date) = stats.heatmap.get(selected) else {
             return div().child("暂无学习活动").into_any_element();
