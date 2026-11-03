@@ -226,6 +226,7 @@ pub enum Response {
     ProviderSaved {
         config: cijian_domain::provider::ProviderConfig,
         has_key: bool,
+        source: cijian_ports::provider::SecretSource,
     },
     Settings {
         value: cijian_domain::settings::Settings,
@@ -234,6 +235,7 @@ pub enum Response {
         has_session_key: bool,
         tts: Option<cijian_domain::provider::ProviderConfig>,
         has_tts_key: bool,
+        source: cijian_ports::provider::SecretSource,
         voices: Vec<cijian_ports::audio::SystemVoice>,
         system_voice: Option<String>,
     },

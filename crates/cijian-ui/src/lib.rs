@@ -72,6 +72,7 @@ struct Shell {
     provider_kind: cijian_domain::provider::ProviderKind,
     tts_config: Option<cijian_domain::provider::ProviderConfig>,
     has_tts_key: bool,
+    key_source: cijian_ports::provider::SecretSource,
     provider_config: Option<cijian_domain::provider::ProviderConfig>,
     has_session_key: bool,
     settings_ui: settings::SettingsState,
@@ -153,6 +154,7 @@ impl Shell {
             provider_kind: cijian_domain::provider::ProviderKind::Llm,
             tts_config: None,
             has_tts_key: false,
+            key_source: cijian_ports::provider::SecretSource::Session,
             provider_config: None,
             has_session_key: false,
             settings_ui: Default::default(),
@@ -318,8 +320,13 @@ impl Shell {
                         this.settings_ui.refresh_learning = true;
                         this.notice = Some("学习设置已保存".into());
                     }
-                    Ok(Response::ProviderSaved { config, has_key }) => {
+                    Ok(Response::ProviderSaved {
+                        config,
+                        has_key,
+                        source,
+                    }) => {
                         let kind = config.kind;
+                        this.key_source = source;
                         if kind == cijian_domain::provider::ProviderKind::Tts {
                             this.tts_config = Some(config);
                             this.has_tts_key = has_key;
@@ -337,9 +344,11 @@ impl Shell {
                         has_session_key,
                         tts,
                         has_tts_key,
+                        source,
                         voices,
                         system_voice,
                     }) => {
+                        this.key_source = source;
                         this.settings = value;
                         this.settings_revision = revision;
                         this.provider_config = provider;

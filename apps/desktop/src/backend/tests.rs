@@ -8,8 +8,8 @@ use cijian_ports::provider::{Secret, SecretPatch};
 fn offline_startup_and_settings_survive_reopen_without_network() {
     let directory = tempfile::tempdir().unwrap();
     {
-        let backend = DesktopBackend::open(directory.path()).unwrap();
-        assert!(DesktopBackend::open(directory.path()).is_err());
+        let backend = DesktopBackend::open_for_tests(directory.path()).unwrap();
+        assert!(DesktopBackend::open_for_tests(directory.path()).is_err());
         assert!(
             matches!(backend.execute(Command::LoadReview).unwrap(),Response::Review{cards,..} if cards.is_empty())
         );
@@ -90,7 +90,11 @@ fn offline_startup_and_settings_survive_reopen_without_network() {
             .unwrap();
         assert!(matches!(
             response,
-            Response::ProviderSaved { has_key: true, .. }
+            Response::ProviderSaved {
+                has_key: true,
+                source: cijian_ports::provider::SecretSource::Session,
+                ..
+            }
         ));
         assert_eq!(
             backend
@@ -104,8 +108,8 @@ fn offline_startup_and_settings_survive_reopen_without_network() {
             ErrorCode::NoTargets
         );
     }
-    let reopened = DesktopBackend::open(directory.path()).unwrap();
+    let reopened = DesktopBackend::open_for_tests(directory.path()).unwrap();
     assert!(
-        matches!(reopened.execute(Command::LoadSettings).unwrap(),Response::Settings{value,has_session_key:false,..} if value.daily_new_limit==7 && value.request_retention==0.91 && value.theme==cijian_domain::settings::Theme::Dark && value.playback_rate==1.25)
+        matches!(reopened.execute(Command::LoadSettings).unwrap(),Response::Settings{value,has_session_key:false,source:cijian_ports::provider::SecretSource::Session,..} if value.daily_new_limit==7 && value.request_retention==0.91 && value.theme==cijian_domain::settings::Theme::Dark && value.playback_rate==1.25)
     );
 }

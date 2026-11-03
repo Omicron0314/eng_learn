@@ -44,6 +44,7 @@ impl CommandBus for Bus {
                     tts: state.providers[1].clone(),
                     has_session_key: state.keys[0],
                     has_tts_key: state.keys[1],
+                    source: cijian_ports::provider::SecretSource::Session,
                     voices: Vec::new(),
                     system_voice: None,
                 }),
@@ -75,6 +76,7 @@ impl CommandBus for Bus {
                     Ok(Response::ProviderSaved {
                         config,
                         has_key: state.keys[i],
+                        source: cijian_ports::provider::SecretSource::Session,
                     })
                 }
                 _ => Err(AppError::new(
@@ -511,4 +513,19 @@ fn returning_from_reader_stops_audio_before_popping_history(cx: &mut TestAppCont
             .any(|command| matches!(command, Command::AudioStop))
     );
     assert!(shell.read_with(cx, |shell, _| shell.navigation.current() == &Route::Today));
+}
+
+#[test]
+fn credential_copy_never_claims_restart_persistence_for_session_memory() {
+    use cijian_ports::provider::SecretSource;
+    for has_key in [true, false] {
+        let (system, _) = crate::settings::key_source_copy(SecretSource::System, has_key);
+        assert!(system.contains("系统凭据库"));
+        assert!(system.contains("重启后仍可使用"));
+        let (session, state) = crate::settings::key_source_copy(SecretSource::Session, has_key);
+        assert!(session.contains("只保存在本次会话"));
+        assert!(session.contains("退出后需重新输入"));
+        assert!(!session.contains("重启后仍可使用"));
+        assert_eq!(state.contains("已设置密钥"), has_key);
+    }
 }

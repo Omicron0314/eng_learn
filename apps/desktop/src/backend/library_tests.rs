@@ -10,7 +10,7 @@ fn filter() -> CardFilter {
 #[test]
 fn library_commands_preserve_scheduling_and_reports_across_reopen() {
     let directory = tempfile::tempdir().unwrap();
-    let backend = DesktopBackend::open(directory.path()).unwrap();
+    let backend = DesktopBackend::open_for_tests(directory.path()).unwrap();
     let baseline = directory.path().join("baseline.txt");
     std::fs::write(&baseline, "apple\npear\n").unwrap();
     backend
@@ -150,7 +150,7 @@ fn library_commands_preserve_scheduling_and_reports_across_reopen() {
         })
         .unwrap();
     drop(backend);
-    let backend = DesktopBackend::open(directory.path()).unwrap();
+    let backend = DesktopBackend::open_for_tests(directory.path()).unwrap();
     let Response::Library {
         page,
         entries,

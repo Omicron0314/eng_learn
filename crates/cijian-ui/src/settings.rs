@@ -9,6 +9,30 @@ mod drafts;
 mod editor;
 pub(super) use drafts::{PendingSettings, SettingsState};
 pub(super) use editor::Editor;
+/// Copy must follow the store that actually accepted the secret.
+pub(crate) fn key_source_copy(
+    source: cijian_ports::provider::SecretSource,
+    has_key: bool,
+) -> (&'static str, &'static str) {
+    match (source, has_key) {
+        (cijian_ports::provider::SecretSource::System, true) => (
+            "保存配置不会调用模型。密钥写入系统凭据库，重启后仍可使用。",
+            "系统凭据库中已有密钥；留空表示保留，可显式清除",
+        ),
+        (cijian_ports::provider::SecretSource::System, false) => (
+            "保存配置不会调用模型。密钥写入系统凭据库，重启后仍可使用。",
+            "系统凭据库可用，当前没有已保存密钥",
+        ),
+        (cijian_ports::provider::SecretSource::Session, true) => (
+            "保存配置不会调用模型。系统凭据库不可用，密钥只保存在本次会话，退出后需重新输入。",
+            "本次会话已设置密钥；留空表示保留",
+        ),
+        (cijian_ports::provider::SecretSource::Session, false) => (
+            "保存配置不会调用模型。系统凭据库不可用，密钥只保存在本次会话，退出后需重新输入。",
+            "本次会话未设置密钥",
+        ),
+    }
+}
 impl Shell {
     pub(super) fn apply_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let dark = match self.settings.theme {
@@ -293,12 +317,8 @@ impl Shell {
                         this.switch_provider(kind, window, cx);
                     })),
             )
-            .child("保存配置不会调用模型。密钥仅保存在本次会话，退出后需重新输入。")
-            .child(if has_key {
-                "本次会话已设置密钥；留空表示保留"
-            } else {
-                "本次会话未设置密钥"
-            })
+            .child(key_source_copy(self.key_source, has_key).0)
+            .child(key_source_copy(self.key_source, has_key).1)
             .child(
                 TextField::new("provider-endpoint", &editor.endpoint)
                     .label("服务地址")

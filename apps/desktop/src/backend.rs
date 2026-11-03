@@ -5,7 +5,6 @@ mod tests;
 use cijian_app::commands::{Command, CommandBus, Response, SelectedFile};
 use cijian_domain::import::book_name;
 use cijian_domain::provider::ProviderKind;
-use cijian_platform::SessionSecrets;
 use cijian_ports::{AppError, ErrorCode, Result, library::*};
 use cijian_ports::{
     SaveSettings,
@@ -46,13 +45,28 @@ pub struct DesktopBackend {
     pub(super) legacy_snapshots:
         Mutex<HashMap<String, Arc<cijian_storage::legacy::LegacySnapshot>>>,
     files: Mutex<HashMap<String, PathBuf>>,
-    pub(super) secrets: SessionSecrets,
+    pub(super) secrets: cijian_platform::RuntimeSecrets,
     pub(super) config_lock: Mutex<()>,
     pub(super) runtime: tokio::runtime::Runtime,
     _directory_lock: std::fs::File,
 }
 impl DesktopBackend {
+    /// Production entry point: prefer the operating system credential service.
     pub fn open(directory: &Path) -> Result<Self> {
+        Self::open_with_secrets(
+            directory,
+            cijian_platform::RuntimeSecrets::system_or_session(),
+        )
+    }
+    /// Tests must never read or write the operator's real credential store.
+    #[cfg(test)]
+    pub fn open_for_tests(directory: &Path) -> Result<Self> {
+        Self::open_with_secrets(directory, cijian_platform::RuntimeSecrets::session_only())
+    }
+    fn open_with_secrets(
+        directory: &Path,
+        secrets: cijian_platform::RuntimeSecrets,
+    ) -> Result<Self> {
         std::fs::create_dir_all(directory).map_err(|_| failure())?;
         let directory_lock = std::fs::OpenOptions::new()
             .create(true)
@@ -131,7 +145,7 @@ impl DesktopBackend {
             legacy_files: Mutex::new(HashMap::new()),
             legacy_snapshots: Mutex::new(HashMap::new()),
             files: Mutex::new(HashMap::new()),
-            secrets: SessionSecrets::default(),
+            secrets,
             config_lock: Mutex::new(()),
             runtime: tokio::runtime::Runtime::new().map_err(|_| failure())?,
         })
@@ -166,20 +180,22 @@ impl DesktopBackend {
         let has_session_key =
             futures::executor::block_on(self.secrets.read(&format!("{}/llm", self.profile)))?
                 .is_some();
+        let tts = self
+            .store
+            .provider_config(&self.profile, ProviderKind::Tts)?;
+        let has_tts_key =
+            futures::executor::block_on(self.secrets.read(&format!("{}/tts", self.profile)))?
+                .is_some();
         Ok(Response::Settings {
             value,
             revision,
             provider,
             has_session_key,
-            tts: self
-                .store
-                .provider_config(&self.profile, ProviderKind::Tts)?,
+            tts,
             system_voice: preferences.system_voice,
             voices: cijian_platform::speech::voices().unwrap_or_default(),
-            has_tts_key: futures::executor::block_on(
-                self.secrets.read(&format!("{}/tts", self.profile)),
-            )?
-            .is_some(),
+            has_tts_key,
+            source: self.secrets.source(),
         })
     }
     fn execute(&self, command: Command) -> Result<Response> {
@@ -428,10 +444,12 @@ impl DesktopBackend {
                     }
                 );
                 futures::executor::block_on(self.secrets.write(&reference, secret))?;
+                let source = self.secrets.source();
                 let has_key = futures::executor::block_on(self.secrets.read(&reference))?.is_some();
                 Ok(Response::ProviderSaved {
                     config: current,
                     has_key,
+                    source,
                 })
             }
             Command::EditLibraryCard {
