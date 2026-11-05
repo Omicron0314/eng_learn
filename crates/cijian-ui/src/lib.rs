@@ -69,8 +69,6 @@ struct Shell {
     report: Option<ImportReport>,
     review: Vec<CardView>,
     waiting: bool,
-    review_wait_remaining: Option<i64>,
-    review_wait_epoch: u64,
     intervals: Option<[i64; 4]>,
     revealed: bool,
     review_started: Instant,
@@ -160,8 +158,6 @@ impl Shell {
             report: None,
             review: Vec::new(),
             waiting: false,
-            review_wait_remaining: None,
-            review_wait_epoch: 0,
             intervals: None,
             revealed: false,
             review_started: Instant::now(),
@@ -523,7 +519,6 @@ impl Shell {
                     Ok(Response::Review {
                         cards,
                         waiting,
-                        next_due,
                         intervals,
                         stats,
                         books,
@@ -535,20 +530,11 @@ impl Shell {
                         let empty_inbox = this.inbox.is_empty();
                         this.review = cards;
                         this.waiting = waiting;
-                        this.review_wait_epoch = this.review_wait_epoch.wrapping_add(1);
-                        this.review_wait_remaining = next_due.map(|due| {
-                            (due - chrono::Utc::now().timestamp_millis()).max(0)
-                        });
                         this.intervals = intervals;
                         this.revealed = false;
                         this.gloss_pending = None;
                         this.gloss_failed = None;
                         this.review_started = Instant::now();
-                        if this.review.is_empty()
-                            && let Some(due) = next_due
-                        {
-                            this.schedule_review_wait(due, cx);
-                        }
                         if this.navigation.current() == &Route::Today && empty_inbox && inbox_pending > 0 {
                             this.request(Command::LoadInbox { page: 0 }, cx);
                         }
@@ -722,21 +708,14 @@ impl Shell {
     }
 }
 fn format_interval(ms: i64) -> String {
-    let minutes = (ms / 60000).max(1);
+    // Round up like Anki's shortened labels: 5.5 minutes is shown as 6m.
+    let minutes = (ms.max(0) as u64).div_ceil(60_000).max(1);
     if minutes < 60 {
         format!("{minutes}分钟")
     } else if minutes < 1440 {
         format!("{}小时", minutes / 60)
     } else {
         format!("{}天", minutes / 1440)
-    }
-}
-fn format_review_wait(ms: i64) -> String {
-    let seconds = (ms.max(0) as u64).div_ceil(1000);
-    if seconds < 60 {
-        format!("{seconds} 秒")
-    } else {
-        format!("{} 分 {:02} 秒", seconds / 60, seconds % 60)
     }
 }
 impl Render for Shell {

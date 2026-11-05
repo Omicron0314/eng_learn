@@ -626,7 +626,7 @@ impl DesktopBackend {
             } => self.explain_card(&card, revision, operation),
             Command::LoadReview => {
                 let now = now();
-                let (cards, next_due) = self.store.review_queue(&self.profile, now)?;
+                let (cards, waiting) = self.store.review_queue(&self.profile, now)?;
                 let (settings, _) = self.store.settings(&self.profile)?;
                 let intervals = cards
                     .first()
@@ -638,8 +638,7 @@ impl DesktopBackend {
                     .map_err(|e| AppError::new(ErrorCode::InvalidInput, e.to_string()))?;
                 Ok(Response::Review {
                     cards,
-                    waiting: next_due.is_some(),
-                    next_due,
+                    waiting,
                     intervals,
                     stats: Box::new(self.store.stats(&self.profile, now, 0)?),
                     books: self.store.books(&self.profile)?,

@@ -881,7 +881,10 @@ in the morning,在早上,Phrase row.\n\
     let Response::Review { cards, .. } = reopened.execute(Command::LoadReview).unwrap() else {
         panic!("review")
     };
-    assert_eq!(cards.len(), 9);
+    // The two cards rated into 1m/10m learning steps are still inside Anki's
+    // 20-minute learn-ahead window, so they remain in the queue alongside the
+    // nine untouched new cards.
+    assert_eq!(cards.len(), 11);
     let Response::Settings {
         value,
         provider,

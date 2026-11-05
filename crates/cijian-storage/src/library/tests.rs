@@ -237,25 +237,52 @@ fn hundred_word_import_respects_twenty_new_limit_and_learning_exception() {
     );
 }
 #[test]
-fn waiting_learning_step_reports_next_due_and_reappears() {
+fn learning_step_is_shown_ahead_and_rates_before_due() {
     let store = Store::memory().unwrap();
     store.create_profile("p", "测试", 0).unwrap();
-    let command = import("waiting", BookKind::Study, "apple,苹果");
+    let command = import("ahead", BookKind::Study, "apple,苹果");
     let now = command.now;
     store.import(command).unwrap();
     let card = store.cards("p", page()).unwrap().cards.remove(0);
-    let mut command = rate(&card.id, "waiting-again", 1, now);
+    let mut command = rate(&card.id, "ahead-again", 1, now);
     command.rating = Rating::Again;
     store.rate(command).unwrap();
 
-    let (cards, next_due) = store.review_queue("p", now).unwrap();
-    assert!(cards.is_empty());
-    assert_eq!(next_due, Some(now + 60_000));
-
-    let (cards, next_due) = store.review_queue("p", now + 60_000).unwrap();
+    let (cards, waiting) = store.review_queue("p", now).unwrap();
     assert_eq!(cards.len(), 1);
     assert_eq!(cards[0].id, card.id);
-    assert_eq!(next_due, None);
+    assert!(!waiting);
+
+    let mut command = rate(&card.id, "ahead-rate", 2, now + 1_000);
+    command.rating = Rating::Again;
+    let updated = store.rate(command).unwrap();
+    assert_eq!(updated.srs.due, now + 1_000 + 60_000);
+    assert_eq!(updated.srs.state, State::Learning);
+}
+#[test]
+fn learning_step_beyond_learn_ahead_is_waiting() {
+    let store = Store::memory().unwrap();
+    store.create_profile("p", "测试", 0).unwrap();
+    let command = import("later", BookKind::Study, "apple,苹果");
+    let now = command.now;
+    store.import(command).unwrap();
+    let card = store.cards("p", page()).unwrap().cards.remove(0);
+    let mut command = rate(&card.id, "later-again", 1, now);
+    command.rating = Rating::Again;
+    store.rate(command).unwrap();
+    store
+        .connection
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE cards SET due=?1 WHERE id=?2",
+            params![now + cijian_domain::srs::LEARN_AHEAD_MS + 1, card.id],
+        )
+        .unwrap();
+
+    let (cards, waiting) = store.review_queue("p", now).unwrap();
+    assert!(cards.is_empty());
+    assert!(waiting);
 }
 #[test]
 fn duplicate_event_rolls_back_import_and_rating() {

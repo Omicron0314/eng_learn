@@ -224,7 +224,7 @@ impl Store {
             cards,
         })
     }
-    pub fn review_queue(&self, profile: &str, now: i64) -> Result<(Vec<CardView>, Option<i64>)> {
+    pub fn review_queue(&self, profile: &str, now: i64) -> Result<(Vec<CardView>, bool)> {
         let (settings, _) = self.settings(profile)?;
         let day = study_day(
             now,
@@ -235,9 +235,10 @@ impl Store {
         let db = self.connection.lock().map_err(unavailable)?;
         let new_count:u32=db.query_row("SELECT count(DISTINCT card_id) FROM review_logs WHERE profile_id=?1 AND state_before='new' AND reviewed_at>=?2 AND reviewed_at<?3",params![profile,day.start_ms,day.end_ms],|r|r.get(0)).map_err(unavailable)?;
         let review_count:u32=db.query_row("SELECT count(*) FROM review_logs WHERE profile_id=?1 AND state_before='review' AND reviewed_at>=?2 AND reviewed_at<?3",params![profile,day.start_ms,day.end_ms],|r|r.get(0)).map_err(unavailable)?;
+        let cutoff = now.saturating_add(srs::LEARN_AHEAD_MS);
         let mut statement=db.prepare("SELECT * FROM cards WHERE profile_id=?1 AND suspended=0 AND archived_at IS NULL AND due<=?2").map_err(unavailable)?;
         let cards = statement
-            .query_map(params![profile, now], read_card)
+            .query_map(params![profile, cutoff], read_card)
             .map_err(unavailable)?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(unavailable)?;
@@ -267,12 +268,9 @@ impl Store {
             .into_iter()
             .filter_map(|id| by_id.remove(id.as_str()))
             .collect::<Vec<_>>();
-        let next_due = if ordered.is_empty() {
-            db.query_row("SELECT min(due) FROM cards WHERE profile_id=?1 AND suspended=0 AND archived_at IS NULL AND state IN ('learning','relearning') AND due>?2",params![profile,now],|r|r.get::<_,Option<i64>>(0)).map_err(unavailable)?
-        } else {
-            None
-        };
-        Ok((ordered, next_due))
+        let waiting = ordered.is_empty()
+            && db.query_row("SELECT EXISTS(SELECT 1 FROM cards WHERE profile_id=?1 AND suspended=0 AND archived_at IS NULL AND state IN ('learning','relearning') AND due>?2)",params![profile,cutoff],|r|r.get::<_,bool>(0)).map_err(unavailable)?;
+        Ok((ordered, waiting))
     }
 
     pub fn rate(&self, c: RateCard) -> Result<CardView> {

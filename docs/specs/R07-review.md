@@ -24,6 +24,6 @@ query_queue、preview_card、reveal_card、rate_card(operationId,expectedRevisio
 
 ## 边界与风险
 
-画板间隔是例子；实际间隔来自FSRS，不硬编码分钟／天数。
+画板间隔是例子；学习步骤采用 Anki 默认 1m/10m、relearn 10m、毕业 1d/4d（见 D53），复习卡间隔来自 FSRS，不硬编码分钟／天数。
 
 执行中发现设计或契约变化时更新 [DECISIONS](../DECISIONS.md) 和相应规格；没有实证的能力标未验证。

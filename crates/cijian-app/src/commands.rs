@@ -265,7 +265,6 @@ pub enum Response {
     Review {
         cards: Vec<CardView>,
         waiting: bool,
-        next_due: Option<i64>,
         intervals: Option<[i64; 4]>,
         stats: Box<cijian_ports::stats::StatsSnapshot>,
         books: Vec<cijian_ports::library::BookView>,

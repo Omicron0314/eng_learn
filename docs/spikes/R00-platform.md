@@ -30,7 +30,7 @@ Linux x86_64、niri/Wayland。Rust **1.99.1** 和 wasm32-unknown-unknown 为本�
 
 截图：[Linux浅色](evidence/r00/linux-light.png)、[WASM浅色](evidence/r00/wasm-light.png)、[WASM深色](evidence/r00/wasm-dark.png)、[WASM sheet](evidence/r00/wasm-sheet.png)。前两张早期WASM主题图含修复前标点缺字，用于保留问题证据；sheet为修复后。
 
-固定输入：[TS向量](../../spikes/r00/fsrs-vectors.json)；[Rust记忆状态对照](../../spikes/r00/fsrs-comparison.json)；[正式调度全字段测试](../../crates/cijian-domain/tests/legacy_vectors.rs)。不读取旧用户卡片。原始运行日志位于 `/tmp/cijian-r00-*.log`，临时路径不作为永久证据链接。
+固定输入：[TS向量](../../spikes/r00/fsrs-vectors.json)；[Rust记忆状态对照](../../spikes/r00/fsrs-comparison.json)；[正式调度的 FSRS 记忆状态与 Review/Relearning 字段测试](../../crates/cijian-domain/tests/legacy_vectors.rs)（New/Learning 步骤改由 Anki 策略测试覆盖）。不读取旧用户卡片。原始运行日志位于 `/tmp/cijian-r00-*.log`，临时路径不作为永久证据链接。
 
 ## 逐项AC与剩余限制
 

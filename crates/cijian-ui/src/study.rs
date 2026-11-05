@@ -18,52 +18,6 @@ impl Shell {
             self.review_started.elapsed().as_nanos()
         )
     }
-    /// Wait for the earliest scheduled learning step, then load the queue
-    /// again without requiring the learner to leave the review screen.
-    pub(super) fn schedule_review_wait(&mut self, due: i64, cx: &mut Context<Self>) {
-        if self.navigation.current() != &Route::Review {
-            return;
-        }
-        let epoch = self.review_wait_epoch;
-        let mut remaining = (due - chrono::Utc::now().timestamp_millis()).max(0);
-        cx.spawn(async move |this, cx| {
-            while remaining > 0 {
-                let step = remaining.min(1_000);
-                cx.background_executor()
-                    .timer(std::time::Duration::from_millis(
-                        u64::try_from(step).unwrap_or(1_000),
-                    ))
-                    .await;
-                remaining = (remaining - step).max(0);
-                // Catch up with wall-clock time after a delayed wake while keeping
-                // the countdown deterministic under the test executor's fake clock.
-                remaining = remaining.min((due - chrono::Utc::now().timestamp_millis()).max(0));
-                let active = this
-                    .update(cx, |this, cx| {
-                        if this.review_wait_epoch != epoch
-                            || this.navigation.current() != &Route::Review
-                        {
-                            this.review_wait_remaining = None;
-                            return false;
-                        }
-                        this.review_wait_remaining = Some(remaining);
-                        cx.notify();
-                        true
-                    })
-                    .unwrap_or(false);
-                if !active {
-                    return;
-                }
-            }
-            let _ = this.update(cx, |this, cx| {
-                if this.review_wait_epoch != epoch || this.navigation.current() != &Route::Review {
-                    return;
-                }
-                this.request(Command::LoadReview, cx);
-            });
-        })
-        .detach();
-    }
     pub(super) fn receive_job(&mut self, job: GenerationJob, cx: &mut Context<Self>) {
         let active = matches!(job.status, JobStatus::Queued | JobStatus::Running);
         let result = job.result_ref.clone();
@@ -3498,28 +3452,15 @@ impl Shell {
         }
 
         let Some(card) = self.review.first().cloned() else {
-            let message = if self.waiting {
-                match self.review_wait_remaining {
-                    Some(remaining) if remaining > 0 => format!(
-                        "学习步骤将在 {} 后到期，到期后自动继续",
-                        format_review_wait(remaining)
-                    ),
-                    Some(_) => "学习步骤已到期，正在继续…".to_owned(),
-                    None => "学习步骤尚未到期，请稍后再来".to_owned(),
-                }
-            } else if self.loading {
-                "正在读取复习队列…".to_owned()
-            } else {
-                "当前没有待复习词卡，可以导入词书或稍后再来".to_owned()
-            };
-            pane = pane.child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(design::muted_text(16., 24.).child(message)),
-            );
+            pane = pane.child(div().flex_1().flex().items_center().justify_center().child(
+                design::muted_text(16., 24.).child(if self.waiting {
+                    "学习步骤尚未到期，请稍后再来"
+                } else if self.loading {
+                    "正在读取复习队列…"
+                } else {
+                    "当前没有待复习词卡，可以导入词书或稍后再来"
+                }),
+            ));
             return pane.into_any_element();
         };
 
