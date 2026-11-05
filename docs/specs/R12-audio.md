@@ -19,9 +19,9 @@ ensure_audio、AudioPlayer、SystemSpeech、PlaybackCapabilities、audio session
 
 ## 验证与交付
 
-FakeTTS、真实本地音频样例、播放器状态机、并发预留／崩溃blob、平台适配测试；真机听音单列。
+FakeTTS、本地 WAV 样例、播放器状态机、并发预留／崩溃blob、适配器测试；人工听感不在 AC，CI 只验证解码与播放状态机。
 
-每条AC在交付记录中对应测试、截图或平台运行证据；需要实机的条目不可用静态审查抵替。变更业务写入时同时断言events；失败路径检查不产生部分成功。
+每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
 
 ## 边界与风险
 

@@ -2,7 +2,7 @@
 
 词间围绕「复习 → 阅读／听力 → 整理生词」组织学习。新的产品与界面基线是 [cijian-m3 设计稿](docs/cijian-m3.html)，重构采用 Rust、GPUI 与 [gpui-kit-material](https://github.com/mizorewww/gpui-kit-material)。
 
-**当前已有可运行的 Rust/GPUI 桌面端与 Cargo workspace，界面按 `docs/cijian-m3.html` 重做；TypeScript / Next.js Web 版本仍保留为迁移对照。** 桌面端验收仍在进行，真实 AI 质量、IME/触摸和其他桌面平台尚未通过。Web/WASM、移动原生与跨端同步降为远期规划，不进入本轮范围。
+**当前已有可运行的 Rust/GPUI 桌面端与 Cargo workspace，界面按 `docs/cijian-m3.html` 重做；TypeScript / Next.js Web 版本仍保留为迁移对照。** 桌面端验收仍在进行，验收证据由 CI 产出。真实 IME、触摸与付费模型质量不在本轮范围；Web/WASM、移动原生与跨端同步为远期规划。
 
 ## 新规划入口
 
@@ -13,7 +13,7 @@
 - [数据模型](docs/DATA_MODEL.md)、[核心规则](docs/SPEC-CORE.md)、[迁移方案](docs/MIGRATION.md)。
 - [任务表](docs/BACKLOG.md)、[任务规格](docs/specs/README.md)、[验收方案](docs/TESTING.md)。
 
-桌面端按 Linux → Windows / macOS 逐端验证与交付。Web/WASM、移动原生与跨端同步已降为远期规划，不排期、不阻塞桌面交付；已有平台结论见平台矩阵。
+本轮只交付 Linux 桌面，验收证据由 CI 产出；Windows／macOS 不做。Web/WASM、移动原生与跨端同步为远期规划，不排期、不阻塞桌面交付。
 
 ## 运行桌面版本
 

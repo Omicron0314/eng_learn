@@ -1,42 +1,139 @@
 name: Rust
+
 on:
   push:
   pull_request:
+  workflow_dispatch:
+  schedule:
+    # Nightly acceptance: release build, package and start-up smoke.
+    - cron: "17 18 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # CI never needs incremental state, and dropping debug info keeps the cache
+  # inside GitHub's 10 GB budget while cutting link time.
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  RUST_BACKTRACE: "1"
+
 jobs:
-  domain:
+  verify:
+    name: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
           components: rustfmt, clippy
+
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libfontconfig-dev \
+            libxcb-xkb-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libssl-dev \
+            xvfb xauth
+
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --all --check
-      - run: cargo test -p cijian-domain
-      - run: cargo clippy -p cijian-domain --all-targets -- -D warnings
-      - run: python3 tools/check-rust-boundaries.py
-  linux:
+        with:
+          shared-key: verify
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # UI harness tests create real windows, so run them on a virtual display.
+      # Empty-database migrations, rollback paths and interrupted-job state are
+      # covered by the workspace tests themselves; no separate step is needed.
+      - name: Test
+        run: xvfb-run -a cargo test --workspace
+
+      # Also verifies the lockfile resolves: the script runs
+      # `cargo metadata --locked` before checking dependency direction.
+      - name: Boundaries and lockfile
+        run: python3 tools/check-rust-boundaries.py
+
+  acceptance:
+    name: acceptance
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
-          components: clippy
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libfontconfig-dev libxcb-xkb-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev
+
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libfontconfig-dev \
+            libxcb-xkb-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libssl-dev \
+            xvfb xauth mesa-vulkan-drivers libvulkan1
+
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+        with:
+          shared-key: acceptance
+          # Release artifacts would push the repository past the 10 GB cache
+          # budget and evict verify's cache; cache dependency sources only.
+          cache-targets: "false"
+
+      - name: Build and package
+        run: tools/package-desktop.sh
+
+      # The app has no readiness signal, so "still alive after 20s" is the only
+      # honest check: 124 means timeout killed a running process.
+      - name: Start-up smoke
+        run: |
+          set +e
+          timeout 20s xvfb-run -a ./dist/cijian-desktop-linux-x86_64/cijian-desktop \
+            --data-dir /tmp/cijian-smoke
+          code=$?
+          echo "exit=$code"
+          test "$code" -eq 124
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cijian-desktop-linux-x86_64
+          path: dist/cijian-desktop-linux-x86_64.tar.gz
+          retention-days: 7
+
   wasm-consumer:
+    # WASM is long-term planning (D47/D54); run only when asked.
+    name: wasm consumer (manual)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
           targets: wasm32-unknown-unknown
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: spikes/r00
+
       - run: cargo check --manifest-path spikes/r00/Cargo.toml --lib --locked --target wasm32-unknown-unknown

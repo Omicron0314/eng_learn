@@ -2,6 +2,8 @@
 
 R00–R17 是本轮 GPUI 重构任务；R18–R21（Web/WASM、移动原生、跨端同步）自 2026-11-05 起为远期规划，不排期（[D47](../DECISIONS.md)）。任务清单、依赖与状态只维护在 [BACKLOG](../BACKLOG.md)。旧T0–T6与S1–S4规格见 git 历史（提交 46f499a），不作为当前实施任务。
 
+**证据口径（[D54](../DECISIONS.md)、[D56](../DECISIONS.md)）**：验收只覆盖 Linux，证据来自 CI；本机命令只用于秒级反馈与复现排错。Windows／macOS、真实中文 IME、触摸、读屏、人工听感、付费真实模型质量、系统凭据真实读写不在 AC；不得为凑完成度写回。
+
 ## 共用契约
 
 1. 实施前读 [plan](../plan.md) 与本任务规格；UI按 [UI-SPEC](../UI-SPEC.md)，业务默认按 [SPEC-CORE](../SPEC-CORE.md)，存储按 [DATA_MODEL](../DATA_MODEL.md)。

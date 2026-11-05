@@ -12,14 +12,14 @@
 
 - **AC1**：新工程能打开空壳且无LLM配置也可启动；旧pnpm工程仍能独立使用。
 - **AC2**：所有Git依赖／patch使用R00验证revision，仓库以外相邻checkout不会被隐式读取。
-- **AC3**：fmt、clippy、test在已配置平台通过，CI区分native和WASM目标，不混入未支持features。
+- **AC3**：fmt、clippy、test 在 Linux CI 通过；CI 作业覆盖 Xvfb 下的 UI 测试、release 性能记录、低空间／中断故障注入与包构建启动冒烟，不混入未支持 features。
 - **AC4**：边界检查防止domain引入IO／GPUI，production依赖不导出test doubles；新增模块标明职责。
 
 ## 验证与交付
 
-干净检出构建、cargo metadata依赖检查、最小边界测试；CI未实际运行时标待验。
+干净检出构建、cargo metadata依赖检查、最小边界测试；CI 未实际运行时标待验。作业清单见 [TESTING](../TESTING.md)。
 
-每条AC在交付记录中对应测试、截图或平台运行证据；需要实机的条目不可用静态审查抵替。变更业务写入时同时断言events；失败路径检查不产生部分成功。
+每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
 
 ## 边界与风险
 

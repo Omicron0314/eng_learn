@@ -77,6 +77,8 @@ its outstanding platform checks remain acceptance limitations.
 
 ## Delivery
 
+- Verification evidence comes from CI on Linux. Local runs are for iteration
+  and debugging, not acceptance.
 - English identifiers/AGENTS/commit messages; Chinese UI and product docs.
 - Follow task dependencies; one schema writer at a time. Keep logical changes,
   dependencies, migrations and prompt versions in separate atomic commits.
@@ -90,5 +92,9 @@ its outstanding platform checks remain acceptance limitations.
   Rust correctness; WASM/mobile layouts do not prove native mobile support.
 - Run checks appropriate to changed files. Documentation-only work needs link,
   task/dependency and design-coverage checks, not invented product test claims.
-- UI completion needs behavior, light/dark/responsive evidence and platform
-  capability checks. Real AI quality and long-term learning outcomes are separate.
+- Local runs are for fast feedback; CI is the evidence. Every CI step must be
+  reproducible locally with one documented command, and CI must not hold logic
+  that exists only in YAML.
+- UI completion needs behavior and light/dark/responsive evidence produced by CI
+  on Linux. Windows/macOS, real IME, touch, screen readers, human listening and
+  paid real-model quality are out of scope and must not be restored as ACs.

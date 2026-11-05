@@ -21,7 +21,7 @@ cijian-wasm入口、BrowserRepository/BlobStore/Transport/SecretStore/Audio适�
 
 WASM构建＋实际浏览器Playwright／可访问桥测试、离线重开、设备真机与存储配额故障。
 
-每条AC在交付记录中对应测试、截图或平台运行证据；需要实机的条目不可用静态审查抵替。变更业务写入时同时断言events；失败路径检查不产生部分成功。
+每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
 
 ## 边界与风险
 

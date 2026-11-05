@@ -20,7 +20,7 @@ query_inbox、batch_inbox(action,ids,expectedRevisions,operationId)→processed/
 
 多选／全选／过期批处理／回滚合同、来源丢失、空态和事件对账。
 
-每条AC在交付记录中对应测试、截图或平台运行证据；需要实机的条目不可用静态审查抵替。变更业务写入时同时断言events；失败路径检查不产生部分成功。
+每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
 
 ## 边界与风险
 

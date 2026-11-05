@@ -19,9 +19,9 @@ generate_article(operationId,tier,genre)→JobId；observe_job；list_articles(d
 
 ## 验证与交付
 
-stub结构非法／低覆盖／缺目标／control偶现／取消竞态；Job状态与文章工作区组件测试。
+stub结构非法／低覆盖／缺目标／control偶现／取消竞态；Job状态与文章工作区组件测试；30 篇以上历史分页的自动化测试待补。真实模型质量不在 AC。
 
-每条AC在交付记录中对应测试、截图或平台运行证据；需要实机的条目不可用静态审查抵替。变更业务写入时同时断言events；失败路径检查不产生部分成功。
+每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
 
 ## 边界与风险
 
