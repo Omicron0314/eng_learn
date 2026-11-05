@@ -332,3 +332,127 @@ fn entering_review_starts_a_new_progress_session(cx: &mut TestAppContext) {
     shell.update(cx, |shell, cx| shell.navigate(Route::Review, cx));
     assert_eq!(shell.read_with(cx, |shell, _| shell.review_done), 0);
 }
+
+#[derive(Default)]
+struct WaitingBus {
+    loads: std::sync::atomic::AtomicUsize,
+    due: i64,
+    card: Option<cijian_ports::library::CardView>,
+}
+impl CommandBus for WaitingBus {
+    fn dispatch(
+        &self,
+        command: Command,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = cijian_ports::Result<Response>> + Send + '_>,
+    > {
+        let result = match command {
+            Command::LoadReview => {
+                let load = self.loads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if load == 0 {
+                    Ok(Response::Review {
+                        cards: vec![],
+                        waiting: true,
+                        next_due: Some(self.due),
+                        intervals: None,
+                        stats: Box::new(empty_stats()),
+                        books: vec![],
+                        inbox_pending: 0,
+                    })
+                } else {
+                    Ok(Response::Review {
+                        cards: self.card.iter().cloned().collect(),
+                        waiting: false,
+                        next_due: None,
+                        intervals: None,
+                        stats: Box::new(empty_stats()),
+                        books: vec![],
+                        inbox_pending: 0,
+                    })
+                }
+            }
+            _ => Err(AppError::new(
+                cijian_ports::ErrorCode::InvalidInput,
+                "原创测试只读取复习队列",
+            )),
+        };
+        Box::pin(async move { result })
+    }
+}
+fn empty_stats() -> cijian_ports::stats::StatsSnapshot {
+    cijian_ports::stats::StatsSnapshot {
+        today: Default::default(),
+        week: Default::default(),
+        reading_completion: None,
+        feedback_just_right: None,
+        heatmap: vec![],
+        coverage: vec![],
+        unknown_median_all: None,
+        unknown_median_week: None,
+        learned: vec![],
+        learned_total: 0,
+        experiment: cijian_ports::stats::ExperimentReport {
+            version: "original".into(),
+            exposed: Default::default(),
+            control: Default::default(),
+            difference_percentage_points: None,
+        },
+    }
+}
+#[gpui_kit::test]
+fn waiting_learning_step_reloads_the_queue_when_due(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let due = chrono::Utc::now().timestamp_millis() + 120;
+    let bus = std::sync::Arc::new(WaitingBus {
+        due,
+        card: Some(cijian_ports::library::CardView {
+            id: "again-card".into(),
+            lexeme_id: "again-lexeme".into(),
+            front: "again".into(),
+            meaning: "原创释义".into(),
+            example: "An original example.".into(),
+            text_source: "imported".into(),
+            suspended: false,
+            archived: false,
+            revision: 2,
+            created_at: 0,
+            srs: cijian_domain::srs::SrsState::new(0),
+        }),
+        ..Default::default()
+    });
+    let (handle, shell) = cx
+        .update(|cx| {
+            let bus = bus.clone();
+            gpui_kit::open_window(WindowOptions::default(), cx, move |_, cx| {
+                cx.new(|cx| {
+                    let mut shell = Shell::new();
+                    shell.backend = Some(bus);
+                    shell.navigate(Route::Review, cx);
+                    shell
+                })
+            })
+        })
+        .unwrap();
+    cx.run_until_parked();
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(200));
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    assert_eq!(
+        bus.loads.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "the waiting review screen must request the queue again when the learning step is due"
+    );
+    assert!(
+        shell.read_with(cx, |shell, _| shell.review.len() == 1
+            && shell.review[0].id == "again-card"
+            && !shell.waiting),
+        "the card that was rated Again must reappear without leaving the review screen"
+    );
+}

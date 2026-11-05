@@ -224,7 +224,7 @@ impl Store {
             cards,
         })
     }
-    pub fn review_queue(&self, profile: &str, now: i64) -> Result<(Vec<CardView>, bool)> {
+    pub fn review_queue(&self, profile: &str, now: i64) -> Result<(Vec<CardView>, Option<i64>)> {
         let (settings, _) = self.settings(profile)?;
         let day = study_day(
             now,
@@ -267,8 +267,12 @@ impl Store {
             .into_iter()
             .filter_map(|id| by_id.remove(id.as_str()))
             .collect::<Vec<_>>();
-        let waiting=ordered.is_empty()&&db.query_row("SELECT EXISTS(SELECT 1 FROM cards WHERE profile_id=?1 AND suspended=0 AND archived_at IS NULL AND state IN ('learning','relearning') AND due>?2)",params![profile,now],|r|r.get::<_,bool>(0)).map_err(unavailable)?;
-        Ok((ordered, waiting))
+        let next_due = if ordered.is_empty() {
+            db.query_row("SELECT min(due) FROM cards WHERE profile_id=?1 AND suspended=0 AND archived_at IS NULL AND state IN ('learning','relearning') AND due>?2",params![profile,now],|r|r.get::<_,Option<i64>>(0)).map_err(unavailable)?
+        } else {
+            None
+        };
+        Ok((ordered, next_due))
     }
 
     pub fn rate(&self, c: RateCard) -> Result<CardView> {
