@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Build a release desktop binary, refresh the local dist package, and install
-# the launcher entry used by the current user.
+# Build a release desktop binary and refresh the local dist package.
+# The user launcher is intentionally not touched: tools/build-desktop.sh is the
+# single place that syncs it (debug by default).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -13,7 +14,6 @@ CARGO_TARGET_DIR="$TARGET_DIR" cargo build --release -p cijian-desktop
 BIN="$TARGET_DIR/release/cijian-desktop"
 DIST="$ROOT/dist/cijian-desktop-linux-x86_64"
 ICON_SVG="$ROOT/apps/desktop/assets/cijian.svg"
-ICON_PNG="$ROOT/apps/desktop/assets/cijian-256.png"
 PACKAGE="$ROOT/dist/cijian-desktop-linux-x86_64.tar.gz"
 
 if [[ ! -x "$BIN" ]]; then
@@ -49,42 +49,6 @@ README
 )
 tar -czf "$PACKAGE" -C "$ROOT/dist" cijian-desktop-linux-x86_64
 
-# Launcher installation for the current user. The binary stays in dist/ so the
-# symlink always points at the latest local build after this script runs.
-install -d "$HOME/.local/bin" \
-    "$HOME/.local/share/applications" \
-    "$HOME/.local/share/icons/hicolor/scalable/apps" \
-    "$HOME/.local/share/icons/hicolor/256x256/apps"
-ln -sfn "$DIST/cijian-desktop" "$HOME/.local/bin/cijian-desktop"
-install -m 0644 "$ICON_SVG" "$HOME/.local/share/icons/hicolor/scalable/apps/cijian.svg"
-if [[ -f "$ICON_PNG" ]]; then
-    install -m 0644 "$ICON_PNG" "$HOME/.local/share/icons/hicolor/256x256/apps/cijian.png"
-fi
-cat > "$HOME/.local/share/applications/cijian.desktop" <<DESKTOP
-[Desktop Entry]
-Type=Application
-Name=词间
-GenericName=English Learning
-Comment=本地英语学习：词库、复习、文章、阅读与统计
-Exec=$HOME/.local/bin/cijian-desktop
-Icon=cijian
-Terminal=false
-Categories=Education;Languages;
-Keywords=english;vocabulary;flashcard;cijian;词间;英语;背单词;
-StartupWMClass=cijian-desktop
-DESKTOP
-
-if command -v desktop-file-validate >/dev/null 2>&1; then
-    desktop-file-validate "$HOME/.local/share/applications/cijian.desktop"
-fi
-if command -v update-desktop-database >/dev/null 2>&1; then
-    update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
-fi
-if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-    gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
-fi
-
 echo "release:  $BIN"
 echo "package:  $PACKAGE"
-echo "launcher: $HOME/.local/share/applications/cijian.desktop"
-echo "run:      $HOME/.local/bin/cijian-desktop"
+echo "launcher: unchanged (run tools/build-desktop.sh to sync it)"
