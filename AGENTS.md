@@ -80,7 +80,9 @@ its outstanding platform checks remain acceptance limitations.
 - English identifiers/AGENTS/commit messages; Chinese UI and product docs.
 - Follow task dependencies; one schema writer at a time. Keep logical changes,
   dependencies, migrations and prompt versions in separate atomic commits.
-- When commits are authorized use Conventional Commits and `Task: Rxx`.
+- Standing authorization: after a user-assigned task is complete, commit its
+  code, tests and documentation without waiting for a separate request. Use
+  Conventional Commits and include `Task: Rxx`.
 - Record implementation choices in `docs/DECISIONS.md`; ordinary reversible
   choices do not require the archived per-spec approval process.
 - Do not add a project LICENSE or package license field; licensing is deferred.
