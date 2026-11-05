@@ -21,6 +21,13 @@ fn add_card(
 ) -> Result<AddedCard> {
     let existing:Option<(String,bool,bool)>=tx.query_row("SELECT id,suspended,archived_at IS NOT NULL FROM cards WHERE profile_id=?1 AND lexeme_id=?2",params![profile,lexeme],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(unavailable)?;
     if let Some((id, paused, archived)) = existing {
+        if !meaning.is_empty() {
+            tx.execute(
+                "UPDATE cards SET meaning=?1,text_source='lookup',updated_at=?2,revision=revision+1 WHERE profile_id=?3 AND id=?4 AND meaning='' AND text_source!='user'",
+                params![meaning, now, profile, id],
+            )
+            .map_err(unavailable)?;
+        }
         return Ok(AddedCard {
             id,
             paused,
@@ -95,7 +102,7 @@ impl Store {
     }
     pub fn inbox(&self, profile: &str, page: u32) -> Result<Vec<InboxItem>> {
         let db = self.connection.lock().map_err(unavailable)?;
-        let mut statement=db.prepare("SELECT i.id,l.lemma,i.article_id,a.title,i.context_sentence,i.body_hash,i.range_json,i.revision,COALESCE(c.meaning,'') FROM inbox i JOIN lexemes l ON l.id=i.lexeme_id LEFT JOIN articles a ON a.id=i.article_id AND a.profile_id=i.profile_id LEFT JOIN cards c ON c.lexeme_id=i.lexeme_id AND c.profile_id=i.profile_id WHERE i.profile_id=?1 AND i.status='pending' ORDER BY i.created_at DESC,i.id LIMIT 50 OFFSET ?2").map_err(unavailable)?;
+        let mut statement=db.prepare("SELECT i.id,l.lemma,i.article_id,a.title,i.context_sentence,i.body_hash,i.range_json,i.revision,COALESCE(c.meaning,''),COALESCE(c.text_source,'') FROM inbox i JOIN lexemes l ON l.id=i.lexeme_id LEFT JOIN articles a ON a.id=i.article_id AND a.profile_id=i.profile_id LEFT JOIN cards c ON c.lexeme_id=i.lexeme_id AND c.profile_id=i.profile_id WHERE i.profile_id=?1 AND i.status='pending' ORDER BY i.created_at DESC,i.id LIMIT 50 OFFSET ?2").map_err(unavailable)?;
         let rows = statement
             .query_map(params![profile, i64::from(page) * 50], |r| {
                 let range: Option<String> = r.get(6)?;
@@ -111,6 +118,7 @@ impl Store {
                         revision: u64::try_from(r.get::<_, i64>(7)?)
                             .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(7, -1))?,
                         meaning: r.get(8)?,
+                        meaning_source: r.get(9)?,
                     },
                     range,
                 ))

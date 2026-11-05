@@ -38,6 +38,7 @@ impl CommandBus for Bus {
                         tier: cijian_domain::settings::Tier::Easy,
                         diagnostics: Vec::new(),
                         created_at: 0,
+                        read_at: None,
                     }),
                     session: cijian_ports::reading::ReadingSession {
                         id: "original-session".into(),
@@ -99,6 +100,7 @@ fn inbox_source_link_reveals_the_marked_word_without_a_model_call(cx: &mut TestA
                             }),
                             revision: 0,
                             meaning: String::new(),
+                            meaning_source: "missing".into(),
                         }];
                         shell
                     })
@@ -135,4 +137,73 @@ fn inbox_source_link_reveals_the_marked_word_without_a_model_call(cx: &mut TestA
             .iter()
             .all(|command| matches!(command, Command::OpenArticle { .. }))
     );
+}
+
+#[gpui_kit::test]
+fn inbox_action_bar_appears_only_after_a_selection(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let (handle, shell) = cx
+        .update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1000.), px(900.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |_, cx| {
+                    cx.new(|_| {
+                        let mut shell = Shell::new();
+                        shell.navigation.navigate(Route::Inbox);
+                        shell.inbox_total = 1;
+                        shell.inbox = vec![cijian_ports::inbox::InboxItem {
+                            id: "original-inbox".into(),
+                            lemma: "lantern".into(),
+                            article_id: None,
+                            article_title: None,
+                            context: "An original context.".into(),
+                            body_hash: None,
+                            range: None,
+                            revision: 0,
+                            meaning: "灯笼".into(),
+                            meaning_source: "imported".into(),
+                        }];
+                        shell
+                    })
+                },
+            )
+        })
+        .unwrap();
+    cx.update_window(handle, |_, window, cx| {
+        for _ in 0..2 {
+            window.render_frame(cx);
+        }
+        assert!(
+            window.try_find("inbox-add").is_none(),
+            "no selection has no action bar"
+        );
+        window.click("select-inbox-original-inbox", cx);
+        window.render_frame(cx);
+        assert!(
+            window.try_find("inbox-add").is_some(),
+            "selection reveals the batch bar"
+        );
+        assert!(shell.read_with(cx, |shell, _| {
+            shell.inbox_selected.contains("original-inbox")
+        }));
+        window.click("inbox-clear", cx);
+        window.render_frame(cx);
+        assert!(
+            window.try_find("inbox-add").is_none(),
+            "clearing the selection hides the batch bar"
+        );
+    })
+    .unwrap();
 }

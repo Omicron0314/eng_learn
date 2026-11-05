@@ -9,7 +9,7 @@ use cijian_ports::{
     articles::{GenerationJob, JobStatus},
     inbox::{InboxAction, MarkAction},
 };
-use gpui_kit_material::components::MaterialBottomSheet;
+use gpui_kit_material::components::{MaterialBottomSheet, TextField};
 impl Shell {
     pub(super) fn operation(&self, purpose: &str) -> String {
         format!(
@@ -20,34 +20,310 @@ impl Shell {
     }
     pub(super) fn receive_job(&mut self, job: GenerationJob, cx: &mut Context<Self>) {
         let active = matches!(job.status, JobStatus::Queued | JobStatus::Running);
-        let id = job.id.clone();
         let result = job.result_ref.clone();
         self.generation_job = Some(job);
-        if let Some(article) = result {
-            if self.navigation.current() == &Route::Articles {
-                self.request(Command::OpenArticle { id: article }, cx);
-            }
-        } else if active {
-            cx.spawn(async move |this, cx| {
-                cx.background_executor()
-                    .timer(std::time::Duration::from_millis(750))
-                    .await;
-                let _ = this.update(cx, |this, cx| {
-                    if this.navigation.current() == &Route::Articles
-                        && !this.loading
-                        && this.generation_job.as_ref().is_some_and(|job| {
-                            job.id == id
-                                && matches!(job.status, JobStatus::Queued | JobStatus::Running)
-                        })
-                    {
-                        this.request(Command::ObserveJob { job: id }, cx);
-                    }
-                });
-            })
-            .detach();
+        if result.is_some() {
+            self.articles_history = false;
+            self.articles_page = 0;
+            self.articles_date = None;
+            self.articles_date_error = None;
+        }
+        if let Some(article) = result
+            && self.navigation.current() == &Route::Articles
+        {
+            self.request(Command::OpenArticle { id: article }, cx);
+        }
+        if active {
+            self.poll_generation(cx);
         }
     }
-    pub(super) fn articles_body(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+    /// Keep observing an active job while the article list stays visible. A
+    /// transient UI request must reschedule instead of silently stopping the
+    /// poll, and returning to Articles resumes an already running job.
+    pub(super) fn poll_generation(&mut self, cx: &mut Context<Self>) {
+        if self.generation_poll_pending || self.navigation.current() != &Route::Articles {
+            return;
+        }
+        let Some(job) = &self.generation_job else {
+            return;
+        };
+        if !matches!(job.status, JobStatus::Queued | JobStatus::Running) {
+            return;
+        }
+        let id = job.id.clone();
+        self.generation_poll_pending = true;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(750))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.generation_poll_pending = false;
+                let active = this.generation_job.as_ref().is_some_and(|job| {
+                    job.id == id && matches!(job.status, JobStatus::Queued | JobStatus::Running)
+                });
+                if !active || this.navigation.current() != &Route::Articles {
+                    return;
+                }
+                if this.loading {
+                    this.poll_generation(cx);
+                } else {
+                    this.request(Command::ObserveJob { job: id }, cx);
+                }
+            });
+        })
+        .detach();
+    }
+    /// Reveal the current card and, when its meaning is missing, request one
+    /// bounded AI gloss. The request never blocks reveal or rating.
+    pub(super) fn reveal_card(&mut self, cx: &mut Context<Self>) {
+        if self.loading || self.revealed {
+            return;
+        }
+        self.revealed = true;
+        let Some(card) = self.review.first().cloned() else {
+            cx.notify();
+            return;
+        };
+        let already_failed = self
+            .gloss_failed
+            .as_ref()
+            .is_some_and(|(id, _)| id == &card.id);
+        if card.meaning.trim().is_empty()
+            && !already_failed
+            && self.gloss_pending.as_deref() != Some(&card.id)
+            && self.provider_config.is_some()
+        {
+            self.explain_card(card, cx);
+        }
+        cx.notify();
+    }
+    fn explain_card(&mut self, card: CardView, cx: &mut Context<Self>) {
+        let Some(backend) = self.backend.clone() else {
+            return;
+        };
+        let card_id = card.id.clone();
+        let revision = card.revision;
+        let operation = self.operation("review-gloss");
+        self.gloss_pending = Some(card_id.clone());
+        self.gloss_failed = None;
+        cx.spawn(async move |this, cx| {
+            let result = backend
+                .dispatch(Command::ExplainCard {
+                    card: card_id.clone(),
+                    revision,
+                    operation,
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.gloss_pending.as_deref() != Some(&card_id) {
+                    return;
+                }
+                this.gloss_pending = None;
+                match result {
+                    Ok(Response::CardExplained(card)) => {
+                        if let Some(index) =
+                            this.review.iter().position(|value| value.id == card.id)
+                        {
+                            this.review[index] = card;
+                        }
+                        this.gloss_failed = None;
+                    }
+                    Ok(_) => {}
+                    Err(error) => this.gloss_failed = Some((card_id, error.message)),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+    fn retry_card_gloss(&mut self, card: CardView, cx: &mut Context<Self>) {
+        if self.gloss_pending.is_some() || self.loading {
+            return;
+        }
+        self.gloss_failed = None;
+        self.explain_card(card, cx);
+        cx.notify();
+    }
+    pub(super) fn play_remote_audio(&mut self, article: String, cx: &mut Context<Self>) {
+        self.last_audio_system = false;
+        self.request(
+            Command::EnsureAudio {
+                article,
+                operation: self.operation("audio"),
+            },
+            cx,
+        );
+    }
+    pub(super) fn play_system_audio(&mut self, article: String, cx: &mut Context<Self>) {
+        let Some(voice) = self.system_voices.get(self.system_voice_index) else {
+            return;
+        };
+        let voice = voice.id.clone();
+        self.last_audio_system = true;
+        self.request(Command::EnsureSystemAudio { article, voice }, cx);
+    }
+    fn toggle_audio(&mut self, article: String, cx: &mut Context<Self>) {
+        if self.loading {
+            return;
+        }
+        let playing = matches!(
+            self.playback.state,
+            cijian_domain::audio::PlaybackState::Playing
+        );
+        let ended = matches!(
+            self.playback.state,
+            cijian_domain::audio::PlaybackState::Ended
+                | cijian_domain::audio::PlaybackState::Failed
+        );
+        if self.playback.session.is_none() || ended {
+            if self.last_audio_system {
+                self.play_system_audio(article, cx);
+            } else {
+                self.play_remote_audio(article, cx);
+            }
+        } else if playing {
+            self.request(Command::AudioPause, cx);
+        } else {
+            self.request(Command::AudioResume, cx);
+        }
+    }
+    fn toggle_remote_audio(&mut self, article: String, cx: &mut Context<Self>) {
+        if self.loading {
+            return;
+        }
+        let playing = matches!(
+            self.playback.state,
+            cijian_domain::audio::PlaybackState::Playing
+        );
+        let ended = matches!(
+            self.playback.state,
+            cijian_domain::audio::PlaybackState::Ended
+                | cijian_domain::audio::PlaybackState::Failed
+        );
+        if self.playback.session.is_none() || ended {
+            self.play_remote_audio(article, cx);
+        } else if playing {
+            self.request(Command::AudioPause, cx);
+        } else {
+            self.request(Command::AudioResume, cx);
+        }
+    }
+    fn article_range(&self) -> (Option<i64>, Option<i64>) {
+        let zone = self
+            .settings
+            .timezone
+            .parse::<chrono_tz::Tz>()
+            .unwrap_or(chrono_tz::Tz::UTC);
+        let now = chrono::Utc::now().timestamp_millis();
+        let today = cijian_domain::time::study_day(now, zone, self.settings.day_start_hour).ok();
+        if let Some(date) = self.articles_date {
+            let noon = date.and_hms_opt(12, 0, 0).expect("valid noon");
+            let Some(local) = chrono::TimeZone::from_local_datetime(&zone, &noon).single() else {
+                return (None, None);
+            };
+            return cijian_domain::time::study_day(
+                local.timestamp_millis(),
+                zone,
+                self.settings.day_start_hour,
+            )
+            .map(|day| (Some(day.start_ms), Some(day.end_ms)))
+            .unwrap_or((None, None));
+        }
+        if self.articles_history {
+            (None, today.map(|day| day.start_ms))
+        } else {
+            today
+                .map(|day| (Some(day.start_ms), Some(day.end_ms)))
+                .unwrap_or((None, None))
+        }
+    }
+    pub(super) fn load_articles(&mut self, page: u32, cx: &mut Context<Self>) {
+        self.articles_page = page;
+        let (from, until) = self.article_range();
+        self.request(Command::LoadArticles { from, until, page }, cx);
+    }
+    pub(super) fn prepare_articles(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.articles_history || self.articles_date_input.is_some() {
+            return;
+        }
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("YYYY-MM-DD")
+                .default_value(
+                    self.articles_date
+                        .map(|date| date.format("%Y-%m-%d").to_string())
+                        .unwrap_or_default(),
+                )
+        });
+        cx.subscribe(&input, |this, _, event, cx| {
+            if matches!(event, gpui_kit::base::input::InputEvent::PressEnter { .. }) {
+                this.apply_article_date(cx);
+            }
+        })
+        .detach();
+        self.articles_date_input = Some(input);
+    }
+    fn set_articles_history(&mut self, history: bool, cx: &mut Context<Self>) {
+        if self.articles_history == history {
+            return;
+        }
+        self.articles_history = history;
+        self.articles_date = None;
+        self.articles_date_error = None;
+        self.articles_date_input = None;
+        self.load_articles(0, cx);
+    }
+    fn apply_article_date(&mut self, cx: &mut Context<Self>) {
+        let Some(input) = &self.articles_date_input else {
+            return;
+        };
+        let value = input.read(cx).value().trim().to_owned();
+        match chrono::NaiveDate::parse_from_str(&value, "%Y-%m-%d") {
+            Ok(date) => {
+                self.articles_date = Some(date);
+                self.articles_date_error = None;
+                self.load_articles(0, cx);
+            }
+            Err(_) => {
+                self.articles_date_error = Some("日期格式须为 YYYY-MM-DD".into());
+                cx.notify();
+            }
+        }
+    }
+    fn clear_article_date(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.articles_date = None;
+        self.articles_date_error = None;
+        if let Some(input) = &self.articles_date_input {
+            input.update(cx, |input, cx| input.set_value("", window, cx));
+        }
+        self.load_articles(0, cx);
+    }
+    fn article_tab(
+        &self,
+        history: bool,
+        label: &'static str,
+        cx: &mut Context<Self>,
+    ) -> gpui_kit::AnyElement {
+        let selected = self.articles_history == history;
+        div()
+            .id(if history {
+                "articles-history"
+            } else {
+                "articles-today"
+            })
+            .test_support()
+            .role(gpui_kit::Role::Button)
+            .aria_label(label)
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, _, _, cx| this.set_articles_history(history, cx)))
+            .child(design::chip(
+                selected,
+                label,
+                selected.then_some(Icon::Check),
+            ))
+            .into_any_element()
+    }
+    pub(super) fn articles_body(&mut self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         let active = self
             .generation_job
             .as_ref()
@@ -70,16 +346,7 @@ impl Shell {
                 .map(|value| format!("{:.1}%", value * 100.))
                 .unwrap_or_else(|| "暂无".into())
         };
-        let today = crate::stats::study_date(&self.settings);
-        let today_count = self
-            .articles
-            .iter()
-            .filter(|article| {
-                chrono::DateTime::from_timestamp_millis(article.created_at)
-                    .map(|value| value.date_naive() == today)
-                    .unwrap_or(false)
-            })
-            .count();
+        let today_count = self.today_article_count;
         let review_count = self
             .stats
             .as_ref()
@@ -409,12 +676,79 @@ impl Shell {
             .min_w_0()
             .gap(px(12.))
             .when(self.compact, |list| list.flex_none());
+        let mut tabs = div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .flex_wrap()
+            .child(self.article_tab(false, "今天", cx))
+            .child(self.article_tab(true, "历史", cx));
+        if self.articles_history {
+            if let Some(input) = &self.articles_date_input {
+                tabs = tabs.child(
+                    div()
+                        .w(px(190.))
+                        .child(TextField::new("articles-date", input)),
+                );
+            }
+            tabs = tabs.child(
+                div()
+                    .id("articles-date-apply")
+                    .test_support()
+                    .role(gpui_kit::Role::Button)
+                    .aria_label("筛选日期")
+                    .cursor_pointer()
+                    .h(px(32.))
+                    .px(px(12.))
+                    .rounded(px(16.))
+                    .bg(design::c(ColorRole::SECONDARY_CONTAINER))
+                    .text_color(design::c(ColorRole::ON_SECONDARY_CONTAINER))
+                    .flex()
+                    .items_center()
+                    .text_size(px(13.))
+                    .on_click(cx.listener(|this, _, _, cx| this.apply_article_date(cx)))
+                    .child("筛选"),
+            );
+            if self.articles_date.is_some() {
+                tabs = tabs.child(
+                    div()
+                        .id("articles-date-clear")
+                        .role(gpui_kit::Role::Button)
+                        .aria_label("清除日期筛选")
+                        .cursor_pointer()
+                        .h(px(32.))
+                        .px(px(12.))
+                        .rounded(px(16.))
+                        .text_color(design::c(ColorRole::PRIMARY))
+                        .flex()
+                        .items_center()
+                        .text_size(px(13.))
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.clear_article_date(window, cx)),
+                        )
+                        .child("清除"),
+                );
+            }
+            if let Some(error) = &self.articles_date_error {
+                tabs = tabs.child(
+                    design::muted_text(12., 16.)
+                        .text_color(design::c(ColorRole::ERROR))
+                        .child(error.clone()),
+                );
+            }
+        }
+        list = list.child(tabs);
+        let title = match self.articles_date {
+            Some(date) => format!("{} 的文章", date.format("%Y-%m-%d")),
+            None if self.articles_history => "历史文章".to_owned(),
+            None => "今天的文章".to_owned(),
+        };
         list = list.child(
             div()
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .child(design::title(24., 32., 700.).child("今天的文章"))
+                .child(design::title(24., 32., 700.).child(title))
                 .child(
                     design::tag(
                         ColorRole::SURFACE_CONTAINER_HIGH,
@@ -424,7 +758,9 @@ impl Shell {
                 )
                 .child(div().flex_1())
                 .when_some(
-                    self.articles.first().map(|article| article.id.clone()),
+                    (!self.articles_history)
+                        .then(|| self.articles.first().map(|article| article.id.clone()))
+                        .flatten(),
                     |row, id| {
                         row.child(
                             div()
@@ -452,7 +788,14 @@ impl Shell {
         );
         if self.articles.is_empty() {
             list = list.child(
-                design::empty_state("下一篇会出现在这里 · 每篇都会尽量复用新的目标词").h(px(120.)),
+                design::empty_state(if self.articles_date.is_some() {
+                    "所选日期没有文章"
+                } else if self.articles_history {
+                    "还没有更早的文章"
+                } else {
+                    "下一篇会出现在这里 · 每篇都会尽量复用新的目标词"
+                })
+                .h(px(120.)),
             );
         }
         for (index, article) in self.articles.iter().enumerate() {
@@ -534,12 +877,36 @@ impl Shell {
                                     .child(article.title.clone()),
                             ),
                     )
+                    .when(
+                        article
+                            .analysis
+                            .coverage
+                            .is_none_or(|value| value < article.tier.minimum_coverage()),
+                        |row| {
+                            row.child(
+                                design::tag(ColorRole::WARNING_BG, ColorRole::ON_WARNING)
+                                    .child("覆盖率偏低"),
+                            )
+                        },
+                    )
                     .child(
                         design::tag(
-                            ColorRole::PRIMARY_CONTAINER,
-                            ColorRole::ON_PRIMARY_CONTAINER,
+                            if article.read_at.is_some() {
+                                ColorRole::SUCCESS_BG
+                            } else {
+                                ColorRole::PRIMARY_CONTAINER
+                            },
+                            if article.read_at.is_some() {
+                                ColorRole::ON_SUCCESS
+                            } else {
+                                ColorRole::ON_PRIMARY_CONTAINER
+                            },
                         )
-                        .child("待阅读"),
+                        .child(if article.read_at.is_some() {
+                            "已读"
+                        } else {
+                            "待阅读"
+                        }),
                     )
                     .child(
                         div()
@@ -591,6 +958,63 @@ impl Shell {
                 );
             }
         }
+        let mut pager = div()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap(px(8.))
+            .w_full();
+        pager = pager.child(
+            div()
+                .id("articles-prev")
+                .test_support()
+                .role(gpui_kit::Role::Button)
+                .aria_label("上一页")
+                .cursor_pointer()
+                .h(px(32.))
+                .px(px(12.))
+                .rounded(px(16.))
+                .bg(design::c(ColorRole::SURFACE_CONTAINER_HIGH))
+                .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
+                .flex()
+                .items_center()
+                .text_size(px(13.))
+                .when(self.articles_page == 0, |button| button.opacity(0.38))
+                .on_click(cx.listener(|this, _, _, cx| {
+                    if this.articles_page > 0 {
+                        let page = this.articles_page - 1;
+                        this.load_articles(page, cx);
+                    }
+                }))
+                .child("上一页"),
+        );
+        pager = pager
+            .child(design::muted_text(12., 16.).child(format!("第 {} 页", self.articles_page + 1)));
+        pager = pager.child(
+            div()
+                .id("articles-next")
+                .test_support()
+                .role(gpui_kit::Role::Button)
+                .aria_label("下一页")
+                .cursor_pointer()
+                .h(px(32.))
+                .px(px(12.))
+                .rounded(px(16.))
+                .bg(design::c(ColorRole::SURFACE_CONTAINER_HIGH))
+                .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
+                .flex()
+                .items_center()
+                .text_size(px(13.))
+                .when(self.articles.len() < 30, |button| button.opacity(0.38))
+                .on_click(cx.listener(|this, _, _, cx| {
+                    if this.articles.len() >= 30 {
+                        let page = this.articles_page + 1;
+                        this.load_articles(page, cx);
+                    }
+                }))
+                .child("下一页"),
+        );
+        list = list.child(pager);
         grid = grid.child(list);
         body = body.child(grid);
         body.into_any_element()
@@ -876,6 +1300,10 @@ impl Shell {
             .coverage
             .map(|value| format!("覆盖率 {:.1}%", value * 100.))
             .unwrap_or_else(|| "覆盖率 —".into());
+        let below = article
+            .analysis
+            .coverage
+            .is_none_or(|value| value < article.tier.minimum_coverage());
         let date = chrono::DateTime::from_timestamp_millis(article.created_at)
             .map(|value| {
                 let date = value.date_naive();
@@ -907,7 +1335,21 @@ impl Shell {
                     }
                 )),
             )
-            .child(design::tag(ColorRole::SUCCESS_BG, ColorRole::ON_SUCCESS).child(coverage))
+            .child(
+                design::tag(
+                    if below {
+                        ColorRole::WARNING_BG
+                    } else {
+                        ColorRole::SUCCESS_BG
+                    },
+                    if below {
+                        ColorRole::ON_WARNING
+                    } else {
+                        ColorRole::ON_SUCCESS
+                    },
+                )
+                .child(coverage),
+            )
             .child(
                 design::muted_text(13., 18.)
                     .child(format!("· {} 词 · {}", article.analysis.token_count, date)),
@@ -1022,6 +1464,7 @@ impl Shell {
             row = row.child(
                 div()
                     .id("complete-reading")
+                    .test_support()
                     .role(gpui_kit::Role::Button)
                     .aria_label("读完了")
                     .cursor_pointer()
@@ -1077,7 +1520,6 @@ impl Shell {
             self.playback.state,
             cijian_domain::audio::PlaybackState::Playing
         );
-        let session = self.playback.session.is_some();
         let position = self.playback.position.max(0.);
         let duration = self.playback.duration.unwrap_or(0.);
         let fraction = if duration > 0. {
@@ -1124,23 +1566,9 @@ impl Shell {
                         .items_center()
                         .justify_center()
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            if this.loading {
-                                return;
-                            }
-                            if !session {
-                                if let Some(article) = &this.article {
-                                    this.request(
-                                        Command::EnsureAudio {
-                                            article: article.id.clone(),
-                                            operation: this.operation("audio"),
-                                        },
-                                        cx,
-                                    );
-                                }
-                            } else if playing {
-                                this.request(Command::AudioPause, cx);
-                            } else {
-                                this.request(Command::AudioResume, cx);
+                            if let Some(article) = &this.article {
+                                let article = article.id.clone();
+                                this.toggle_audio(article, cx);
                             }
                         }))
                         .child(design::icon_role(
@@ -1260,7 +1688,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> gpui_kit::AnyElement {
         let article_id = article.id.clone();
-        let cached = self.playback.session.is_some();
+        let cached = self.audio_ready || self.playback.session.is_some();
         let position = self.playback.position;
         let duration = self.playback.duration.unwrap_or(0.);
         let mut wave = div().flex().items_center().gap(px(2.)).h(px(56.)).flex_1();
@@ -1353,25 +1781,7 @@ impl Shell {
                         .items_center()
                         .justify_center()
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            if this.loading {
-                                return;
-                            }
-                            if this.playback.session.is_none() {
-                                this.request(
-                                    Command::EnsureAudio {
-                                        article: article_id.clone(),
-                                        operation: this.operation("audio"),
-                                    },
-                                    cx,
-                                );
-                            } else if matches!(
-                                this.playback.state,
-                                cijian_domain::audio::PlaybackState::Playing
-                            ) {
-                                this.request(Command::AudioPause, cx);
-                            } else {
-                                this.request(Command::AudioResume, cx);
-                            }
+                            this.toggle_remote_audio(article_id.clone(), cx);
                         }))
                         .child(design::icon_role(
                             if matches!(
@@ -1527,13 +1937,7 @@ impl Shell {
                     .items_center()
                     .gap(px(12.))
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.request(
-                            Command::EnsureAudio {
-                                article: article_id.clone(),
-                                operation: this.operation("audio"),
-                            },
-                            cx,
-                        )
+                        this.play_remote_audio(article_id.clone(), cx);
                     }))
                     .child(design::dot(ColorRole::PRIMARY, 20.))
                     .child(
@@ -1561,17 +1965,10 @@ impl Shell {
                     .items_center()
                     .gap(px(12.))
                     .on_click(cx.listener(|this, _, _, cx| {
-                        if let (Some(article), Some(voice)) = (
-                            &this.article,
-                            this.system_voices.get(this.system_voice_index),
-                        ) {
-                            this.request(
-                                Command::EnsureSystemAudio {
-                                    article: article.id.clone(),
-                                    voice: voice.id.clone(),
-                                },
-                                cx,
-                            );
+                        if let Some(article) =
+                            this.article.as_ref().map(|article| article.id.clone())
+                        {
+                            this.play_system_audio(article, cx);
                         }
                     }))
                     .child(design::dot(ColorRole::ON_SURFACE_VARIANT, 20.))
@@ -1867,7 +2264,7 @@ impl Shell {
                 if this.loading {
                     return;
                 }
-                if let Some((context, revision, _)) = &this.lookup {
+                if let Some((context, revision, meaning)) = &this.lookup {
                     this.request(
                         Command::Mark {
                             article: context.article_id.clone(),
@@ -1875,6 +2272,7 @@ impl Shell {
                             range: context.selection.range,
                             action,
                             revision: *revision,
+                            meaning: meaning.clone(),
                             operation: this.operation("mark"),
                         },
                         cx,
@@ -2027,23 +2425,32 @@ impl Shell {
             .gap(px(16.))
             .pt(px(20.))
             .px(px(if self.compact { 16. } else { 0. }));
-        center = center
-            .child(
-                div()
-                    .w(px(center_width))
-                    .max_w_full()
-                    .child(self.reader_meta(&article)),
-            )
-            .child(
-                design::title(
-                    if self.compact { 28. } else { 44. },
-                    if self.compact { 34. } else { 50. },
-                    760.,
-                )
+        center = center.child(
+            div()
                 .w(px(center_width))
                 .max_w_full()
-                .child(article.title.clone()),
+                .child(self.reader_meta(&article)),
+        );
+        if !article.diagnostics.is_empty() {
+            center = center.child(
+                div().w(px(center_width)).max_w_full().child(
+                    design::tag(ColorRole::WARNING_BG, ColorRole::ON_WARNING)
+                        .h_auto()
+                        .py(px(6.))
+                        .child(article.diagnostics.join("；")),
+                ),
             );
+        }
+        center = center.child(
+            design::title(
+                if self.compact { 28. } else { 44. },
+                if self.compact { 34. } else { 50. },
+                760.,
+            )
+            .w(px(center_width))
+            .max_w_full()
+            .child(article.title.clone()),
+        );
         if listening {
             center = center.child(
                 div()
@@ -2139,7 +2546,7 @@ impl Shell {
                     .child(self.reader_feedback(false, cx)),
             );
         }
-        let mut scroll = div()
+        let scroll = div()
             .id("reader-page")
             .track_scroll(&self.reader_scroll)
             .flex_1()
@@ -2148,9 +2555,6 @@ impl Shell {
             .overflow_y_scroll()
             .pb(px(110.))
             .child(center);
-        if !listening {
-            scroll = scroll.child(self.audio_toolbar(cx));
-        }
         let mut pane = design::pane()
             .flex_1()
             .min_w_0()
@@ -2166,6 +2570,9 @@ impl Shell {
             pane = pane.child(notice);
         }
         pane = pane.child(scroll);
+        if !listening {
+            pane = pane.child(self.audio_toolbar(cx));
+        }
         let mut main = div().flex().flex_1().min_w_0().h_full().gap(px(12.));
         main = main.child(pane);
         if let Some(side) = side {
@@ -2229,7 +2636,7 @@ impl Shell {
                     if this.loading {
                         return;
                     }
-                    if let Some((context, revision, _)) = &this.lookup {
+                    if let Some((context, revision, meaning)) = &this.lookup {
                         this.request(
                             Command::Mark {
                                 article: context.article_id.clone(),
@@ -2237,6 +2644,7 @@ impl Shell {
                                 range: context.selection.range,
                                 action,
                                 revision: *revision,
+                                meaning: meaning.clone(),
                                 operation: this.operation("mark"),
                             },
                             cx,
@@ -2530,6 +2938,7 @@ impl Shell {
             .child(
                 div()
                     .id("inbox-clear")
+                    .test_support()
                     .role(gpui_kit::Role::Button)
                     .aria_label("清空选择")
                     .cursor_pointer()
@@ -2552,6 +2961,7 @@ impl Shell {
             .child(
                 div()
                     .id("inbox-select-page")
+                    .test_support()
                     .role(gpui_kit::Role::Button)
                     .aria_label("全选本页")
                     .cursor_pointer()
@@ -2617,6 +3027,7 @@ impl Shell {
             let disabled = self.loading || selected_count == 0;
             let mut action_button = div()
                 .id(id)
+                .test_support()
                 .role(gpui_kit::Role::Button)
                 .aria_label(label)
                 .cursor_pointer()
@@ -2665,7 +3076,9 @@ impl Shell {
             }
             bar = bar.child(action_button.child(label));
         }
-        body = body.child(bar);
+        if selected_count > 0 {
+            body = body.child(bar);
+        }
 
         if self.inbox.is_empty() {
             body = body.child(design::empty_state("读文章时把不熟悉的词留在这里").h(px(220.)));
@@ -2737,6 +3150,7 @@ impl Shell {
                                 "select-inbox-{}",
                                 item.id
                             )))
+                            .test_support()
                             .role(gpui_kit::Role::Button)
                             .aria_label(format!("选择 {}", item.lemma))
                             .cursor_pointer()
@@ -2793,7 +3207,7 @@ impl Shell {
                             )
                             .h(px(20.))
                             .text_size(px(11.))
-                            .child("AI 生成"),
+                            .child(source_label(&item.meaning_source)),
                         )
                     }),
             );
@@ -2948,7 +3362,6 @@ impl Shell {
         let wide = self.viewport_width >= 1180.;
         let remaining = self.review.len() as u64;
         let (learning, review_count, new) = self.review_heatmap_totals();
-        let total = remaining + u64::from(self.review_done);
         let card_width = if self.compact {
             (self.viewport_width - 40.).max(280.)
         } else if wide {
@@ -3061,6 +3474,7 @@ impl Shell {
             design::c(ColorRole::SURFACE_CONTAINER_LOWEST),
         )
         .id("review-card")
+        .test_support()
         .w(px(card_width))
         .max_w_full()
         .shadow(design::shadow_card())
@@ -3068,8 +3482,14 @@ impl Shell {
         .when(self.compact, |card| {
             card.flex_none()
                 .h(px((self.viewport_height - 380.).clamp(360., 512.)))
-                .justify_center()
-                .items_center()
+                .when(self.revealed, |card| {
+                    card.justify_start().overflow_y_scroll()
+                })
+                .when(!self.revealed, |card| card.justify_center().items_center())
+        })
+        .when(!self.compact, |card| {
+            card.max_h(px((self.viewport_height - 360.).max(240.)))
+                .overflow_y_scroll()
         })
         .p(px(if self.compact { 24. } else { 44. }))
         .px(px(if self.compact { 24. } else { 56. }))
@@ -3078,15 +3498,13 @@ impl Shell {
         .flex_col()
         .gap(px(22.))
         .cursor_pointer()
-        .on_click(cx.listener(|this, _, _, cx| {
-            if !this.revealed && !this.loading {
-                this.revealed = true;
-                cx.notify();
-            }
-        }))
+        .on_click(cx.listener(|this, _, _, cx| this.reveal_card(cx)))
         .child(
             design::text(14., 20., 600.)
+                .id("reveal-hint")
                 .text_color(design::c(ColorRole::PRIMARY))
+                .cursor_pointer()
+                .on_click(cx.listener(|this, _, _, cx| this.reveal_card(cx)))
                 .child("试着想起它的意思"),
         )
         .child(
@@ -3095,37 +3513,84 @@ impl Shell {
                 if long_word || self.compact { 58. } else { 80. },
                 760.,
             )
+            .id("reveal-word")
             .font_family("Cijian Display")
+            .cursor_pointer()
+            .on_click(cx.listener(|this, _, _, cx| this.reveal_card(cx)))
             .child(card.front.clone()),
         );
         if self.revealed {
-            front = front.child(design::divider()).child(
-                div()
+            let pending = self.gloss_pending.as_deref() == Some(&card.id);
+            let failed = self
+                .gloss_failed
+                .as_ref()
+                .filter(|(id, _)| id == &card.id)
+                .map(|(_, message)| message.clone());
+            let mut meaning_row = div().flex().items_baseline().gap(px(12.)).w_full();
+            if card.meaning.is_empty() {
+                let status = if pending {
+                    "正在生成释义…"
+                } else if failed.is_some() {
+                    "释义生成失败，可照常评分"
+                } else if self.provider_config.is_none() {
+                    "未配置 AI 服务，可在词库中编辑释义"
+                } else {
+                    "暂无释义"
+                };
+                let mut missing = div()
                     .flex()
-                    .items_baseline()
-                    .gap(px(12.))
-                    .child(
-                        design::text(28., 36., 650.).child(if card.meaning.is_empty() {
-                            "暂无释义".to_owned()
-                        } else {
-                            card.meaning.clone()
-                        }),
-                    )
-                    .child(
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .gap(px(6.))
+                    .child(design::muted_text(17., 24.).child(status));
+                if failed.is_some() && !pending {
+                    let retry = card.clone();
+                    missing = missing.child(
                         div()
-                            .id("review-source")
-                            .test_support()
-                            .role(gpui_kit::Role::Label)
-                            .aria_label(format!("来源：{}", card.text_source))
-                            .child(
-                                design::tag(
-                                    ColorRole::SECONDARY_CONTAINER,
-                                    ColorRole::ON_SECONDARY_CONTAINER,
-                                )
-                                .child(source_label(&card.text_source)),
-                            ),
+                            .id("retry-review-gloss")
+                            .role(gpui_kit::Role::Button)
+                            .aria_label("重试生成释义")
+                            .cursor_pointer()
+                            .h(px(32.))
+                            .px(px(12.))
+                            .rounded(px(16.))
+                            .bg(design::c(ColorRole::SECONDARY_CONTAINER))
+                            .text_color(design::c(ColorRole::ON_SECONDARY_CONTAINER))
+                            .flex()
+                            .items_center()
+                            .text_size(px(13.))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.retry_card_gloss(retry.clone(), cx)
+                            }))
+                            .child("重试生成"),
+                    );
+                }
+                meaning_row = meaning_row.child(missing);
+            } else {
+                meaning_row = meaning_row.child(
+                    design::text(28., 36., 650.)
+                        .flex_1()
+                        .min_w_0()
+                        .child(card.meaning.clone()),
+                );
+            }
+            meaning_row = meaning_row.child(
+                div()
+                    .id("review-source")
+                    .test_support()
+                    .role(gpui_kit::Role::Label)
+                    .aria_label(format!("来源：{}", card.text_source))
+                    .flex_shrink_0()
+                    .child(
+                        design::tag(
+                            ColorRole::SECONDARY_CONTAINER,
+                            ColorRole::ON_SECONDARY_CONTAINER,
+                        )
+                        .child(source_label(&card.text_source)),
                     ),
             );
+            front = front.child(design::divider()).child(meaning_row);
             if !card.example.is_empty() {
                 front = front.child(
                     div()
@@ -3145,7 +3610,13 @@ impl Shell {
                 );
             }
         } else if !self.compact {
-            front = front.child(design::muted_text(14., 20.).child("点按卡片或下方按钮翻面"));
+            front = front.child(
+                design::muted_text(14., 20.)
+                    .id("reveal-caption")
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, _, cx| this.reveal_card(cx)))
+                    .child("点按卡片或下方按钮翻面"),
+            );
         }
         pane = pane.child(front);
 
@@ -3203,6 +3674,7 @@ impl Shell {
                     .unwrap_or_default();
                 let mut button = div()
                     .id(gpui_kit::SharedString::from(format!("rating-{index}")))
+                    .test_support()
                     .role(gpui_kit::Role::Button)
                     .aria_label(format!("{label} · {english}"))
                     .cursor_pointer()
@@ -3282,12 +3754,7 @@ impl Shell {
                     .text_size(px(20.))
                     .font_weight(gpui_kit::FontWeight(700.))
                     .when(self.loading, |button| button.opacity(0.38))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        if !this.loading {
-                            this.revealed = true;
-                            cx.notify();
-                        }
-                    }))
+                    .on_click(cx.listener(|this, _, _, cx| this.reveal_card(cx)))
                     .child("显示答案"),
             );
             pane = pane.child(
@@ -3319,7 +3786,7 @@ impl Shell {
                         .flex()
                         .items_baseline()
                         .gap(px(10.))
-                        .child(design::title(56., 60., 750.).child(total.to_string()))
+                        .child(design::title(56., 60., 750.).child(remaining.to_string()))
                         .child(design::muted_text(16., 22.).child("张剩余")),
                 )
                 .child(
@@ -3435,7 +3902,7 @@ pub(super) fn source_label(source: &str) -> String {
         "imported" => "导入".into(),
         "missing" => "待生成".into(),
         "user" | "user_edit" | "user-edited" => "用户编辑".into(),
-        "generated" | "ai" => "AI 生成".into(),
+        "generated" | "ai" | "lookup" => "AI 生成".into(),
         "legacy" | "legacy:import" => "旧版导入".into(),
         other => other.to_owned(),
     }

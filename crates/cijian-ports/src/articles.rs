@@ -16,6 +16,7 @@ pub struct Article {
     pub analysis: Analysis,
     pub diagnostics: Vec<String>,
     pub created_at: i64,
+    pub read_at: Option<i64>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArticleTarget {

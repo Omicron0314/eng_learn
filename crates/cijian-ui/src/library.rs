@@ -5,10 +5,12 @@ use chrono::Datelike;
 use cijian_domain::srs::State;
 use cijian_ports::library::{BookEntryPage, BookView, DeletePreview};
 use gpui_kit::{
-    Entity,
+    Entity, FocusHandle,
     base::input::{InputState, TextareaState},
 };
-use gpui_kit_material::components::{MaterialDialog, TextField};
+use gpui_kit_material::components::{
+    MaterialDialog, MaterialMenu, MaterialMenuItem, MenuGroup, MenuPopup, TextField,
+};
 #[derive(Default)]
 pub(super) struct LibraryState {
     pub books: Vec<BookView>,
@@ -30,6 +32,8 @@ pub(super) struct LibraryState {
     pub pending_back: bool,
     pub import_open: bool,
     pub report_open: bool,
+    pub suspended_open: bool,
+    pub suspended_focus: Option<FocusHandle>,
     pub import_source: Option<String>,
     pub error_page: usize,
 }
@@ -403,6 +407,7 @@ impl Shell {
         nav = nav.child(
             div()
                 .id("toggle-import")
+                .test_support()
                 .role(gpui_kit::Role::Button)
                 .aria_label("导入词表")
                 .cursor_pointer()
@@ -420,6 +425,12 @@ impl Shell {
                 .text_size(px(15.))
                 .font_weight(gpui_kit::FontWeight(650.))
                 .on_click(cx.listener(|this, _, _, cx| {
+                    if !this.library_ui.import_open {
+                        this.word_list = true;
+                        this.import_kind = BookKind::Baseline;
+                        this.library_ui.target = None;
+                        this.selected = None;
+                    }
                     this.library_ui.import_open = !this.library_ui.import_open;
                     cx.notify();
                 }))
@@ -539,10 +550,15 @@ impl Shell {
                                     .text_color(design::c(ColorRole::ON_SURFACE))
                                     .child(book.name.clone()),
                             )
-                            .child(
-                                design::muted_text(12., 16.)
-                                    .child(format!("{} 词卡", book.entries)),
-                            ),
+                            .child(design::muted_text(12., 16.).child(format!(
+                                "{} {}",
+                                book.entries,
+                                if book.kind == BookKind::Baseline {
+                                    "词条"
+                                } else {
+                                    "词卡"
+                                }
+                            ))),
                     )
                     .child(
                         div()
@@ -960,35 +976,74 @@ impl Shell {
                 .bg(design::c(ColorRole::OUTLINE_VARIANT)),
         );
         let suspended_label = match self.library_ui.suspended {
-            None => "暂停：全部",
-            Some(false) => "仅未暂停",
-            Some(true) => "仅暂停／归档",
+            None => "暂停／归档：全部",
+            Some(false) => "暂停／归档：仅未暂停",
+            Some(true) => "暂停／归档：仅已暂停",
         };
+        let suspended_focus = self
+            .library_ui
+            .suspended_focus
+            .get_or_insert_with(|| cx.focus_handle())
+            .clone();
+        let suspended_trigger = div()
+            .id("library-suspended")
+            .test_support()
+            .role(gpui_kit::Role::Button)
+            .aria_label(suspended_label)
+            .track_focus(&suspended_focus)
+            .tab_stop(true)
+            .cursor_pointer()
+            .when(baseline, |chip| chip.opacity(0.38))
+            .on_click(cx.listener(|this, event: &gpui_kit::ClickEvent, _, cx| {
+                if matches!(event, gpui_kit::ClickEvent::Keyboard(_)) {
+                    this.library_ui.suspended_open = !this.library_ui.suspended_open;
+                    cx.notify();
+                }
+            }))
+            .child(design::chip(
+                false,
+                suspended_label,
+                Some(if self.library_ui.suspended_open {
+                    Icon::Up
+                } else {
+                    Icon::Down
+                }),
+            ));
+        let suspended_menu = MaterialMenu::new("library-suspended-menu")
+            .width(280.)
+            .group(
+                MenuGroup::new().label("暂停与归档").items(
+                    [
+                        (None, "全部词卡", "包含已暂停与归档的词卡"),
+                        (Some(false), "仅未暂停", "隐藏已暂停与归档的词卡"),
+                        (Some(true), "仅已暂停／归档", "只显示暂停或归档的词卡"),
+                    ]
+                    .into_iter()
+                    .map(|(value, label, supporting)| {
+                        MaterialMenuItem::new(label)
+                            .supporting_text(supporting)
+                            .selected(self.library_ui.suspended == value)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.library_ui.suspended = value;
+                                this.library_ui.suspended_open = false;
+                                this.library_ui.page = 0;
+                                this.request(
+                                    Command::LoadLibrary {
+                                        filter: this.library_filter(),
+                                    },
+                                    cx,
+                                );
+                            }))
+                    }),
+                ),
+            );
         filters = filters.child(
-            div()
-                .id("library-suspended")
-                .role(gpui_kit::Role::Button)
-                .aria_label(suspended_label)
-                .cursor_pointer()
-                .when(baseline, |chip| chip.opacity(0.38))
-                .on_click(cx.listener(|this, _, _, cx| {
-                    if this.loading {
-                        return;
-                    }
-                    this.library_ui.suspended = match this.library_ui.suspended {
-                        None => Some(false),
-                        Some(false) => Some(true),
-                        Some(true) => None,
-                    };
-                    this.library_ui.page = 0;
-                    this.request(
-                        Command::LoadLibrary {
-                            filter: this.library_filter(),
-                        },
-                        cx,
-                    );
-                }))
-                .child(design::chip(false, suspended_label, Some(Icon::Down))),
+            MenuPopup::new("library-suspended-popup", suspended_trigger, suspended_menu)
+                .open(self.library_ui.suspended_open)
+                .on_open_change(cx.listener(|this, open: &bool, _, cx| {
+                    this.library_ui.suspended_open = *open;
+                    cx.notify();
+                })),
         );
         filters = filters.child(div().flex_1());
         let total = self
@@ -1055,7 +1110,11 @@ impl Shell {
                             .min_w_0()
                             .flex()
                             .flex_col()
-                            .child(design::text(16., 22., 650.).child(entry.lemma.clone()))
+                            .child(
+                                design::text(16., 22., 650.)
+                                    .text_ellipsis()
+                                    .child(entry.lemma.clone()),
+                            )
                             .child(
                                 design::muted_text(13., 18.)
                                     .text_ellipsis()
@@ -1191,16 +1250,17 @@ impl Shell {
                     .into_any_element();
             }
         }
+        // Paint the page first: absolute overlays added afterwards receive
+        // presses above it instead of letting the library table swallow them.
         let mut body = div().relative().flex().flex_col().w_full().h_full();
+        body = body.child(main);
         if self.library_ui.import_open {
             body = body.child(self.library_import_overlay(cx));
         }
         if self.library_ui.report_open {
             body = body.child(self.library_report_overlay(cx));
         }
-        body = body
-            .child(main)
-            .child(div().absolute().inset_0().child(self.library_dialogs(cx)));
+        body = body.child(div().absolute().inset_0().child(self.library_dialogs(cx)));
         body.into_any_element()
     }
 
@@ -1267,6 +1327,7 @@ impl Shell {
                         button.hover(|style| style.bg(design::c(ColorRole::PRIMARY)))
                     })
                     .on_click(cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
                         if this.loading {
                             return;
                         }
@@ -1308,6 +1369,7 @@ impl Shell {
                         button.text_color(design::c(ColorRole::PRIMARY))
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
                         if this.loading {
                             return;
                         }
@@ -1346,50 +1408,76 @@ impl Shell {
                 "library-card-{}",
                 card.id
             )))
+            .test_support()
             .flex()
             .items_center()
             .px(px(14.))
             .py(px(10.))
             .rounded(px(16.))
+            .cursor_pointer()
+            .hover(|row| row.bg(design::c(ColorRole::SURFACE_CONTAINER)))
             .when(card.suspended, |row| row.opacity(0.6))
+            .on_click(cx.listener({
+                let edit = card.clone();
+                move |this, _, window, cx| {
+                    if this.loading {
+                        return;
+                    }
+                    this.library_ui.editor = Some(CardEditor::new(edit.clone(), window, cx));
+                    this.library_ui.discard = false;
+                    this.error = None;
+                    cx.notify();
+                }
+            }))
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
                     .flex()
                     .flex_col()
-                    .child(design::text(16., 22., 650.).child(card.front.clone()))
+                    .child(
+                        design::text(16., 22., 650.)
+                            .text_ellipsis()
+                            .child(card.front.clone()),
+                    )
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .gap(px(6.))
-                            .child(design::muted_text(13., 18.).text_ellipsis().child(
-                                if card.meaning.is_empty() {
-                                    "释义未生成".to_owned()
-                                } else {
-                                    card.meaning.clone()
-                                },
-                            ))
-                            .when(!card.text_source.is_empty(), |line| {
-                                line.child(
-                                    design::tag(
-                                        ColorRole::SURFACE_CONTAINER_HIGH,
-                                        ColorRole::ON_SURFACE_VARIANT,
-                                    )
-                                    .h(px(20.))
-                                    .text_size(px(11.))
-                                    .child(crate::study::source_label(&card.text_source)),
-                                )
-                            }),
+                            .min_w_0()
+                            .w_full()
+                            .child(
+                                design::muted_text(13., 18.)
+                                    .id(gpui_kit::SharedString::from(format!(
+                                        "library-meaning-{}",
+                                        card.id
+                                    )))
+                                    .test_support()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_ellipsis()
+                                    .child(if card.meaning.is_empty() {
+                                        "释义未生成".to_owned()
+                                    } else {
+                                        card.meaning.clone()
+                                    }),
+                            ),
                     ),
             )
             .child(
-                div().w(px(120.)).child(
-                    design::muted_text(13., 18.)
-                        .text_ellipsis()
-                        .child(crate::study::source_label(&card.text_source)),
-                ),
+                div()
+                    .id(gpui_kit::SharedString::from(format!(
+                        "library-source-{}",
+                        card.id
+                    )))
+                    .test_support()
+                    .w(px(120.))
+                    .child(
+                        design::muted_text(13., 18.)
+                            .text_ellipsis()
+                            .child(crate::study::source_label(&card.text_source)),
+                    ),
             )
             .child(div().w(px(96.)).child(self.state_tag(card)))
             .child(
@@ -1448,26 +1536,19 @@ impl Shell {
     }
 
     fn library_import_overlay(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
-        let weak = cx.entity().downgrade();
         let mut dialog = design::shaped(
             [32., 32., 32., 32.],
             design::c(ColorRole::SURFACE_CONTAINER_HIGH),
         )
         .w(px(620.))
         .max_w_full()
-        .p(px(28.))
+        .max_h(gpui_kit::relative(1.))
+        .p(px(24.))
         .px(px(32.))
         .pb(px(24.))
         .flex()
         .flex_col()
-        .gap(px(18.));
-        let close = move |window: &mut Window, cx: &mut App| {
-            let _ = weak.update(cx, |this, cx| {
-                this.library_ui.import_open = false;
-                cx.notify();
-            });
-            let _ = window;
-        };
+        .gap(px(16.));
         dialog = dialog.child(
             div()
                 .flex()
@@ -1480,6 +1561,7 @@ impl Shell {
                 .child(
                     div()
                         .id("close-import")
+                        .test_support()
                         .role(gpui_kit::Role::Button)
                         .aria_label("关闭导入")
                         .cursor_pointer()
@@ -1489,7 +1571,7 @@ impl Shell {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .on_click(cx.listener(move |this, _, _, cx| {
+                        .on_click(cx.listener(|this, _, _, cx| {
                             this.library_ui.import_open = false;
                             cx.notify();
                         }))
@@ -1500,7 +1582,18 @@ impl Shell {
                         )),
                 ),
         );
-        dialog = dialog.child(
+
+        // The target list grows with the library, so only the settings scroll;
+        // the file actions stay pinned below them.
+        let mut content = div()
+            .id("import-dialog-content")
+            .flex()
+            .flex_col()
+            .gap(px(16.))
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll();
+        content = content.child(
             div()
                 .flex()
                 .gap(px(8.))
@@ -1508,22 +1601,32 @@ impl Shell {
                 .child(self.import_mode_button(true, "词表", cx)),
         );
         if self.word_list {
-            dialog = dialog.child(
+            content = content.child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .gap(px(8.))
                     .child(self.import_kind_button(BookKind::Baseline, "基线：作为已知词", cx))
                     .child(self.import_kind_button(BookKind::Study, "学习：加入复习", cx)),
             );
         }
-        dialog = dialog.child(self.import_controls(cx));
-        dialog = dialog.child(
+        content = content.child(self.import_controls(cx));
+        dialog = dialog.child(content);
+
+        let mut footer = div().flex().flex_col().gap(px(10.));
+        if let Some(selected) = &self.selected {
+            footer = footer
+                .child(design::muted_text(13., 18.).child(format!("已选择：{}", selected.name)));
+        }
+        footer = footer.child(
             div()
                 .flex()
+                .flex_wrap()
                 .gap(px(8.))
                 .child(
                     div()
                         .id("choose-file")
+                        .test_support()
                         .role(gpui_kit::Role::Button)
                         .aria_label("选择文件")
                         .cursor_pointer()
@@ -1558,6 +1661,7 @@ impl Shell {
                 .child(
                     div()
                         .id("import-file")
+                        .test_support()
                         .role(gpui_kit::Role::Button)
                         .aria_label("开始导入")
                         .cursor_pointer()
@@ -1596,17 +1700,15 @@ impl Shell {
                         .child("开始导入"),
                 ),
         );
-        if let Some(selected) = &self.selected {
-            dialog = dialog
-                .child(design::muted_text(13., 18.).child(format!("已选择：{}", selected.name)));
-        }
-        let _ = close;
+        dialog = dialog.child(footer);
         div()
             .absolute()
             .inset_0()
+            .occlude()
             .flex()
             .items_center()
             .justify_center()
+            .p(px(if self.compact { 12. } else { 24. }))
             .bg(design::alpha(design::c(ColorRole::INVERSE_SURFACE), 0.42))
             .child(dialog)
             .into_any_element()
@@ -1624,6 +1726,7 @@ impl Shell {
             } else {
                 "mode-cards"
             }))
+            .test_support()
             .role(gpui_kit::Role::Button)
             .aria_label(label)
             .cursor_pointer()
@@ -1668,6 +1771,7 @@ impl Shell {
                     "kind-study"
                 },
             ))
+            .test_support()
             .role(gpui_kit::Role::Button)
             .aria_label(label)
             .cursor_pointer()
@@ -1701,6 +1805,7 @@ impl Shell {
         div()
             .absolute()
             .inset_0()
+            .occlude()
             .flex()
             .items_center()
             .justify_center()

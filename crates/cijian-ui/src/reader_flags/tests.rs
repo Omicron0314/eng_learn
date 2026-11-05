@@ -96,6 +96,7 @@ fn flag_failure_keeps_multisentence_draft_and_retry_operation(cx: &mut TestAppCo
                                 tier: cijian_domain::settings::Tier::Easy,
                                 diagnostics: Vec::new(),
                                 created_at: 0,
+                                read_at: None,
                             });
                             shell
                         })

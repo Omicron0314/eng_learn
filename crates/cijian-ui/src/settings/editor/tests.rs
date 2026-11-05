@@ -95,8 +95,10 @@ fn reveal(window: &mut Window, bounds: Bounds<gpui_kit::Pixels>, cx: &mut App) {
         let dy = window.viewport_size().height / 2. - bounds.origin.y - bounds.size.height / 2.;
         window.dispatch_event(
             gpui_kit::ScrollEvent {
+                // Scroll over the target itself: the content pane may end
+                // before the window's right edge once the rail is shown.
                 position: point(
-                    window.viewport_size().width - px(20.),
+                    bounds.origin.x + bounds.size.width / 2.,
                     window.viewport_size().height / 2.,
                 ),
                 delta: ScrollDelta::Pixels(point(px(0.), dy)),

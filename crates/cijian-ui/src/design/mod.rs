@@ -13,6 +13,7 @@ use gpui_kit::{
 use gpui_kit_material::{color::ColorRole, theme::color};
 
 pub(crate) const RAIL_WIDTH: f32 = 96.;
+pub(crate) const TITLE_BAR_HEIGHT: f32 = 48.;
 pub(crate) const PANE_RADIUS: f32 = 28.;
 pub(crate) const CARD_RADIUS: f32 = 24.;
 

@@ -467,8 +467,8 @@ impl Shell {
             .flex_col();
         let mut tts_switch = div().flex().gap(px(2.)).w(px(420.));
         for (kind, label, selected) in [
-            (ProviderKind::Llm, "不配置 · 用本机朗读", !tts_active),
-            (ProviderKind::Tts, "OpenAI 兼容接口", tts_active),
+            (ProviderKind::Llm, "编辑 LLM", !tts_active),
+            (ProviderKind::Tts, "编辑 TTS", tts_active),
         ] {
             let first = kind == ProviderKind::Llm;
             let radii = if first {

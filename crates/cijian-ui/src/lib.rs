@@ -23,14 +23,20 @@ use cijian_ports::{
     AppError,
     library::{CardPage, CardView, ImportReport},
 };
-use gpui_kit::{App, Context, TestSupportExt as _, Window, WindowOptions, div, prelude::*, px};
+use gpui_kit::base::input::InputState;
+use gpui_kit::{
+    App, Context, Entity, TestSupportExt as _, Window, WindowOptions, div, prelude::*, px,
+};
 use gpui_kit_material::{
     color::ColorRole,
-    components::{ButtonVariant, material_button},
+    components::{ButtonVariant, material_button, title_bar_window_options},
     icons::Assets,
     theme::init_component_theme,
 };
-use std::{sync::Arc, time::Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 struct Shell {
     focus: Option<gpui_kit::FocusHandle>,
@@ -40,6 +46,8 @@ struct Shell {
     viewport_width: f32,
     viewport_height: f32,
     dark: bool,
+    #[cfg(test)]
+    caption: Option<gpui_kit_material::components::Caption>,
     #[cfg(test)]
     rendered_dark: bool,
     backend: Option<Arc<dyn CommandBus>>,
@@ -73,6 +81,8 @@ struct Shell {
     legacy_report: Option<cijian_ports::legacy::LegacyReport>,
     stored_audio: Vec<cijian_ports::audio::AudioAsset>,
     audio_poll_epoch: u64,
+    audio_ready: bool,
+    last_audio_system: bool,
     appearance_subscription: Option<gpui_kit::Subscription>,
     system_voices: Vec<cijian_ports::audio::SystemVoice>,
     system_voice_index: usize,
@@ -83,12 +93,21 @@ struct Shell {
     has_tts_key: bool,
     key_source: cijian_ports::provider::SecretSource,
     backup_audio: bool,
+    generation_poll_pending: bool,
+    gloss_pending: Option<String>,
+    gloss_failed: Option<(String, String)>,
     provider_config: Option<cijian_domain::provider::ProviderConfig>,
     has_session_key: bool,
     settings_ui: settings::SettingsState,
     page_scroll: gpui_kit::ScrollHandle,
     settings_editor: Option<settings::Editor>,
     articles: Vec<cijian_ports::articles::Article>,
+    articles_history: bool,
+    articles_page: u32,
+    articles_date: Option<chrono::NaiveDate>,
+    articles_date_error: Option<String>,
+    articles_date_input: Option<Entity<InputState>>,
+    today_article_count: u64,
     article: Option<cijian_ports::articles::Article>,
     reading_session: Option<cijian_ports::reading::ReadingSession>,
     reading_feedback: Vec<cijian_ports::reading::Feedback>,
@@ -100,7 +119,9 @@ struct Shell {
     inbox_total: u64,
     inbox_selected: std::collections::BTreeSet<String>,
     notice: Option<String>,
+    notice_dismissal: Option<String>,
     stats: Option<cijian_ports::stats::StatsSnapshot>,
+    stats_page: u32,
     books: Vec<cijian_ports::library::BookView>,
     heatmap_day: Option<usize>,
 }
@@ -114,6 +135,8 @@ impl Shell {
             viewport_width: 1440.,
             viewport_height: 900.,
             dark: false,
+            #[cfg(test)]
+            caption: None,
             #[cfg(test)]
             rendered_dark: false,
             backend: None,
@@ -147,6 +170,8 @@ impl Shell {
             legacy_report: None,
             stored_audio: Vec::new(),
             audio_poll_epoch: 0,
+            audio_ready: false,
+            last_audio_system: false,
             appearance_subscription: None,
             system_voices: Vec::new(),
             system_voice_index: 0,
@@ -157,12 +182,21 @@ impl Shell {
             has_tts_key: false,
             key_source: cijian_ports::provider::SecretSource::Session,
             backup_audio: false,
+            generation_poll_pending: false,
+            gloss_pending: None,
+            gloss_failed: None,
             provider_config: None,
             has_session_key: false,
             settings_ui: Default::default(),
             page_scroll: gpui_kit::ScrollHandle::new(),
             settings_editor: None,
             articles: Vec::new(),
+            articles_history: false,
+            articles_page: 0,
+            articles_date: None,
+            articles_date_error: None,
+            articles_date_input: None,
+            today_article_count: 0,
             article: None,
             reading_session: None,
             reading_feedback: Vec::new(),
@@ -174,7 +208,9 @@ impl Shell {
             inbox_total: 0,
             inbox_selected: Default::default(),
             notice: None,
+            notice_dismissal: None,
             stats: None,
+            stats_page: 0,
             books: Vec::new(),
             heatmap_day: None,
         }
@@ -188,6 +224,7 @@ impl Shell {
         self.error = None;
         self.request_id += 1;
         let request_id = self.request_id;
+        let rating = matches!(command, Command::Rate { .. });
         let task = cx
             .background_executor()
             .spawn(async move { backend.dispatch(command).await });
@@ -200,7 +237,14 @@ impl Shell {
                 this.loading = false;
                 this.lookup_loading = false;
                 match response {
-                    Err(error) => this.error = Some(error.message),
+                    Err(error) => {
+                        if rating && error.code == cijian_ports::ErrorCode::StaleState {
+                            this.notice = Some("词卡已更新，已重新加载；请重新评分".into());
+                            this.request(Command::LoadReview, cx);
+                        } else {
+                            this.error = Some(error.message);
+                        }
+                    }
                     Ok(Response::Preferences(value)) => {
                         this.settings.theme = value.theme;
                         this.settings.playback_rate = value.playback_rate;
@@ -240,8 +284,15 @@ impl Shell {
                             )
                         });
                     }
-                    Ok(Response::BackupSaved) => {
-                        this.notice = Some("学习备份已保存，不包含密钥和音频缓存".into())
+                    Ok(Response::BackupSaved { include_audio }) => {
+                        this.notice = Some(
+                            if include_audio {
+                                "学习备份已保存，包含音频缓存，不包含密钥"
+                            } else {
+                                "学习备份已保存，不包含密钥和音频缓存"
+                            }
+                            .into(),
+                        )
                     }
                     Ok(Response::RestoreOpened) => {
                         this.notice =
@@ -249,7 +300,12 @@ impl Shell {
                     }
                     Ok(Response::FileCancelled) => {}
                     Ok(Response::Stats(stats)) => this.stats = Some(*stats),
-                    Ok(Response::Articles(articles)) => this.articles = articles,
+                    Ok(Response::Articles(articles)) => {
+                        if !this.articles_history && this.articles_page == 0 {
+                            this.today_article_count = articles.len() as u64;
+                        }
+                        this.articles = articles;
+                    }
                     Ok(Response::Article {
                         article,
                         session,
@@ -266,6 +322,8 @@ impl Shell {
                         }
                         this.reading_feedback = feedback;
                         this.reader_flags.open = false;
+                        this.audio_ready = !audio.is_empty();
+                        this.last_audio_system = false;
                         this.stored_audio = audio;
                         let listening=matches!(this.navigation.current(),Route::Article{id,listening:true} if id==&article.id);
                         this.navigation.navigate(Route::Article {
@@ -319,11 +377,13 @@ impl Shell {
                     Ok(Response::Completed(session)) => {
                         this.reading_session = Some(session);
                         this.notice = Some("已记录本次阅读完成".into());
+                        this.request(Command::LoadStats { page: 0 }, cx);
                     }
                     Ok(Response::FeedbackSaved(feedback)) => {
-                        this.reading_feedback.retain(|value|value.mode!=feedback.mode);
+                        this.reading_feedback.retain(|value| value.mode != feedback.mode);
                         this.reading_feedback.push(feedback);
                         this.notice = Some("反馈已保存".into());
+                        this.request(Command::LoadStats { page: 0 }, cx);
                     }
                     Ok(Response::SentencesFlagged {article,body_hash}) => this.flag_saved(article,body_hash),
                     Ok(Response::Job(job)) => this.receive_job(job, cx),
@@ -472,12 +532,25 @@ impl Shell {
                         this.waiting = waiting;
                         this.intervals = intervals;
                         this.revealed = false;
+                        this.gloss_pending = None;
+                        this.gloss_failed = None;
                         this.review_started = Instant::now();
                         if this.navigation.current() == &Route::Today && empty_inbox && inbox_pending > 0 {
                             this.request(Command::LoadInbox { page: 0 }, cx);
                         }
                     }
-                    Ok(Response::Rated(_)) => this.request(Command::LoadReview, cx),
+                    Ok(Response::Rated(_)) => {
+                        this.review_done = this.review_done.saturating_add(1);
+                        this.request(Command::LoadReview, cx)
+                    }
+                    Ok(Response::CardExplained(card)) => {
+                        if let Some(index) = this.review.iter().position(|value| value.id == card.id)
+                        {
+                            this.review[index] = card;
+                        }
+                        this.gloss_pending = None;
+                        this.gloss_failed = None;
+                    }
                 }
                 cx.notify();
             });
@@ -508,6 +581,17 @@ impl Shell {
             && (self.loading || route == Route::Settings)
         {
             return;
+        }
+        let entering = self.navigation.current().section() != route.section();
+        if route == Route::Review && entering {
+            self.review_done = 0;
+        }
+        if route == Route::Articles && entering {
+            self.articles_history = false;
+            self.articles_page = 0;
+            self.articles_date = None;
+            self.articles_date_error = None;
+            self.articles_date_input = None;
         }
         if self.navigation.current() != &route
             && self.guard_settings_exit(
@@ -541,6 +625,11 @@ impl Shell {
         if self.navigation.current() != &route {
             self.library_ui.editor = None;
             self.library_ui.deletion = None;
+            self.library_ui.suspended_open = false;
+            if self.navigation.current().section() != route.section() {
+                self.notice = None;
+                self.notice_dismissal = None;
+            }
         }
         if let Route::Library { book, search } = &route {
             let scope = (book.clone(), search.clone());
@@ -578,10 +667,13 @@ impl Shell {
             self.navigation.navigate(route);
         }
         match self.navigation.current() {
-            Route::Articles => self.request(Command::LoadArticles { page: 0 }, cx),
+            Route::Articles => {
+                self.load_articles(0, cx);
+                self.poll_generation(cx);
+            }
             Route::Article { id, .. } => self.request(Command::OpenArticle { id: id.clone() }, cx),
             Route::Inbox => self.request(Command::LoadInbox { page: 0 }, cx),
-            Route::Stats => self.request(Command::LoadStats { page: 0 }, cx),
+            Route::Stats => self.load_stats(0, cx),
             Route::Settings => self.request(Command::LoadSettings, cx),
             Route::Today | Route::Review => self.request(Command::LoadReview, cx),
             Route::Library { .. } => self.request(
@@ -598,7 +690,6 @@ impl Shell {
             return;
         }
         if let Some(card) = self.review.first() {
-            self.review_done = self.review_done.saturating_add(1);
             self.request(
                 Command::Rate {
                     card: card.id.clone(),
@@ -653,12 +744,13 @@ pub fn run(application: gpui_kit::Application, backend: Result<Arc<dyn CommandBu
             init_component_theme(theme::scheme(false), 1.0, cx);
             gpui_kit::open_window(
                 WindowOptions {
-                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(gpui_kit::Bounds::new(
-                        gpui_kit::point(gpui_kit::px(0.), gpui_kit::px(0.)),
-                        gpui_kit::size(gpui_kit::px(1440.), gpui_kit::px(900.)),
-                    ))),
                     window_min_size: Some(gpui_kit::size(gpui_kit::px(360.), gpui_kit::px(600.))),
-                    ..Default::default()
+                    ..title_bar_window_options(
+                        "词间",
+                        gpui_kit::px(design::TITLE_BAR_HEIGHT),
+                        gpui_kit::size(gpui_kit::px(1440.), gpui_kit::px(900.)),
+                        cx,
+                    )
                 },
                 cx,
                 move |window, cx| {

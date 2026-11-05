@@ -11,9 +11,18 @@ pub struct Gloss {
 }
 impl Gloss {
     pub fn parse(text: &str, lemma: &str) -> Result<Self, ValidationError> {
+        let value = Self::parse_any(text)?;
+        if value.lemma != lemma {
+            return Err(ValidationError::new("gloss", "释义字段无效"));
+        }
+        Ok(value)
+    }
+    /// Card context has no surface range to bind; the prompt's base form may
+    /// differ for phrases, so only field constraints apply here.
+    pub fn parse_any(text: &str) -> Result<Self, ValidationError> {
         let value: Self = serde_json::from_str(text)
             .map_err(|_| ValidationError::new("gloss", "释义JSON结构无效"))?;
-        if value.lemma != lemma
+        if value.lemma.trim().is_empty()
             || value.meaning_zh.trim().is_empty()
             || value.meaning_zh.chars().count() > 30
             || value.meaning_en.trim().is_empty()

@@ -180,8 +180,8 @@ impl Store {
     }
     pub fn article(&self, profile: &str, id: &str) -> Result<Article> {
         let db = self.connection.lock().map_err(unavailable)?;
-        let value:Option<ArticleRow>=db.query_row("SELECT id,title,body,body_hash,genre,tier,analysis_json,created_at FROM articles WHERE profile_id=?1 AND id=?2",params![profile,id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?))).optional().map_err(unavailable)?;
-        let (id, title, body, body_hash, genre, tier, analysis, created_at) =
+        let value:Option<(ArticleRow,Option<i64>)>=db.query_row("SELECT a.id,a.title,a.body,a.body_hash,a.genre,a.tier,a.analysis_json,a.created_at,(SELECT max(s.completed_at) FROM reading_sessions s WHERE s.profile_id=a.profile_id AND s.article_id=a.id) FROM articles a WHERE a.profile_id=?1 AND a.id=?2",params![profile,id],|r|Ok(((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?),r.get(8)?))).optional().map_err(unavailable)?;
+        let ((id, title, body, body_hash, genre, tier, analysis, created_at), read_at) =
             value.ok_or(AppError::new(ErrorCode::NotFound, "文章不存在"))?;
         let stored: serde_json::Value = serde_json::from_str(&analysis).map_err(unavailable)?;
         Ok(Article {
@@ -195,6 +195,7 @@ impl Store {
             diagnostics: serde_json::from_value(stored["diagnostics"].clone())
                 .map_err(unavailable)?,
             created_at,
+            read_at,
         })
     }
     pub fn articles(

@@ -6,6 +6,7 @@ use cijian_app::{
 use cijian_domain::{
     RandomSource,
     knowledge::select_targets,
+    reading::{Selection, TextRange},
     settings::{Genre, Tier},
 };
 use cijian_ports::{
@@ -196,6 +197,99 @@ impl DesktopBackend {
             meaning,
         })
     }
+    pub(super) fn explain_card(
+        &self,
+        card_id: &str,
+        revision: u64,
+        operation: String,
+    ) -> Result<Response> {
+        let (card, lemma, sentence) = self.store.card_gloss_target(&self.profile, card_id)?;
+        if card.revision != revision {
+            return Err(AppError::new(
+                ErrorCode::StaleState,
+                "词卡已更新，请重新加载",
+            ));
+        }
+        if !card.meaning.trim().is_empty() {
+            return Ok(Response::CardExplained(card));
+        }
+        let snapshot = {
+            let _guard = self
+                .config_lock
+                .lock()
+                .map_err(|_| AppError::new(ErrorCode::StorageUnavailable, "配置暂不可用"))?;
+            let config = self
+                .store
+                .provider_config(&self.profile, cijian_domain::provider::ProviderKind::Llm)?
+                .ok_or(AppError::new(
+                    ErrorCode::ConfigMissing,
+                    "请先在设置中配置 AI 服务",
+                ))?;
+            let secret =
+                futures::executor::block_on(self.secrets.read(&format!("{}/llm", self.profile)))?;
+            ProviderSnapshot { config, secret }
+        };
+        let fingerprint = format!(
+            "{:x}",
+            Sha256::digest(format!(
+                "{}\n{}",
+                snapshot.config.endpoint, snapshot.config.model
+            ))
+        );
+        let gloss = match self.store.card_gloss_cache(
+            &self.profile,
+            &card.lexeme_id,
+            &sentence,
+            &fingerprint,
+        )? {
+            Some(gloss) => gloss,
+            None => {
+                let model = OpenAiCompatible {
+                    transport: NativeHttp::new()?,
+                    recorder: Recorder(self.store.clone()),
+                };
+                let selection = Selection {
+                    range: TextRange {
+                        start: 0,
+                        end: card.front.len(),
+                    },
+                    surface: card.front.clone(),
+                    lemma: lemma.clone(),
+                    sentence: sentence.clone(),
+                    sentence_range: TextRange {
+                        start: 0,
+                        end: sentence.len(),
+                    },
+                };
+                self.runtime.block_on(cijian_app::gloss::explain(
+                    &model,
+                    &snapshot,
+                    &selection,
+                    CallStart {
+                        profile_id: self.profile.clone(),
+                        call_id: id(),
+                        purpose: "review-gloss".into(),
+                        model: snapshot.config.model.clone(),
+                        prompt_version: "gloss.v1".into(),
+                        provider_fingerprint: fingerprint.clone(),
+                        now: now(),
+                    },
+                ))?
+            }
+        };
+        let card = self.store.apply_card_gloss(cijian_storage::CardGloss {
+            profile_id: self.profile.clone(),
+            operation_id: operation,
+            event_id: id(),
+            card_id: card.id.clone(),
+            expected_revision: revision,
+            sentence,
+            fingerprint,
+            gloss,
+            now: now(),
+        })?;
+        Ok(Response::CardExplained(card))
+    }
     pub(super) fn generate_article(
         &self,
         tier: Tier,
@@ -234,7 +328,12 @@ impl DesktopBackend {
             settings.control_ratio,
             &mut random,
         )
-        .map_err(|e| AppError::new(ErrorCode::NoTargets, e.to_string()))?;
+        .map_err(|_| {
+            AppError::new(
+                ErrorCode::NoTargets,
+                "没有可用于生成的目标词，请先复习几张卡片，或稍后再试",
+            )
+        })?;
         let snapshot = GenerationSnapshot {
             tier,
             genre,

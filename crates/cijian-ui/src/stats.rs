@@ -757,9 +757,15 @@ impl Shell {
                                 .child(design::icon_role(Icon::Book, 18., fg)),
                         )
                         .child(design::text(16., 22., 650.).child(book.name.clone()))
-                        .child(
-                            design::muted_text(13., 18.).child(format!("{} 张词卡", book.entries)),
-                        ),
+                        .child(design::muted_text(13., 18.).child(format!(
+                            "{} {}",
+                            book.entries,
+                            if book.kind == cijian_domain::import::BookKind::Baseline {
+                                "词条"
+                            } else {
+                                "张词卡"
+                            }
+                        ))),
                 );
             }
         }
@@ -1097,6 +1103,10 @@ impl Shell {
         design::disp(size, line).child(value.into())
     }
 
+    pub(super) fn load_stats(&mut self, page: u32, cx: &mut Context<Self>) {
+        self.stats_page = page;
+        self.request(Command::LoadStats { page }, cx);
+    }
     pub(super) fn stats_body(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         let Some(stats) = &self.stats else {
             return design::pane()
@@ -1313,24 +1323,41 @@ impl Shell {
                         ColorRole::SECONDARY_CONTAINER,
                         ColorRole::ON_SECONDARY_CONTAINER,
                     )
-                    .child("目标区间 95–98%"),
+                    .child(format!(
+                        "目标区间 {}",
+                        match self.settings.tier {
+                            cijian_domain::settings::Tier::Easy => "≥98%",
+                            cijian_domain::settings::Tier::Medium => "95–98%",
+                            cijian_domain::settings::Tier::Hard => "90–95%",
+                        }
+                    )),
                 ),
         );
         if stats.coverage.len() >= 2 {
+            let (low, high, band) = match self.settings.tier {
+                cijian_domain::settings::Tier::Easy => (0.92, 1.0, (0.98, 1.0)),
+                cijian_domain::settings::Tier::Medium => (0.93, 0.99, (0.95, 0.98)),
+                cijian_domain::settings::Tier::Hard => (0.88, 0.96, (0.90, 0.95)),
+            };
             let values: Vec<f32> = stats
                 .coverage
                 .iter()
                 .rev()
                 .take(14)
                 .rev()
-                .map(|point| ((point.coverage.unwrap_or(0.) - 0.93) / 0.06).clamp(0., 1.) as f32)
+                .map(|point| {
+                    ((point.coverage.unwrap_or(low) - low) / (high - low)).clamp(0., 1.) as f32
+                })
                 .collect();
             let chart = design::chart(
                 values,
                 760.,
                 200.,
                 design::c(ColorRole::PRIMARY),
-                Some(((0.95 - 0.93) / 0.06, (0.98 - 0.93) / 0.06)),
+                Some((
+                    ((band.0 - low) / (high - low)) as f32,
+                    ((band.1 - low) / (high - low)) as f32,
+                )),
                 false,
             );
             let mut labels = div()
@@ -1343,8 +1370,15 @@ impl Shell {
                 .flex_col()
                 .justify_between()
                 .text_color(design::c(ColorRole::ON_SURFACE_VARIANT));
-            for value in ["99%", "97%", "95%", "93%"] {
-                labels = labels.child(design::mono(11., 14., 400.).child(value));
+            let (low, high) = match self.settings.tier {
+                cijian_domain::settings::Tier::Easy => (0.92, 1.0),
+                cijian_domain::settings::Tier::Medium => (0.93, 0.99),
+                cijian_domain::settings::Tier::Hard => (0.88, 0.96),
+            };
+            for index in 0..4 {
+                let value = high - (high - low) * index as f64 / 3.;
+                labels = labels
+                    .child(design::mono(11., 14., 400.).child(format!("{:.0}%", value * 100.)));
             }
             trend = trend.child(chart.child(labels));
             let first = stats.coverage.first().map(|point| point.created_at);
@@ -1392,6 +1426,17 @@ impl Shell {
                     )
                     .child("目标 ≤5%"),
             );
+        } else if let Some(point) = stats.coverage.first() {
+            let coverage = point
+                .coverage
+                .map(|value| format!("{:.1}%", value * 100.))
+                .unwrap_or_else(|| "暂无".into());
+            trend = trend.child(design::text(15., 22., 650.).child(format!(
+                "已记录 1 篇：{} · 覆盖率 {}",
+                point.title, coverage
+            )));
+            trend = trend
+                .child(design::muted_text(13., 18.).child("再生成一篇后，这里会显示覆盖率趋势。"));
         } else {
             trend = trend
                 .child(design::muted_text(13., 18.).child("生成文章后，这里会出现覆盖率趋势。"));
@@ -1677,7 +1722,7 @@ impl Shell {
                 .child(div().w(px(110.)).child("状态"))
                 .child(div().w(px(240.)).child("可提取率")),
         );
-        for word in stats.learned.iter().take(6) {
+        for word in &stats.learned {
             let value = word.retrievability.unwrap_or(0.);
             let role = if word.archived {
                 ColorRole::OUTLINE
@@ -1745,62 +1790,66 @@ impl Shell {
                     .child("完成复习后，已学词汇会出现在这里。"),
             );
         }
-        learned = learned.child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .mt(px(4.))
-                .px(px(6.))
-                .child(
-                    design::muted_text(12., 16.)
-                        .flex_1()
-                        .child("长期留存与真实生成质量尚待自用验证。"),
-                )
-                .child(
-                    design::mono(13., 18., 400.)
-                        .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
-                        .child(format!(
-                            "1–{} / {}",
-                            stats.learned.len().min(6),
-                            stats.learned_total
-                        )),
-                )
-                .child(
-                    div()
-                        .w(px(40.))
-                        .h(px(40.))
-                        .rounded(px(20.))
-                        .border_1()
-                        .border_color(design::c(ColorRole::OUTLINE_VARIANT))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .opacity(0.38)
-                        .child(design::icon_role(
-                            Icon::Back,
-                            18.,
-                            ColorRole::ON_SURFACE_VARIANT,
-                        )),
-                )
-                .child(
-                    div()
-                        .w(px(40.))
-                        .h(px(40.))
-                        .rounded(px(20.))
-                        .border_1()
-                        .border_color(design::c(ColorRole::OUTLINE_VARIANT))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .opacity(0.38)
-                        .child(design::icon_role(
-                            Icon::Chev,
-                            18.,
-                            ColorRole::ON_SURFACE_VARIANT,
-                        )),
-                ),
-        );
+        let page = self.stats_page;
+        let start = page.saturating_mul(50).saturating_add(1);
+        let end = (page.saturating_mul(50) + stats.learned.len() as u32)
+            .min(stats.learned_total.min(u64::from(u32::MAX)) as u32);
+        let has_previous = page > 0;
+        let has_next = u64::from(page.saturating_add(1)) * 50 < stats.learned_total;
+        let mut pager = div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .mt(px(4.))
+            .px(px(6.))
+            .child(
+                design::muted_text(12., 16.)
+                    .flex_1()
+                    .child("长期留存与真实生成质量尚待自用验证。"),
+            )
+            .child(
+                design::mono(13., 18., 400.)
+                    .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
+                    .child(format!("{start}–{end} / {}", stats.learned_total)),
+            );
+        for (id, icon, enabled, target) in [
+            (
+                "stats-prev",
+                Icon::Back,
+                has_previous,
+                page.saturating_sub(1),
+            ),
+            ("stats-next", Icon::Chev, has_next, page.saturating_add(1)),
+        ] {
+            pager = pager.child(
+                div()
+                    .id(id)
+                    .test_support()
+                    .role(gpui_kit::Role::Button)
+                    .aria_label(if target < page {
+                        "上一页"
+                    } else {
+                        "下一页"
+                    })
+                    .cursor_pointer()
+                    .w(px(40.))
+                    .h(px(40.))
+                    .rounded(px(20.))
+                    .border_1()
+                    .border_color(design::c(ColorRole::OUTLINE_VARIANT))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .when(!enabled, |button| button.opacity(0.38))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if enabled {
+                            this.load_stats(target, cx);
+                        }
+                    }))
+                    .child(design::icon_role(icon, 18., ColorRole::ON_SURFACE_VARIANT)),
+            );
+        }
+        learned = learned.child(pager);
         lower = lower.child(learned);
         body = body.child(lower);
         body.into_any_element()

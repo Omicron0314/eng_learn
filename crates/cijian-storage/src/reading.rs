@@ -161,3 +161,145 @@ impl Store {
         Ok(())
     }
 }
+/// On-demand review gloss. Unlike article lookup, the card itself supplies the
+/// context, so phrases and cards without an example sentence remain supported.
+#[derive(Debug, Clone)]
+pub struct CardGloss {
+    pub profile_id: String,
+    pub operation_id: String,
+    pub event_id: String,
+    pub card_id: String,
+    pub expected_revision: u64,
+    pub sentence: String,
+    pub fingerprint: String,
+    pub gloss: cijian_domain::gloss::Gloss,
+    pub now: i64,
+}
+impl Store {
+    pub fn card_gloss_target(
+        &self,
+        profile: &str,
+        card: &str,
+    ) -> Result<(cijian_ports::library::CardView, String, String)> {
+        let db = self.connection.lock().map_err(unavailable)?;
+        let card = db
+            .query_row(
+                "SELECT * FROM cards WHERE profile_id=?1 AND id=?2",
+                params![profile, card],
+                super::library::read_card,
+            )
+            .optional()
+            .map_err(unavailable)?
+            .ok_or(AppError::new(ErrorCode::NotFound, "词卡不存在"))?;
+        let lemma: String = db
+            .query_row(
+                "SELECT lemma FROM lexemes WHERE id=?1",
+                [&card.lexeme_id],
+                |r| r.get(0),
+            )
+            .map_err(unavailable)?;
+        let sentence = if card.example.trim().is_empty() {
+            card.front.clone()
+        } else {
+            card.example.clone()
+        };
+        Ok((card, lemma, sentence))
+    }
+    pub fn card_gloss_cache(
+        &self,
+        profile: &str,
+        lexeme: &str,
+        sentence: &str,
+        fingerprint: &str,
+    ) -> Result<Option<cijian_domain::gloss::Gloss>> {
+        let db = self.connection.lock().map_err(unavailable)?;
+        let value: Option<String> = db
+            .query_row(
+                "SELECT gloss_json FROM gloss_cache WHERE profile_id=?1 AND lexeme_id=?2 AND context_hash=?3 AND prompt_version='gloss.v1' AND provider_fingerprint=?4",
+                params![profile, lexeme, hash(sentence), fingerprint],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(unavailable)?;
+        value
+            .map(|value| cijian_domain::gloss::Gloss::parse_any(&value))
+            .transpose()
+            .map_err(unavailable)
+    }
+    pub fn apply_card_gloss(&self, c: CardGloss) -> Result<cijian_ports::library::CardView> {
+        let expected = i64::try_from(c.expected_revision).map_err(|_| invalid("版本无效"))?;
+        let meaning = format!(
+            "{} {}\n{}\n{}",
+            c.gloss.pos, c.gloss.ipa, c.gloss.meaning_zh, c.gloss.meaning_en
+        );
+        if meaning.chars().count() > 1000 {
+            return Err(invalid("释义超出长度范围"));
+        }
+        let request = json!({
+            "card": c.card_id,
+            "revision": c.expected_revision,
+            "sentenceHash": hash(&c.sentence),
+            "fingerprint": c.fingerprint,
+            "gloss": c.gloss,
+        })
+        .to_string();
+        let result = self.command(
+            &c.profile_id,
+            &c.operation_id,
+            "card_gloss",
+            &request,
+            c.now,
+            |tx| {
+                let old = tx
+                    .query_row(
+                        "SELECT * FROM cards WHERE profile_id=?1 AND id=?2",
+                        params![c.profile_id, c.card_id],
+                        super::library::read_card,
+                    )
+                    .optional()
+                    .map_err(unavailable)?
+                    .ok_or(AppError::new(ErrorCode::NotFound, "词卡不存在"))?;
+                if old.revision != c.expected_revision {
+                    return Err(AppError::new(
+                        ErrorCode::StaleState,
+                        "词卡已变更，请重新加载",
+                    ));
+                }
+                let serialized = serde_json::to_string(&c.gloss).map_err(unavailable)?;
+                cijian_domain::gloss::Gloss::parse_any(&serialized)
+                    .map_err(|_| invalid("释义结构无效"))?;
+                tx.execute(
+                    "INSERT INTO gloss_cache VALUES (?1,?2,?3,'gloss.v1',?4,?5,?6) ON CONFLICT(profile_id,lexeme_id,context_hash,prompt_version,provider_fingerprint) DO UPDATE SET gloss_json=excluded.gloss_json,created_at=excluded.created_at",
+                    params![c.profile_id, old.lexeme_id, hash(&c.sentence), c.fingerprint, serialized, c.now],
+                )
+                .map_err(unavailable)?;
+                let changed = tx
+                    .execute(
+                        "UPDATE cards SET meaning=?1,text_source='generated',updated_at=?2,revision=revision+1 WHERE profile_id=?3 AND id=?4 AND revision=?5",
+                        params![meaning, c.now, c.profile_id, c.card_id, expected],
+                    )
+                    .map_err(unavailable)?;
+                if changed != 1 {
+                    return Err(AppError::new(ErrorCode::StaleState, "词卡已变更"));
+                }
+                let value = tx
+                    .query_row(
+                        "SELECT * FROM cards WHERE profile_id=?1 AND id=?2",
+                        params![c.profile_id, c.card_id],
+                        super::library::read_card,
+                    )
+                    .map_err(unavailable)?;
+                Ok((
+                    serde_json::to_value(value).map_err(unavailable)?,
+                    vec![Event {
+                        id: c.event_id,
+                        kind: "card_gloss".into(),
+                        schema_version: 1,
+                        payload: json!({"cardId": c.card_id, "lexemeId": old.lexeme_id, "promptVersion": "gloss.v1"}),
+                    }],
+                ))
+            },
+        )?;
+        serde_json::from_value(result).map_err(unavailable)
+    }
+}

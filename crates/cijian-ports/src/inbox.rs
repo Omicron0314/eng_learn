@@ -40,6 +40,7 @@ pub struct InboxItem {
     pub range: Option<TextRange>,
     pub revision: u64,
     pub meaning: String,
+    pub meaning_source: String,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

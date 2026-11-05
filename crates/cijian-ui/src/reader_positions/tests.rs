@@ -92,6 +92,7 @@ fn open(
                         tier: cijian_domain::settings::Tier::Easy,
                         diagnostics: Vec::new(),
                         created_at: 0,
+                        read_at: None,
                     });
                     shell.reading_session = Some(cijian_ports::reading::ReadingSession {
                         id: session.into(),

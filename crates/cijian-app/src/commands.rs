@@ -54,6 +54,8 @@ pub enum Command {
         page: u32,
     },
     LoadArticles {
+        from: Option<i64>,
+        until: Option<i64>,
         page: u32,
     },
     GenerateArticle {
@@ -106,6 +108,7 @@ pub enum Command {
         range: cijian_domain::reading::TextRange,
         action: cijian_ports::inbox::MarkAction,
         revision: u64,
+        meaning: String,
         operation: String,
     },
     LoadInbox {
@@ -157,6 +160,11 @@ pub enum Command {
         kind: BookKind,
         word_list: bool,
     },
+    ExplainCard {
+        card: String,
+        revision: u64,
+        operation: String,
+    },
     LoadReview,
     Rate {
         card: String,
@@ -187,7 +195,9 @@ pub enum Response {
         already_present: bool,
         directory: String,
     },
-    BackupSaved,
+    BackupSaved {
+        include_audio: bool,
+    },
     RestoreOpened,
     FileCancelled,
     Stats(Box<cijian_ports::stats::StatsSnapshot>),
@@ -261,6 +271,7 @@ pub enum Response {
         inbox_pending: u64,
     },
     Rated(CardView),
+    CardExplained(CardView),
 }
 /// UI schedules dispatch on its background executor; browser adapters return an async transaction.
 pub trait CommandBus: Send + Sync {

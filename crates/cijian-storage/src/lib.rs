@@ -11,6 +11,7 @@ mod library;
 mod preferences;
 mod providers;
 mod reading;
+pub use reading::CardGloss;
 mod stats;
 use cijian_domain::settings::{Settings, ValidatedSettings};
 use cijian_ports::{AppError, ErrorCode, Event, Result, SaveSettings, SettingsRepository};

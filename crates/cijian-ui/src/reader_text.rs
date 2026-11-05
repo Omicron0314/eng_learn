@@ -24,6 +24,7 @@ pub(super) struct ReaderText {
     width: Option<gpui_kit::Pixels>,
     visible: bool,
     initial_save: bool,
+    regrow: bool,
 }
 impl Shell {
     pub(super) fn prepare_reader(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -109,6 +110,7 @@ impl Shell {
             width: None,
             visible,
             initial_save: position != saved,
+            regrow: true,
         });
         if reveal.is_some() {
             self.source_reveal = None;
@@ -122,6 +124,12 @@ impl Shell {
         let Some(reader) = self.reader_text.as_mut().filter(|reader| reader.visible) else {
             return;
         };
+        if reader.regrow {
+            reader.regrow = false;
+            let input = reader.input.clone();
+            input.update(cx, |input, cx| input.set_auto_grow(1, 10_000, cx));
+            return;
+        }
         let input = reader.input.read(cx);
         let rows = input.display_map().display_row_count();
         let bounds = input.input_bounds();
@@ -134,11 +142,14 @@ impl Shell {
         let line_height = input
             .prepaint_caret_geometry()
             .map_or(px(READER_LINE_HEIGHT), |geometry| geometry.line_height());
-        if reader.width.is_some_and(|width| width != bounds.size.width) && reader.restore.is_none()
-        {
-            reader.restore = Some(reader.position);
+        if reader.width != Some(bounds.size.width) {
+            if reader.width.is_some() && reader.restore.is_none() {
+                reader.restore = Some(reader.position);
+            }
+            reader.width = Some(bounds.size.width);
+            reader.regrow = true;
+            return;
         }
-        reader.width = Some(bounds.size.width);
         if let Some(position) = reader.restore {
             let line = reader
                 .lines
@@ -258,6 +269,7 @@ impl Shell {
         let (reader_size, reader_line) = if self.compact { (18., 30.) } else { (20., 34.) };
         let mut text = div()
             .id("reader-text")
+            .test_support()
             .relative()
             .w_full()
             .text_size(px(reader_size))

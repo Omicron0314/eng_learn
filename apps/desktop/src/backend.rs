@@ -4,6 +4,8 @@ mod e2e_tests;
 mod library_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tour_tests;
 use cijian_app::commands::{Command, CommandBus, Response, SelectedFile};
 use cijian_domain::import::book_name;
 use cijian_domain::provider::ProviderKind;
@@ -259,12 +261,9 @@ impl DesktopBackend {
                 now(),
                 page,
             )?))),
-            Command::LoadArticles { page } => Ok(Response::Articles(self.store.articles(
-                &self.profile,
-                None,
-                None,
-                page,
-            )?)),
+            Command::LoadArticles { from, until, page } => Ok(Response::Articles(
+                self.store.articles(&self.profile, from, until, page)?,
+            )),
             Command::GenerateArticle {
                 tier,
                 genre,
@@ -346,6 +345,7 @@ impl DesktopBackend {
                 range,
                 action,
                 revision,
+                meaning,
                 operation,
             } => Ok(Response::Marked(self.store.mark_word(
                 cijian_ports::inbox::MarkWord {
@@ -356,7 +356,7 @@ impl DesktopBackend {
                     lexeme_id: id(),
                     card_id: id(),
                     inbox_id: id(),
-                    meaning: String::new(),
+                    meaning,
                 },
             )?)),
             Command::LoadInbox { page } => Ok(Response::Inbox {
@@ -619,6 +619,11 @@ impl DesktopBackend {
                 })?;
                 Ok(Response::Imported(report))
             }
+            Command::ExplainCard {
+                card,
+                revision,
+                operation,
+            } => self.explain_card(&card, revision, operation),
             Command::LoadReview => {
                 let now = now();
                 let (cards, waiting) = self.store.review_queue(&self.profile, now)?;

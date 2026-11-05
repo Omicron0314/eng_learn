@@ -115,6 +115,7 @@ fn reader_preserves_source_selection_and_returns_focus_after_lookup(cx: &mut Tes
                                 ),
                                 diagnostics: Vec::new(),
                                 created_at: 0,
+                                read_at: None,
                             });
                             shell
                         })

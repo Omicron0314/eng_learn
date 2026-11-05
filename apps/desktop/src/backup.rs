@@ -139,7 +139,7 @@ impl DesktopBackend {
                 "未覆盖已有文件，请选择一个新的备份文件名",
             )
         })?;
-        Ok(Response::BackupSaved)
+        Ok(Response::BackupSaved { include_audio })
     }
     pub(super) fn restore_backup(&self) -> Result<Response> {
         let Some(path) = rfd::FileDialog::new()

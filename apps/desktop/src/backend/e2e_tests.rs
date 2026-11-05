@@ -244,7 +244,9 @@ fn local_stub_generation_reader_lookup_mark_and_feedback_are_auditable() {
     };
     assert!(article.body.split_whitespace().count() >= 100);
     let start = article.body.find("saffron").unwrap();
-    let Response::Lookup { context, .. } = backend
+    let Response::Lookup {
+        context, meaning, ..
+    } = backend
         .execute(Command::Lookup {
             article: article_id.clone(),
             body_hash: article.body_hash.clone(),
@@ -281,9 +283,27 @@ fn local_stub_generation_reader_lookup_mark_and_feedback_are_auditable() {
             range: context.selection.range,
             action: cijian_ports::inbox::MarkAction::AddToReview,
             revision: 0,
+            meaning: meaning.clone(),
             operation: "e2e-mark".into(),
         })
         .unwrap();
+    let card = backend
+        .store
+        .cards(
+            &backend.profile,
+            cijian_ports::library::CardFilter {
+                search: "saffron".into(),
+                page_size: 30,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .cards
+        .into_iter()
+        .find(|card| card.front == "saffron")
+        .expect("looked-up word becomes a card");
+    assert_eq!(card.meaning, meaning, "the fetched gloss is kept");
+    assert_eq!(card.text_source, "lookup");
     let audit = backend
         .store
         .export_profile(&backend.profile, false)
