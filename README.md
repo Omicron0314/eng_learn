@@ -20,24 +20,26 @@
 Rust workspace 使用锁定工具链。开发运行：
 
 ```sh
-CARGO_TARGET_DIR=spikes/r00/target cargo run -p cijian-desktop
+cargo run -p cijian-desktop
 # 隔离学习库：
-CARGO_TARGET_DIR=spikes/r00/target cargo run -p cijian-desktop -- --data-dir /tmp/cijian-dev
+cargo run -p cijian-desktop -- --data-dir /tmp/cijian-dev
 ```
+
+构建产物统一落在仓库根 `target/`（cargo 默认目录，见 D58），与 `cargo test/clippy`、rust-analyzer 共用同一份缓存，不需要设置 `CARGO_TARGET_DIR`。
 
 每次构建并希望启动器立即打开新版本时，使用：
 
 ```sh
-CARGO_TARGET_DIR=spikes/r00/target tools/build-desktop.sh            # debug，默认
-CARGO_TARGET_DIR=spikes/r00/target tools/build-desktop.sh --release  # release，交付前检查
+tools/build-desktop.sh            # debug，默认
+tools/build-desktop.sh --release  # release，交付前检查
 ```
 
-脚本会构建对应 profile，并把 `~/.local/bin/cijian-desktop` 重新连接为指向该构建产物的符号链接，同时刷新 `~/.local/share/applications/cijian.desktop` 与图标缓存。启动器默认连接 debug 构建；之后只要使用同一 `CARGO_TARGET_DIR` 成功构建，点击启动器就会直接运行新产物，无需再次运行脚本。`cargo clean`、移动仓库或更换 target 目录后，重新运行 `tools/build-desktop.sh` 重接即可。
+脚本会构建对应 profile，并把 `~/.local/bin/cijian-desktop` 重新连接为指向该构建产物的符号链接，同时刷新 `~/.local/share/applications/cijian.desktop` 与图标缓存。启动器默认连接 debug 构建；之后只要重新构建，点击启动器就会直接运行新产物，无需再次运行脚本。`cargo clean` 后重新运行 `tools/build-desktop.sh` 重接即可。
 
 发布/交付时使用 `tools/package-desktop.sh`：它构建 release 并刷新 `dist/cijian-desktop-linux-x86_64.tar.gz`，但不会改动启动器；启动器保持指向 debug 构建。
 
 ```sh
-CARGO_TARGET_DIR=spikes/r00/target tools/package-desktop.sh
+tools/package-desktop.sh
 ```
 
 学习数据默认写入 `$XDG_DATA_HOME/org.cijian.cijian`；桌面包未签名、无自动更新，真实模型和 TTS 凭据不随包分发。

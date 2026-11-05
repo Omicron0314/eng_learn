@@ -6,7 +6,7 @@
 
 根 workspace 使用 Rust 1.99.1 和锁定的 GPUI Kit/Material revisions、九项共享引擎补丁。领域、端口、应用、存储、provider、平台和 UI 分层，桌面通过应用命令接入真实 SQLite。独立 `spikes/r00` 保留消费者验证；原 Web 产品和用户已有改动保留。
 
-本地使用 `CARGO_TARGET_DIR=spikes/r00/target` 复用编译缓存，不依赖外部源码 checkout。Rust CI 已建立，尚无远端运行结论。`tools/check-rust-boundaries.py` 检查领域 IO、时间 feature 和生产代码引用测试替身的情况。
+本地所有构建共用仓库根 `target/`（cargo 默认目录，见 D58）：应用、`cargo test/clippy`、rust-analyzer 和 `tools/*.sh` 都写这一份缓存，不依赖外部源码 checkout。Rust CI 已建立，尚无远端运行结论。`tools/check-rust-boundaries.py` 检查领域 IO、时间 feature 和生产代码引用测试替身的情况。
 
 ## 当前实现与剩余验收
 
@@ -54,7 +54,7 @@ UI harness 已覆盖导航、设置入口及 Tab 焦点；新词库用例在360/
 
 [R17 桌面验收记录](evidence/rust/r17-desktop.json) 使用临时学习库和 release 二进制，截图与限制见该记录；它不是完整 R17 通过。
 
-桌面构建入口 `tools/build-desktop.sh` 默认构建 debug（target 默认 `spikes/r00/target`），也可用 `--release`；它把 `~/.local/bin/cijian-desktop` 重新连接为指向构建产物的符号链接，并刷新 `~/.local/share/applications/cijian.desktop` 与图标。因此后续在同一 `CARGO_TARGET_DIR` 下成功构建，启动器会自动运行新产物；`cargo clean` 或更换 target 后重跑脚本即可。`tools/package-desktop.sh` 只构建 release 并刷新 `dist/cijian-desktop-linux-x86_64.tar.gz`，不改动启动器；启动器默认保持 debug。两者都是本地构建/分发辅助，不是签名安装器或自动更新方案。
+桌面构建入口 `tools/build-desktop.sh` 默认构建 debug（产物在 `target/debug/`），也可用 `--release`；它把 `~/.local/bin/cijian-desktop` 重新连接为指向构建产物的符号链接，并刷新 `~/.local/share/applications/cijian.desktop` 与图标。因此后续在同一 `target/` 下成功构建，启动器会自动运行新产物；`cargo clean` 后重跑脚本即可。`tools/package-desktop.sh` 只构建 release 并刷新 `dist/cijian-desktop-linux-x86_64.tar.gz`，不改动启动器；启动器默认保持 debug。两者都是本地构建/分发辅助，不是签名安装器或自动更新方案。
 
 [原生音频证据](evidence/rust/native-audio.json) 使用临时目录生成的低音量原创 WAV，验证真实输出设备、暂停、定位、1.25 倍速、停止和自然结束。另以系统 espeak-ng 1.52.0 将原创英文句子合成为可解码 WAV。本机安装已记入用户运维日志；没有改动音频设备、服务或用户配置。两个设备测试默认 ignored，需在明确的本机能力验证中单独执行；不把人工听感标为通过。
 

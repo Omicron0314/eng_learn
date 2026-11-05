@@ -6,10 +6,10 @@
 #   tools/build-desktop.sh --release  # release build
 #
 # The debug build is the default because the launcher is a development entry.
-# It ends up as a symlink to the build output, so later builds in the same
-# CARGO_TARGET_DIR are picked up without rerunning this script. Use --release
-# only for a delivery check; run this script again after cargo clean or when
-# the target directory changes.
+# It ends up as a symlink to the build output, so later builds at the same path
+# are picked up without rerunning this script. Use --release only for a delivery
+# check; run this script again after cargo clean. The build lands in the default
+# workspace target directory, shared with cargo test/clippy and rust-analyzer.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -43,7 +43,7 @@ if [[ $# -ne 0 ]]; then
     exit 2
 fi
 
-TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/spikes/r00/target}"
+TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
 if [[ "$TARGET_DIR" != /* ]]; then
     TARGET_DIR="$ROOT/$TARGET_DIR"
 fi
