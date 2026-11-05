@@ -30,7 +30,7 @@
 | `screen-settings` | AI 配置、来源／状态、TTS 用量、保存即生效 | R05 |
 | `screen-learning` / `settings-experiment` | 等级、难度、点词模式、滑块、时区、实验参数 | R15 |
 | `screen-states` | 空、生成中、失败、低覆盖率、完成、删除确认、文章不可用 | R04＋各业务任务 |
-| `screen-mobile` | 412×892 首页、复习正面、阅读 bottom sheet | R04、R07、R10、R13、R18–R20 |
+| `screen-mobile` | 412×892 首页、复习正面、阅读 bottom sheet | R04、R07、R10、R13（手机／浏览器适配归远期 R18–R20） |
 | `screen-dark` | 与重组后首页同结构的深色主题 | R04、R13、R17 |
 
 ## 今日

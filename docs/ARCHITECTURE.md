@@ -1,6 +1,6 @@
 # 目标架构
 
-**这是待实现架构。** 当前仓库仍是 `apps/web`＋`packages/*` 的 TypeScript 工程；新 Rust workspace 在 R01 建立，旧目录在迁移验收前保留。
+**这是目标架构。** Rust workspace 与桌面端已存在；`apps/web`＋`packages/*` 作为迁移对照保留至验收通过。图中的 Web 入口与 Browser 适配器属远期 R18（[D47](DECISIONS.md)），本轮只实现桌面适配器。
 
 ## 依赖方向
 
@@ -51,7 +51,7 @@ R00 确认 crate 名与边界可编译后固定，不能把上图当已有模块
 | 调度 | Rust FSRS 实现 | 选型、参数／版本转换与跨语言向量在 R00/R02 验证 |
 | 原生存储 | SQLite | SQL迁移、仓储、事务；具体 Rust driver 在 R00 验证后锁定 |
 | 边界校验 | Rust typed DTO＋显式约束 | serde 反序列化不代替范围／跨字段校验 |
-| 网络 | OpenAI兼容 LLM/TTS，transport 接口 | 桌面／WASM transport 分离；超时、取消、计数统一 |
+| 网络 | OpenAI兼容 LLM/TTS，transport 接口 | 桌面 transport 本轮实现；WASM transport 属远期 R18；超时、取消、计数统一 |
 | 异步 | GPUI task 与后台 executor 桥接 | 阻塞 SQLite／APKG 放后台，UI 线程只更新视图 |
 | 音频 | AudioPlayer＋SystemSpeech ports | 缓存播放、seek／rate capability；浏览器走媒体API |
 | 凭据 | SecretStore | 桌面优先系统凭据存储；浏览器默认会话内，无假定等价安全保证 |
@@ -83,7 +83,7 @@ R00 确认 crate 名与边界可编译后固定，不能把上图当已有模块
 - 每个 profile 一个写入协调器，仓储 transaction 同时写业务与事件；数据库也有唯一键／版本校验，不能只靠按钮禁用。
 - 网络调用不在写事务内。生成／音频先记录任务与预算，再发请求，再保存结果；关闭窗口后按产品规则中止观察或取消，不自动重试付费请求。
 - 配置保存后新请求取新版本，在途请求保持自己的快照；结果按原 requestId 回送，防止旧响应覆盖新词或新页面。
-- Native Repository 与 Browser Repository 都满足相同 contract tests；WASM 的异步事务不可假装同步 SQL callback。
+- Native Repository 与 Browser Repository 都满足相同 contract tests；WASM 的异步事务不可假装同步 SQL callback。Browser Repository 属远期 R18，本轮不建立。
 - 启动缺少 AI 配置可用本地能力；损坏数据库进入恢复界面，不悄悄换空库。
 
 ## 测试与保留资产

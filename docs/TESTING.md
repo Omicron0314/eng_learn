@@ -42,14 +42,14 @@
 
 现有Web维护可用：`pnpm lint`、`pnpm typecheck`、`pnpm test`；改到Web运行行为才加build/e2e。文档修改无需为凑结果重跑所有产品测试。
 
-根 workspace 已建立，以下原生命令可运行；WASM 产品包须等 R18 建立后使用对应命令：
+根 workspace 已建立，以下原生命令可运行；WASM 产品包属远期 R18，建立后再使用对应命令：
 
 ```sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo run -p cijian-desktop
-# R18建立该包及浏览器适配后
+# 远期：R18 建立该包及浏览器适配后
 cargo check -p cijian-wasm --target wasm32-unknown-unknown
 ```
 

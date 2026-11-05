@@ -1,6 +1,6 @@
 # R19 · Android/iOS原生可行性验证
 
-任务状态以 [BACKLOG](../BACKLOG.md) 为准。阶段：G5。依赖：R00。
+任务状态以 [BACKLOG](../BACKLOG.md) 为准。阶段：G5（远期，暂不实施）。依赖：R00。
 
 ## 目标与范围
 

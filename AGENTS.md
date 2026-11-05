@@ -1,9 +1,11 @@
 # AGENTS.md
 
-Cijian is migrating to a multi-platform English-learning app using Rust,
-GPUI, and gpui-kit-material. A Rust workspace and desktop application now exist;
-implementation and acceptance are in progress. The legacy TypeScript/Next.js app
-remains available until migration acceptance. See `docs/IMPLEMENTATION.md`.
+Cijian is migrating to a desktop English-learning app built with Rust, GPUI and
+gpui-kit-material. A Rust workspace and desktop application now exist;
+implementation and acceptance are in progress. Web/WASM, native mobile and
+cross-device sync are long-term planning only and are not current delivery
+scope. The legacy TypeScript/Next.js app remains available until migration
+acceptance. See `docs/IMPLEMENTATION.md` and decision D47.
 
 ## Authority and scope
 
@@ -13,7 +15,9 @@ remains available until migration acceptance. See `docs/IMPLEMENTATION.md`.
 - The design's script moves generation and story lists into Articles. Inspect
   the rendered design; do not implement its obsolete initial Today markup.
 - `docs/neko.html` is a secondary visual reference. Preserve both HTML originals.
-- Current tasks are R00–R21 in `docs/BACKLOG.md`. Legacy T/S tasks and evidence
+- Current tasks are R00–R17 in `docs/BACKLOG.md`; R18–R21 (Web/WASM, native
+  mobile, sync) are deferred as long-term planning and must not be started
+  without a new explicit scope decision. Legacy T/S tasks and evidence
   remain in git history at commit `46f499a` and impose no current approval workflow.
 - The user subsequently authorized actual Rust implementation. The previous
   documentation-only restriction is historical; platform acceptance still needs

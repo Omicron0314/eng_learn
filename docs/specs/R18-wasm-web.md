@@ -1,6 +1,6 @@
 # R18 · Web/WASM与手机浏览器适配
 
-任务状态以 [BACKLOG](../BACKLOG.md) 为准。阶段：G4。依赖：R17。
+任务状态以 [BACKLOG](../BACKLOG.md) 为准。阶段：G4（远期，暂不实施）。依赖：R17。
 
 ## 目标与范围
 
