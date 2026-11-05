@@ -297,24 +297,44 @@ pub fn queue(cards: &[QueueCard], now: i64, quota: Quota) -> Vec<CardId> {
     });
     let (mut new, mut review) = (quota.new_remaining, quota.review_remaining);
     let mut ordered: Vec<CardId> = due_learning.into_iter().map(|c| c.id.clone()).collect();
+    let mut reviews = Vec::new();
+    let mut news = Vec::new();
     for card in main {
-        let keep = match card.srs.state {
+        match card.srs.state {
             State::New if new > 0 => {
                 new -= 1;
-                true
+                news.push(card.id.clone());
             }
             State::Review if review > 0 => {
                 review -= 1;
-                true
+                reviews.push(card.id.clone());
             }
-            _ => false,
-        };
-        if keep {
-            ordered.push(card.id.clone());
+            _ => {}
         }
     }
+    ordered.extend(interleave(reviews, news));
     ordered.extend(ahead_learning.into_iter().map(|c| c.id.clone()));
     ordered
+}
+
+/// Anki's default MixWithReviews order for the main review/new queues.
+fn interleave(reviews: Vec<CardId>, news: Vec<CardId>) -> Vec<CardId> {
+    let ratio = (reviews.len() + 1) as f32 / (news.len() + 1) as f32;
+    let mut output = Vec::with_capacity(reviews.len() + news.len());
+    let (mut review_index, mut new_index) = (0, 0);
+    while review_index < reviews.len() && new_index < news.len() {
+        let relative_new = (new_index + 1) as f32 * ratio;
+        if relative_new < (review_index + 1) as f32 {
+            output.push(news[new_index].clone());
+            new_index += 1;
+        } else {
+            output.push(reviews[review_index].clone());
+            review_index += 1;
+        }
+    }
+    output.extend(reviews[review_index..].iter().cloned());
+    output.extend(news[new_index..].iter().cloned());
+    output
 }
 
 #[cfg(test)]
@@ -451,6 +471,41 @@ mod tests {
             .map(|id| id.as_str())
             .collect::<Vec<_>>(),
             vec!["learning"]
+        );
+    }
+    #[test]
+    fn main_queue_interleaves_reviews_and_new_cards() {
+        let now = 1_000_000;
+        let card = |id: &str, state: State, due: i64| {
+            let mut srs = SrsState::new(0);
+            srs.state = state;
+            srs.due = due;
+            QueueCard {
+                id: id.to_owned().try_into().unwrap(),
+                srs,
+                created_at: 0,
+                suspended: false,
+                archived: false,
+            }
+        };
+        let cards = [
+            card("review-1", State::Review, now),
+            card("review-2", State::Review, now),
+            card("new-1", State::New, now),
+        ];
+        assert_eq!(
+            queue(
+                &cards,
+                now,
+                Quota {
+                    new_remaining: 1,
+                    review_remaining: 2
+                }
+            )
+            .iter()
+            .map(|id| id.as_str())
+            .collect::<Vec<_>>(),
+            vec!["review-1", "new-1", "review-2"]
         );
     }
     #[test]
