@@ -207,14 +207,10 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 *{box-sizing:border-box}
 html{background:#f5f4ef;color:#1f1e1d;font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
-body{margin:0;padding:96px 32px 48px;display:flex;flex-direction:column;align-items:flex-start;gap:40px}
-.viewer{position:fixed;inset:12px 16px auto;z-index:20;min-height:56px;padding:10px 18px;border:1px solid #d9d5e3;border-radius:20px;background:#faf8fff2;box-shadow:0 4px 16px #20182c10;display:flex;align-items:center;gap:12px;font:13px/1.4 system-ui,sans-serif;backdrop-filter:blur(16px);color:#35303f}
-.viewer strong{font-size:16px;color:#4b49c8}.viewer .view-note{flex:1;color:#686270}
-.viewer select,.viewer a{font:inherit;border:1px solid #c8c5d0;border-radius:12px;background:#fff;color:#35303f;padding:8px 12px;min-height:36px;text-decoration:none;max-width:36vw}
-.viewer select:focus-visible,.viewer a:focus-visible{outline:3px solid #4b49c8;outline-offset:3px}
-.board{scroll-margin-top:90px}.intro{scroll-margin-top:90px}
-@media(max-width:650px){body{padding:92px 12px 32px}.viewer{inset:8px 8px auto;padding:10px;gap:8px}.viewer .view-note,.viewer .view-top{display:none}.viewer select{padding:8px;flex:1}}
-@media print{.viewer{display:none}body{padding:0;gap:24px}.board{break-before:page;break-inside:avoid}.board>.shot,.intro{zoom:.65!important;box-shadow:none}.board>.cap{margin-top:16px}}
+body{margin:0;padding:32px 32px 48px;display:flex;flex-direction:column;align-items:flex-start;gap:40px}
+.board{scroll-margin-top:24px}.intro{scroll-margin-top:24px}
+@media(max-width:650px){body{padding:24px 12px 32px}}
+@media print{body{padding:0;gap:24px}.board{break-before:page;break-inside:avoid}.board>.shot,.intro{zoom:.65!important;box-shadow:none}.board>.cap{margin-top:16px}}
 .board>.cap{margin:0 0 12px;font-size:13px;font-weight:500;color:#6b6a68}
 .board>.cap b{color:#1f1e1d;font-weight:600}
 .shot{box-shadow:0 1px 3px rgba(0,0,0,.12)}
@@ -358,12 +354,6 @@ mark.w{background:var(--wc);color:var(--onwc);border-radius:4px;padding:0 2px}
 </style>
 </head>
 <body>
-<nav class="viewer" aria-label="设计稿目录">
-  <strong>词间 / 设计参考</strong><span class="view-note">Material 3 Expressive · 静态画板 · 示例数据</span>
-  <select id="board-picker" aria-label="跳转到画板"><option value="overview">设计说明</option></select>
-  <select id="zoom-picker" aria-label="画板缩放"><option value="fit">适应窗口</option><option value="1">100%</option><option value="0.75">75%</option><option value="0.5">50%</option></select>
-  <a class="view-top" href="#overview">回到顶部 ↑</a>
-</nav>
 <noscript><p>此参考稿需要启用 JavaScript 来显示图标、图表与重复画板；页面数据均内嵌在文件中。</p></noscript>
 
 <!-- ================= INTRO ================= -->
@@ -371,7 +361,7 @@ mark.w{background:var(--wc);color:var(--onwc);border-radius:4px;padding:0 2px}
   <div class="col" style="gap:16px">
     <div class="row" style="gap:16px"><span class="logo" style="width:64px;height:64px;font-size:30px">词</span><div class="col"><span class="eyebrow">DESIGN REFERENCE · 单文件离线画板</span><span class="h1">词间 · Material 3 Expressive</span></div></div>
     <p class="t16 mut" style="max-width:640px">沿用 <span class="mono">docs/neko.html</span> 的设计语言：导航轨 + 圆角 28 的分区面板、tonal 色块、连接式按钮组、非对称的“表情化”形状、Roboto Flex 宽体标题。保留词间的学习功能，但按“复习 → 阅读 → 整理”的学习闭环重新组织界面。</p>
-    <p class="t13 mut">这是独立的静态界面参考，所有内容均为示例数据。顶部目录和页面导航可跳转画板；字段、评分与服务调用展示设计状态。</p>
+    <p class="t13 mut">这是独立的静态界面参考，所有内容均为示例数据。画板内的按钮和链接可直接跳转到对应状态；字段、评分与服务调用展示设计状态。</p>
     <div class="col" style="gap:10px;margin-top:6px">
       <span class="lbl">相比当前 UI 的主要调整</span>
       <div class="col t15" style="gap:6px">
@@ -1229,33 +1219,19 @@ document.querySelectorAll('#wave').forEach(w=>{let h='';for(let k=0;k<52;k++){co
 document.querySelectorAll('#trend').forEach(t=>{const d=[.951,.962,.944,.958,.967,.972,.955,.961,.968,.975,.963,.97,.958,.964];const y=v=>180-(v-.92)/(.07)*160;const x=i=>40+i*(700/13);let s=`<rect x="40" y="${y(.98)}" width="700" height="${y(.95)-y(.98)}" rx="10" fill="var(--sc)" opacity=".7"/>`;[.93,.95,.97,.99].forEach(v=>{s+=`<line x1="40" x2="740" y1="${y(v)}" y2="${y(v)}" stroke="var(--c3)"/><text x="0" y="${y(v)+4}" font-size="11" fill="var(--onv)" font-family="Roboto Mono">${(v*100).toFixed(0)}%</text>`});const pts=d.map((v,i)=>`${x(i)},${y(v)}`).join(' ');s+=`<polyline points="${pts}" fill="none" stroke="var(--p)" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>`;d.forEach((v,i)=>{s+=`<circle cx="${x(i)}" cy="${y(v)}" r="${i===13?7:4.5}" fill="${i===13?'var(--p)':'var(--c0)'}" stroke="var(--p)" stroke-width="2.5"/>`});s+=`<g transform="translate(${x(13)-58} ${y(.964)-44})"><rect width="72" height="28" rx="14" fill="var(--inv)"/><text x="36" y="18" text-anchor="middle" font-size="12" font-weight="650" fill="var(--oninv)">96.4%</text></g>`;t.innerHTML=s});
 document.querySelectorAll('#weeks').forEach(w=>{w.innerHTML=[['10/06',5],['10/13',6],['10/20',3],['10/27',4]].map(([d,n])=>`<div class="row t13" style="gap:10px"><span class="mono mut" style="width:44px">${d}</span><span class="row" style="gap:4px;flex:1">${Array.from({length:7},(_,i)=>`<span style="flex:1;height:14px;border-radius:5px;background:${i<n?(n>=5?'var(--ok)':'var(--p)'):'var(--c3)'}"></span>`).join('')}</span><b style="width:36px;text-align:right">${n} 天</b></div>`).join('')});
 document.querySelectorAll('#learned').forEach(l=>{l.innerHTML=[['abandon','放弃；抛弃','复习','p',.94],['vivid','生动的；鲜艳的','复习','p',.91],['reluctant','不情愿的；勉强的','学习中','t',.72],['threshold','门槛；阈值','重新学习','e',.48],['solace','安慰；慰藉','复习','p',.88]].map(([w,m,s,c,r])=>`<div class="row" style="padding:8px 12px;border-radius:14px"><span class="col" style="flex:1"><b lang="en" class="t15">${w}</b><span class="t12 mut">${m}</span></span><span style="width:110px"><span class="tag ${c}">${s}</span></span><span class="row" style="width:240px;gap:10px"><span class="bar"><i style="width:${r*100}%;background:${r<.6?'var(--e)':r<.8?'var(--w)':'var(--ok)'}"></i></span><b class="mono t13" style="width:48px;text-align:right">${(r*100).toFixed(0)}%</b></span></div>`).join('')});
-// Reference viewer: scale the artboards, keep the directory readable, and link related states.
-const boards = [...document.querySelectorAll('.board')];
-const boardPicker = document.getElementById('board-picker');
-for (const board of boards) {
-  const option = document.createElement('option');
-  option.value = board.id;
-  option.textContent = board.querySelector('.cap b').textContent;
-  boardPicker.append(option);
-}
+// Reference viewer: scale the artboards and link related states.
 function goToBoard(id) {
   const destination = document.getElementById(id);
   if (!destination) return;
-  const toolbarBottom=document.querySelector('.viewer').getBoundingClientRect().bottom;
-  const top=Math.max(0,window.scrollY+destination.getBoundingClientRect().top-toolbarBottom-16);
+  const top=Math.max(0,window.scrollY+destination.getBoundingClientRect().top-24);
   window.scrollTo({top,behavior:'instant'});
-  const board = destination.closest('.board');
-  boardPicker.value = board ? board.id : 'overview';
   history.replaceState(null,'','#'+id);
 }
-boardPicker.addEventListener('change',()=>goToBoard(boardPicker.value));
-const zoomPicker = document.getElementById('zoom-picker');
 function fitBoards() {
   const padding = window.innerWidth <= 650 ? 24 : 64;
-  const scale = zoomPicker.value === 'fit' ? Math.min(1,(window.innerWidth-padding)/1440) : Number(zoomPicker.value);
+  const scale = Math.min(1,(window.innerWidth-padding)/1440);
   document.querySelectorAll('.board>.shot,.intro').forEach(el=>{el.style.zoom=String(Math.max(.1,scale));});
 }
-zoomPicker.addEventListener('change',()=>{fitBoards();goToBoard(boardPicker.value);});
 window.addEventListener('resize',fitBoards);
 fitBoards();
 const linkTargets = new Map([

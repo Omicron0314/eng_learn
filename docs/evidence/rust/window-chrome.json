@@ -1,0 +1,31 @@
+{
+  "scope": "desktop window chrome: minimize, fullscreen and close",
+  "date": "2026-11-05",
+  "host": "Arch Linux x86_64, niri 26.04 Wayland, output 1706x1066 logical at scale 1.5",
+  "binary": "debug build of cijian-desktop at spikes/r00/target/debug/cijian-desktop",
+  "data": "isolated empty library; no private learning data, user audio or credentials",
+  "verified": [
+    "Linux client-side title bar renders 词间 | 今日 at 48dp with minimize, fullscreen and close at the top-right",
+    "the three 32dp targets stay inside the title bar in minimize/fullscreen/close order at 360 and 1000dp",
+    "the fullscreen control calls window.toggle_fullscreen and switches its glyph between expand and collapse in the headless UI test"
+  ],
+  "implementation": [
+    "macOS and Windows reuse gpui-kit-material TitleBar: macOS keeps its native traffic lights, and Windows keeps its platform caption buttons, which Windows hit-tests and acts on",
+    "Linux with client-side decorations draws the three controls itself because niri advertises no minimize capability and no usable maximize control",
+    "the Linux close control calls may_close/close_reader_when_saved before remove_window, reusing the system close guard"
+  ],
+  "screenshots": [
+    "window-chrome/linux-light-niri-847.png"
+  ],
+  "checks": [
+    "cargo fmt --all --check",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "cargo test --workspace"
+  ],
+  "not_verified": [
+    "macOS traffic lights and Windows caption buttons on real machines",
+    "dark-theme screenshot of the new chrome",
+    "minimize on niri, whose wm_capabilities report minimize=false; the control calls window.minimize_window where the compositor supports it",
+    "real IME, touch input and screen readers"
+  ]
+}

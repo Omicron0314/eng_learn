@@ -1,0 +1,59 @@
+{
+  "task": "R04–R17 feature tour",
+  "date": "2026-11-05",
+  "host": "Arch Linux x86_64; Xvfb X11 1600x1000 at scale 1; niri session not used for this pass",
+  "binary": "debug build of cijian-desktop at spikes/r00/target/debug/cijian-desktop",
+  "data": "isolated /tmp/cijian-ui created by the ignored test backend::tour_tests::seed_acceptance_fixture from original CSV rows; loopback OpenAI-compatible stub on 127.0.0.1:18080; no private learning database, user audio, real model calls or real credentials",
+  "scope": "Desktop only. R18 Web/WASM, R19–R20 native mobile and R21 sync remain deferred and were not exercised.",
+  "verified": [
+    "Today with review counts, inbox preview, book entry/card labels and heatmap",
+    "Review front, reveal, AI gloss for a missing meaning, FSRS interval preview and ratings",
+    "Library search via the / shortcut, row selection and editor, source labels without duplication, suspend action and delete-impact preview",
+    "Inbox without a batch bar at zero selection, selection bar after checking an item, source tag and batch add",
+    "Articles generation through the loopback stub, generated article opening, low-coverage diagnostics, today/history tabs, date filter and read/unread tags",
+    "Reader full paragraph without initial clipping, word lookup side sheet, reading completion, feedback and sentence flag dialog",
+    "Stats reading completion after the completion refresh, coverage trend with two points, experiment group and learned vocabulary",
+    "Settings AI labels, learning sliders and experiment parameters",
+    "audio player controls and cached replay were exercised in an earlier pass; native device evidence remains in docs/evidence/rust/native-audio.json"
+  ],
+  "fixed_during_pass": [
+    "lookup → add-to-review now stores the fetched gloss and backfills an existing missing-meaning card without overwriting user meanings",
+    "review reveal requests one persisted AI gloss for missing meanings and keeps rating responsive; stale rating revisions reload the queue",
+    "import word-list entry opens in word-list/baseline mode instead of card mode",
+    "review queue remaining count no longer includes already-rated cards and progress resets when re-entering review",
+    "library rows are selectable; duplicated source label removed; / focuses search",
+    "inbox batch bar appears only after a selection; imported meanings are no longer labelled AI-generated",
+    "reader body grows to the wrapped paragraph height on first render; audio toolbar no longer lives inside the scroll content",
+    "audio plays again after a natural end instead of calling resume on an empty sink; cached-audio state survives reopening",
+    "articles history/date filter and read/unread projection; stats learn-vocabulary pagination and single-point coverage state",
+    "reading completion/feedback refresh stats and the articles completion banner",
+    "backup success copy reflects whether audio is included; import/gloss/player labels corrected"
+  ],
+  "screenshots": [
+    "ui-fixes/reader-full-text.png",
+    "ui-fixes/library.png",
+    "ui-fixes/library-editor.png",
+    "ui-fixes/library-search-slash.png",
+    "ui-fixes/inbox-empty-selection.png",
+    "ui-fixes/inbox-selected.png",
+    "ui-fixes/articles-read-warning.png",
+    "ui-fixes/articles-history-date.png",
+    "ui-fixes/stats-coverage-completion.png",
+    "ui-fixes/settings-ai.png",
+    "ui-fixes/settings-learning.png",
+    "ui-fixes/settings-experiment.png"
+  ],
+  "checks": [
+    "cargo fmt --all --check",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "cargo test --workspace (30 UI tests, 42 storage tests, desktop tour and loopback e2e)"
+  ],
+  "not_verified": [
+    "manual file choosing through xdg-desktop-portal (import and legacy/backup dialogs); parsing and import commands are covered by automated tests",
+    "manual backup export/restore and legacy migration through the desktop dialogs; storage round-trip and migration tests only",
+    "dark theme in this pass (previous UI-redesign evidence remains the dark reference)",
+    "real Chinese IME composition, touch, screen readers, X11 without Xvfb, Windows and macOS",
+    "real model/TTS quality and long-term learning outcomes; the stub text is intentionally synthetic",
+    "generation history beyond the first page and stats learned-vocabulary pagination with more than 50 rows"
+  ]
+}

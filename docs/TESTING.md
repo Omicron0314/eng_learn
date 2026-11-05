@@ -48,7 +48,11 @@
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo run -p cijian-desktop
+# 仅在需要复现隔离桌面fixture时执行（写入指定空目录，测试代码不进入产品）。
+# 需先运行一个本地OpenAI兼容stub；默认端点 http://127.0.0.1:18080/v1，
+# 也可用 CIJIAN_STUB_ENDPOINT 覆盖并在随后的人工UI中继续生成/朗读。
+CIJIAN_ACCEPTANCE_DIR=/tmp/cijian-ui cargo test -p cijian-desktop seed_acceptance_fixture -- --ignored
+cargo run -p cijian-desktop -- --data-dir /tmp/cijian-ui
 # 远期：R18 建立该包及浏览器适配后
 cargo check -p cijian-wasm --target wasm32-unknown-unknown
 ```
