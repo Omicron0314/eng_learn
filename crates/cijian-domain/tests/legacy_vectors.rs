@@ -1,5 +1,5 @@
 use chrono::DateTime;
-use cijian_domain::srs::{SrsState, State, preview};
+use cijian_domain::srs::{INITIAL_EASE_FACTOR, SrsState, State, preview};
 use serde_json::Value;
 fn ms(value: &Value) -> i64 {
     DateTime::parse_from_rfc3339(value.as_str().unwrap())
@@ -7,7 +7,7 @@ fn ms(value: &Value) -> i64 {
         .timestamp_millis()
 }
 #[test]
-fn legacy_memory_vectors_and_review_schedule_match() {
+fn legacy_memory_vectors_match() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../spikes/r00/fsrs-vectors.json")).unwrap();
     let now = ms(&fixture["now"]);
@@ -32,11 +32,11 @@ fn legacy_memory_vectors_and_review_schedule_match() {
             elapsed_days: c["elapsed_days"].as_u64().unwrap() as u32,
             scheduled_days: c["scheduled_days"].as_u64().unwrap() as u32,
             learning_steps: c["learning_steps"].as_u64().unwrap() as u32,
+            ease_factor: INITIAL_EASE_FACTOR,
         };
-        // This fixture is a ts-fsrs memory-state vector. New/Learning due
-        // times and steps are intentionally governed by Anki's learning-step
-        // policy and are covered by the srs unit tests instead.
-        let anki_learning = matches!(input.state, State::New | State::Learning);
+        // This fixture is a ts-fsrs memory-state vector. Due times, steps and
+        // review intervals are now governed by Anki's scheduler and are
+        // covered by the srs unit tests instead.
         for (index, actual) in preview(&input, now, 0.9).unwrap().iter().enumerate() {
             let expected = &case["ratings"][index]["card"];
             let context = format!("{} rating {}", case["name"], index + 1);
@@ -58,23 +58,6 @@ fn legacy_memory_vectors_and_review_schedule_match() {
                 Some(ms(&expected["last_review"])),
                 "{context}"
             );
-            if anki_learning {
-                continue;
-            }
-            assert_eq!(actual.due, ms(&expected["due"]), "{context}");
-            assert_eq!(actual.state, state(&expected["state"]), "{context}");
-            for (name, value) in [
-                ("lapses", actual.lapses),
-                ("elapsed_days", actual.elapsed_days),
-                ("scheduled_days", actual.scheduled_days),
-                ("learning_steps", actual.learning_steps),
-            ] {
-                assert_eq!(
-                    u64::from(value),
-                    expected[name].as_u64().unwrap(),
-                    "{context} {name}"
-                );
-            }
         }
     }
 }

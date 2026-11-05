@@ -2,7 +2,7 @@ use crate::{CardId, ValidationError};
 use fsrs::{FSRS, MemoryState};
 use serde::{Deserialize, Serialize};
 
-pub const SCHEDULER_VERSION: &str = "fsrs-rs/6.6.2;anki-26.09.3-steps;v2";
+pub const SCHEDULER_VERSION: &str = "fsrs-rs/6.6.2;anki-26.09.3-ease;v3";
 const DAY: i64 = 86_400_000;
 const MINUTE: i64 = 60_000;
 /// Anki's default learning steps: 1m, 10m.
@@ -14,6 +14,17 @@ pub const LEARN_AHEAD_MS: i64 = 20 * MINUTE;
 /// Anki's default graduating intervals.
 const GRADUATING_GOOD_DAYS: u32 = 1;
 const GRADUATING_EASY_DAYS: u32 = 4;
+/// Anki's non-FSRS review scheduling defaults.
+pub const INITIAL_EASE_FACTOR: u32 = 2500;
+const MINIMUM_EASE_FACTOR: u32 = 1300;
+const EASE_AGAIN_DELTA: i32 = -200;
+const EASE_HARD_DELTA: i32 = -150;
+const EASE_EASY_DELTA: i32 = 150;
+const HARD_MULTIPLIER: f64 = 1.2;
+const EASY_MULTIPLIER: f64 = 1.3;
+const MAX_INTERVAL_DAYS: u32 = 36_500;
+const LAPSE_MULTIPLIER: f64 = 0.0;
+const MINIMUM_LAPSE_INTERVAL: u32 = 1;
 const PARAMETERS: [f32; 21] = [
     0.212, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001, 1.8722, 0.1666, 0.796, 1.4835,
     0.0614, 0.2629, 1.6483, 0.6014, 1.8729, 0.5425, 0.0912, 0.0658, 0.1542,
@@ -51,6 +62,8 @@ pub struct SrsState {
     pub elapsed_days: u32,
     pub scheduled_days: u32,
     pub learning_steps: u32,
+    #[serde(default = "initial_ease_factor")]
+    pub ease_factor: u32,
 }
 impl SrsState {
     pub fn new(now: i64) -> Self {
@@ -65,6 +78,7 @@ impl SrsState {
             elapsed_days: 0,
             scheduled_days: 0,
             learning_steps: 0,
+            ease_factor: INITIAL_EASE_FACTOR,
         }
     }
     pub fn validate(&self) -> Result<(), ValidationError> {
@@ -88,8 +102,57 @@ impl SrsState {
         {
             return Err(ValidationError::new("learningSteps", "无法映射旧学习步骤"));
         }
+        if self.ease_factor < MINIMUM_EASE_FACTOR {
+            return Err(ValidationError::new("ease", "易度因子无效"));
+        }
         Ok(())
     }
+}
+
+fn initial_ease_factor() -> u32 {
+    INITIAL_EASE_FACTOR
+}
+
+fn adjust_ease(ease: u32, delta: i32) -> u32 {
+    if delta >= 0 {
+        ease.saturating_add(delta as u32)
+    } else {
+        ease.saturating_sub(delta.unsigned_abs())
+            .max(MINIMUM_EASE_FACTOR)
+    }
+}
+
+fn clamp_interval(days: f64) -> u32 {
+    days.round().clamp(1.0, f64::from(MAX_INTERVAL_DAYS)) as u32
+}
+
+/// Anki's non-FSRS hard/good/easy interval calculation, without fuzz.
+fn review_intervals(card: &SrsState, elapsed: u32) -> (u32, u32, u32) {
+    let scheduled = f64::from(card.scheduled_days.max(1));
+    let elapsed = f64::from(elapsed);
+    let ease = f64::from(card.ease_factor) / 1000.0;
+    let (hard, good, easy) = if elapsed < scheduled {
+        let hard = (elapsed * HARD_MULTIPLIER).max(scheduled * HARD_MULTIPLIER / 2.0);
+        let good = (elapsed * ease).max(scheduled);
+        let reduced_bonus = EASY_MULTIPLIER - (EASY_MULTIPLIER - 1.0) / 2.0;
+        (hard, good, good * reduced_bonus)
+    } else {
+        let hard = (scheduled * HARD_MULTIPLIER).max(scheduled + 1.0);
+        let good = ((scheduled + (elapsed - scheduled) / 2.0) * ease).max(hard + 1.0);
+        let easy = ((scheduled + (elapsed - scheduled)) * ease * EASY_MULTIPLIER).max(good + 1.0);
+        (hard, good, easy)
+    };
+    (
+        clamp_interval(hard),
+        clamp_interval(good),
+        clamp_interval(easy),
+    )
+}
+
+fn lapsed_interval(card: &SrsState) -> u32 {
+    (f64::from(card.scheduled_days.max(1)) * LAPSE_MULTIPLIER)
+        .max(f64::from(MINIMUM_LAPSE_INTERVAL))
+        .round() as u32
 }
 
 pub fn preview(
@@ -122,13 +185,8 @@ pub fn preview(
         .next_states(memory, retention as f32, elapsed)
         .map_err(|_| ValidationError::new("srs", "无法计算记忆状态"))?;
     let states = [next.again, next.hard, next.good, next.easy];
-    let mut days =
-        std::array::from_fn::<_, 4, _>(|i| states[i].interval.round().clamp(1.0, 36500.0) as u32);
-    if card.state == State::Review {
-        days[1] = days[1].min(days[2]);
-        days[2] = days[2].max(days[1] + 1);
-        days[3] = days[3].max(days[2] + 1);
-    }
+    let (hard_days, good_days, easy_days) = review_intervals(card, elapsed);
+    let lapsed_days = lapsed_interval(card);
     let mut output = std::array::from_fn(|_| card.clone());
     for (index, out) in output.iter_mut().enumerate() {
         let rating = Rating::ALL[index];
@@ -140,12 +198,16 @@ pub fn preview(
             .ok_or(ValidationError::new("reps", "复习次数超出范围"))?;
         out.elapsed_days = elapsed;
         out.last_review = Some(now);
-        // Mirror Anki's learning-step transitions. Hard stays on the current
-        // step; Good advances to the next step and graduates from the last.
-        let (state, interval, step) = match (card.state, rating) {
-            (State::New | State::Learning, Rating::Again) => {
-                (State::Learning, LEARN_STEP_MINUTES[0] * MINUTE, 0)
-            }
+        // Anki's learning-step transitions, followed by its non-FSRS ease
+        // scheduling for review/relearning cards.
+        let (state, interval, step, ease, scheduled_days) = match (card.state, rating) {
+            (State::New | State::Learning, Rating::Again) => (
+                State::Learning,
+                LEARN_STEP_MINUTES[0] * MINUTE,
+                0,
+                card.ease_factor,
+                0,
+            ),
             (State::New | State::Learning, Rating::Hard) => {
                 let delay = if card.learning_steps == 0 {
                     // Anki uses the average of the first two steps (5.5m).
@@ -153,36 +215,102 @@ pub fn preview(
                 } else {
                     LEARN_STEP_MINUTES[1] * MINUTE
                 };
-                (State::Learning, delay, card.learning_steps)
+                (
+                    State::Learning,
+                    delay,
+                    card.learning_steps,
+                    card.ease_factor,
+                    0,
+                )
             }
-            (State::New | State::Learning, Rating::Good) if card.learning_steps == 0 => {
-                (State::Learning, LEARN_STEP_MINUTES[1] * MINUTE, 1)
+            (State::New | State::Learning, Rating::Good) if card.learning_steps == 0 => (
+                State::Learning,
+                LEARN_STEP_MINUTES[1] * MINUTE,
+                1,
+                card.ease_factor,
+                0,
+            ),
+            (State::New | State::Learning, Rating::Good) => (
+                State::Review,
+                i64::from(GRADUATING_GOOD_DAYS) * DAY,
+                0,
+                INITIAL_EASE_FACTOR,
+                GRADUATING_GOOD_DAYS,
+            ),
+            (State::New | State::Learning, Rating::Easy) => (
+                State::Review,
+                i64::from(GRADUATING_EASY_DAYS) * DAY,
+                0,
+                INITIAL_EASE_FACTOR,
+                GRADUATING_EASY_DAYS,
+            ),
+            (State::Review, Rating::Again) => (
+                State::Relearning,
+                RELEARN_STEP_MINUTES * MINUTE,
+                0,
+                adjust_ease(card.ease_factor, EASE_AGAIN_DELTA),
+                lapsed_days,
+            ),
+            (State::Review, Rating::Hard) => (
+                State::Review,
+                i64::from(hard_days) * DAY,
+                0,
+                adjust_ease(card.ease_factor, EASE_HARD_DELTA),
+                hard_days,
+            ),
+            (State::Review, Rating::Good) => (
+                State::Review,
+                i64::from(good_days) * DAY,
+                0,
+                card.ease_factor,
+                good_days,
+            ),
+            (State::Review, Rating::Easy) => (
+                State::Review,
+                i64::from(easy_days) * DAY,
+                0,
+                adjust_ease(card.ease_factor, EASE_EASY_DELTA),
+                easy_days,
+            ),
+            (State::Relearning, Rating::Again) => (
+                State::Relearning,
+                RELEARN_STEP_MINUTES * MINUTE,
+                0,
+                card.ease_factor,
+                card.scheduled_days.max(MINIMUM_LAPSE_INTERVAL),
+            ),
+            (State::Relearning, Rating::Hard) => (
+                State::Relearning,
+                RELEARN_STEP_MINUTES * MINUTE * 3 / 2,
+                0,
+                card.ease_factor,
+                card.scheduled_days.max(MINIMUM_LAPSE_INTERVAL),
+            ),
+            (State::Relearning, Rating::Good) => {
+                let days = card.scheduled_days.max(MINIMUM_LAPSE_INTERVAL);
+                (
+                    State::Review,
+                    i64::from(days) * DAY,
+                    0,
+                    card.ease_factor,
+                    days,
+                )
             }
-            (State::New | State::Learning, Rating::Good) => {
-                (State::Review, i64::from(GRADUATING_GOOD_DAYS) * DAY, 0)
-            }
-            (State::New | State::Learning, Rating::Easy) => {
-                (State::Review, i64::from(GRADUATING_EASY_DAYS) * DAY, 0)
-            }
-            (State::Review, Rating::Again) => (State::Relearning, RELEARN_STEP_MINUTES * MINUTE, 0),
-            (State::Relearning, Rating::Again) => {
-                (State::Relearning, RELEARN_STEP_MINUTES * MINUTE, 0)
-            }
-            (State::Relearning, Rating::Hard) => {
-                (State::Relearning, RELEARN_STEP_MINUTES * MINUTE * 3 / 2, 0)
-            }
-            (State::Review, _) | (State::Relearning, _) => {
-                (State::Review, i64::from(days[index]) * DAY, 0)
+            (State::Relearning, Rating::Easy) => {
+                let days = card.scheduled_days.max(MINIMUM_LAPSE_INTERVAL) + 1;
+                (
+                    State::Review,
+                    i64::from(days) * DAY,
+                    0,
+                    card.ease_factor,
+                    days,
+                )
             }
         };
         out.state = state;
         out.learning_steps = step;
-        out.scheduled_days = if state == State::Review {
-            u32::try_from(interval / DAY)
-                .map_err(|_| ValidationError::new("due", "到期时间超出范围"))?
-        } else {
-            0
-        };
+        out.ease_factor = ease;
+        out.scheduled_days = scheduled_days;
         if card.state == State::Review && rating == Rating::Again {
             out.lapses = card
                 .lapses
@@ -409,6 +537,42 @@ mod tests {
         // Again goes back to the first step from any learning step.
         assert_eq!(after_good[0].due, last.due + 60_000);
         assert_eq!(after_good[0].learning_steps, 0);
+    }
+    #[test]
+    fn review_intervals_follow_anki_ease_scheduler() {
+        let retention = 0.9;
+        let now = 1_000_000;
+        let review = rate(&SrsState::new(now), Rating::Easy, now, retention).unwrap();
+        assert_eq!(review.state, State::Review);
+        assert_eq!(review.scheduled_days, GRADUATING_EASY_DAYS);
+        assert_eq!(review.ease_factor, INITIAL_EASE_FACTOR);
+        assert_eq!(review.due, now + i64::from(GRADUATING_EASY_DAYS) * DAY);
+
+        let due = review.due;
+        let previews = preview(&review, due, retention).unwrap();
+        assert_eq!(previews[0].state, State::Relearning);
+        assert_eq!(previews[0].due, due + RELEARN_STEP_MINUTES * MINUTE);
+        assert_eq!(previews[0].scheduled_days, MINIMUM_LAPSE_INTERVAL);
+        assert_eq!(previews[0].ease_factor, 2300);
+        assert_eq!(previews[0].lapses, 1);
+        assert_eq!(previews[1].scheduled_days, 5);
+        assert_eq!(previews[1].ease_factor, 2350);
+        assert_eq!(previews[2].scheduled_days, 10);
+        assert_eq!(previews[2].ease_factor, 2500);
+        assert_eq!(previews[3].scheduled_days, 13);
+        assert_eq!(previews[3].ease_factor, 2650);
+
+        let relearn = previews[0].clone();
+        let at = relearn.due;
+        let relearned = preview(&relearn, at, retention).unwrap();
+        assert_eq!(relearned[0].due, at + RELEARN_STEP_MINUTES * MINUTE);
+        assert_eq!(relearned[1].due, at + RELEARN_STEP_MINUTES * MINUTE * 3 / 2);
+        assert_eq!(relearned[2].state, State::Review);
+        assert_eq!(relearned[2].scheduled_days, 1);
+        assert_eq!(relearned[2].due, at + DAY);
+        assert_eq!(relearned[3].state, State::Review);
+        assert_eq!(relearned[3].scheduled_days, 2);
+        assert_eq!(relearned[3].due, at + 2 * DAY);
     }
     #[test]
     fn learning_card_can_be_rated_ahead_but_not_beyond_limit() {

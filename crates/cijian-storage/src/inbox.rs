@@ -40,7 +40,7 @@ fn add_card(
             r.get(0)
         })
         .map_err(unavailable)?;
-    tx.execute("INSERT INTO cards(id,profile_id,lexeme_id,front,meaning,example,text_source,origin,state,due,stability,difficulty,reps,lapses,elapsed_days,scheduled_days,learning_steps,scheduler_version,created_at,updated_at,revision) VALUES (?1,?2,?3,?4,?5,'',?6,'lookup','new',?7,0,0,0,0,0,0,0,?8,?7,?7,1)",params![id,profile,lexeme,lemma,meaning,if meaning.is_empty(){"missing"}else{"lookup"},now,SCHEDULER_VERSION]).map_err(unavailable)?;
+    tx.execute("INSERT INTO cards(id,profile_id,lexeme_id,front,meaning,example,text_source,origin,state,due,stability,difficulty,reps,lapses,elapsed_days,scheduled_days,learning_steps,ease_factor,scheduler_version,created_at,updated_at,revision) VALUES (?1,?2,?3,?4,?5,'',?6,'lookup','new',?7,0,0,0,0,0,0,0,2500,?8,?7,?7,1)",params![id,profile,lexeme,lemma,meaning,if meaning.is_empty(){"missing"}else{"lookup"},now,SCHEDULER_VERSION]).map_err(unavailable)?;
     Ok(AddedCard {
         id: id.into(),
         created: true,

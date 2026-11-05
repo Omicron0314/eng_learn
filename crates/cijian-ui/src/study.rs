@@ -3732,7 +3732,7 @@ impl Shell {
             pane = pane.child(
                 design::muted_text(13., 18.)
                     .mt(px(16.))
-                    .child("按真实记忆选择 · 间隔由 FSRS 计算"),
+                    .child("按真实记忆选择 · 间隔按 Anki 调度"),
             );
         } else {
             pane = pane.child(

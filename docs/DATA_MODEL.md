@@ -20,7 +20,7 @@
 | lexemes | id、lemma、pos（非NULL，未知为''）、kind word/phrase；UNIQUE(lemma,pos,kind) |
 | word_books | id、profile_id、name、kind baseline/study、source、archived_at?；有效同名同类唯一 |
 | book_entries | id、profile_id、book_id、lexeme_id、raw、import_id?；UNIQUE(book_id,lexeme_id) |
-| cards | id、profile_id、lexeme_id、front、meaning、example、text_source、origin、suspended、archived_at?、FSRS完整状态、scheduler_version、revision；UNIQUE(profile_id,lexeme_id) |
+| cards | id、profile_id、lexeme_id、front、meaning、example、text_source、origin、suspended、archived_at?、FSRS完整状态、Anki ease/间隔、scheduler_version、revision；UNIQUE(profile_id,lexeme_id) |
 | review_logs | id、profile_id、card_id、operation_id、rating、state_before/after、due_before/after、scheduler_version、reviewed_at、duration_ms、旧记录metadata；append-only |
 | events | id、profile_id、device_id?、operation_id、ordinal、type、schema_version、payload_json、occurred_at；UNIQUE(profile_id,operation_id,ordinal)；append-only |
 | command_receipts | profile_id＋operation_id PK、command_type、result_json、completed_at；与业务写同事务 |
@@ -40,7 +40,7 @@
 | generation_snapshots | job_id PK/FK、snapshot_json；固定目标/对照、KnownSet、学习设置及公开 provider 配置，不保存 secret；未完成 job 不进入学习备份 |
 | migrations / legacy_imports | schema版本／checksum；源库fingerprint、映射版本、报告hash、目标profile、完成时间，防止重复迁入 |
 
-FSRS 状态含 state、due、stability、difficulty、reps、lapses、last_review、elapsed_days、scheduled_days、learning_steps 等锁定版本所需字段。升级算法不能只保留 due；无法转换的状态报告阻塞，不全量重置词卡。
+调度状态含 state、due、stability、difficulty（FSRS 记忆快照）、ease_factor（Anki 千分制易度）、reps、lapses、last_review、elapsed_days、scheduled_days、learning_steps 等锁定版本所需字段。升级算法不能只保留 due；无法转换的状态报告阻塞，不全量重置词卡。
 
 卡片不再用 deck 字符串作为唯一归属；成员从 book_entries 关联同词的卡，允许多书共享一张卡。删除一书不伤及其他书的卡；仅保留历史的卡显式归档，不混在普通暂停卡中。
 

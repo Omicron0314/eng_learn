@@ -1,0 +1,1 @@
+ALTER TABLE cards ADD COLUMN ease_factor INTEGER NOT NULL DEFAULT 2500 CHECK(ease_factor>=1300);

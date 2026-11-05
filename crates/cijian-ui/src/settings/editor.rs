@@ -31,7 +31,7 @@ pub(super) const FIELDS: [Field; 10] = [
     Field {
         id: "retention",
         name: "requestRetention",
-        label: "目标记忆保留率",
+        label: "记忆评估保留率",
     },
     Field {
         id: "min-words",

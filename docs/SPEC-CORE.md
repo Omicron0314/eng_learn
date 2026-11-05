@@ -11,7 +11,7 @@
 | level | B1 | A2 / B1 / B2 / C1，仅指导文本风格，不凭等级伪造 KnownSet |
 | dailyNewLimit | 20 | 整数 0–200 |
 | dailyReviewLimit | 200 | 整数 0–2000 |
-| requestRetention | 0.90 | 0.70–0.99 |
+| requestRetention | 0.90 | 0.70–0.99；仅影响 FSRS 记忆评估/可提取率，不改变 Anki 到期间隔 |
 | tier | medium | easy ≥98%；medium 95–98%；hard 90–95% |
 | articleMinWords / articleMaxWords | 220 / 420 | min 100–800；max 100–1000；min≤max |
 | genre | auto | auto / story / dialogue / monologue |
@@ -30,11 +30,11 @@
 
 时间持久化为 UTC Unix 毫秒。学习日由 IANA 时区内的 `dayStartHour:00` 到次日同一边界组成 `[start,end)`，不能简单减 UTC 4 小时；夏令时缺失小时取其后的首个有效时刻，重叠小时取较早时刻。周一为一周开始。更改日界／时区后历史统计按当前设置重新分组，事件原始时刻不变。
 
-领域层接收固定 `now`、随机源、ID 源；不自行读系统时间或随机数。FSRS 使用可验证的 Rust 实现，版本与参数锁定，旧调度状态转换在 R00/R02 做样例对照，不自创替代公式。
+领域层接收固定 `now`、随机源、ID 源；不自行读系统时间或随机数。FSRS 记忆状态使用可验证的 Rust 实现，版本与参数锁定；到期间隔按 Anki 26.09.3 的非 FSRS ease 调度（D57），FSRS 只用于可提取率与统计。旧调度状态转换在 R00/R02 做样例对照，不自创替代公式。
 
 队列：到期 learning/relearning → 到期 Review/New（按 Anki 默认 MixWithReviews 交错） → 20 分钟 learn-ahead 内的 learning/relearning；学习卡先按是否已尝试过、再按 due、创建时间和 id 稳定排序，主队列按 due／创建时间／id 稳定排序。暂停／归档卡不进队列。首次从 New 评分占当天一个新词名额；当天 Review 状态的有效评分占复习次数名额，learning/relearning 不占这两个新增名额。新建卡只进入待学池，不在建卡时消耗新词名额。
 
-四档评分仅在翻面后提交。应用在事务内验证卡版本、due、资格和最新配额，更新完整 FSRS 状态、追加 review_log 和 review 事件；命令重放返回原结果，过期版本拒绝。四档预览与提交使用同一调度参数版本；真实提交时间变化允许重新计算。学习步骤采用 Anki 默认 learn 1m/10m、relearn 10m、毕业 1d/4d；Hard 停在当前步，Good 推进并在末步毕业，Again 回首步。主队列为空时 learn-ahead 窗口内的 learning/relearning 直接进入队列，并允许在到期前评分；等待超出窗口的学习步骤与全日完成分开显示。复习卡间隔仍由 FSRS 计算。
+四档评分仅在翻面后提交。应用在事务内验证卡版本、due、资格和最新配额，更新完整调度状态（FSRS 记忆快照、Anki ease/间隔）、追加 review_log 和 review 事件；命令重放返回原结果，过期版本拒绝。四档预览与提交使用同一调度参数版本；真实提交时间变化允许重新计算。学习步骤采用 Anki 默认 learn 1m/10m、relearn 10m、毕业 1d/4d；Hard 停在当前步，Good 推进并在末步毕业，Again 回首步。主队列为空时 learn-ahead 窗口内的 learning/relearning 直接进入队列，并允许在到期前评分；等待超出窗口的学习步骤与全日完成分开显示。复习卡间隔按 D57 的 Anki ease 公式计算。
 
 ## 3. 导入、词书与卡片
 
@@ -74,7 +74,7 @@ control 不进任何提示、修复或避词列表。每个 exposed 目标要求
 
 认识：更新 mark，追加事件；不自动删除学习卡。不认识：markOnly 建立／复用同词 pending inbox；autoAdd 幂等建卡并处理相关 pending 项。显式加入复习不受 lookupMode 影响。已暂停卡返回 paused 状态并提供显式恢复，归档卡不自动复活。同词再次从已忽略状态出现可新建 pending 项，保留新上下文与历史。
 
-批量整理全成或全败；成功加入不会重置已有 FSRS 状态，不覆盖用户释义。每项有可追踪事件，计数来自实际处理结果。
+批量整理全成或全败；成功加入不会重置已有调度状态，不覆盖用户释义。每项有可追踪事件，计数来自实际处理结果。
 
 ## 7. 音频与预算
 

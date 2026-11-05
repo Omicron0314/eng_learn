@@ -342,13 +342,19 @@ impl Store {
             }
             for row in rows {
                 let object = row.as_object().ok_or(invalid("备份行不是对象"))?;
+                let mut object = object.clone();
+                if *table == "cards" && !object.contains_key("ease_factor") {
+                    object.insert(
+                        "ease_factor".into(),
+                        json!(cijian_domain::srs::INITIAL_EASE_FACTOR),
+                    );
+                }
                 if object.len() != names.len() || names.iter().any(|n| !object.contains_key(n)) {
                     return Err(invalid("备份含未知或缺失的列"));
                 }
                 if *table == "legacy_records" {
                     crate::legacy::validate_archive(row)?;
                 }
-                let mut object = object.clone();
                 if *table == "profiles" {
                     if object["id"] != source {
                         return Err(invalid("档案身份不一致"));

@@ -48,6 +48,43 @@ fn roundtrip_retains_articles_events_and_excludes_credentials_jobs() {
     );
 }
 #[test]
+fn old_packages_without_ease_restore_with_the_initial_factor() {
+    let source = store();
+    source
+        .connection
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO cards(id,profile_id,lexeme_id,front,text_source,origin,state,due,stability,difficulty,reps,lapses,elapsed_days,scheduled_days,learning_steps,scheduler_version,created_at,updated_at,revision) VALUES ('card','p','cat','cat','missing','import','new',0,0,0,0,0,0,0,0,'test',0,0,1)",
+            [],
+        )
+        .unwrap();
+    let mut package = source.export_profile("p", false).unwrap();
+    package.payload["tables"]["cards"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("ease_factor");
+    package.checksum = hash(&cijian_domain::json::canonical_json(&package.payload));
+    let target = Store::memory().unwrap();
+    target
+        .restore_profile(package, "restored", "event", "restore", 1)
+        .unwrap();
+    let cards = target
+        .cards(
+            "restored",
+            cijian_ports::library::CardFilter {
+                page_size: 10,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(cards.total, 1);
+    assert_eq!(
+        cards.cards[0].srs.ease_factor,
+        cijian_domain::srs::INITIAL_EASE_FACTOR
+    );
+}
+#[test]
 fn corrupted_unknown_and_nonempty_restores_leave_destination_unchanged() {
     let source = populated();
     let package = source.export_profile("p", false).unwrap();

@@ -265,6 +265,12 @@ fn v3_review_upgrade_preserves_after_fields_and_append_only_guards() {
         .unwrap(),
         ("learning".into(), 1)
     );
+    assert_eq!(
+        db.query_row("SELECT ease_factor FROM cards WHERE id='c'", [], |r| r
+            .get::<_, u32>(0))
+            .unwrap(),
+        cijian_domain::srs::INITIAL_EASE_FACTOR
+    );
     assert!(db.execute("DELETE FROM review_logs", []).is_err());
     assert!(
         db.execute("UPDATE review_logs SET rating='easy'", [])

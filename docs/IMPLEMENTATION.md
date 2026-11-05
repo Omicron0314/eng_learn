@@ -32,9 +32,9 @@ R18–R21 自 2026-11-05 起为远期规划（D47）；下表对应行只记录�
 
 ## 2026-11-05 全功能巡检
 
-在 Xvfb 隔离数据目录中通过 `seed_acceptance_fixture` 建立原创 fixture，使用 loopback OpenAI-compatible/TTS stub，按页面逐项操作并截图。记录见 [ui-fix-tour.json](evidence/rust/ui-fix-tour.json)。本轮修复了：点词后加入复习丢失释义、复习缺释义不自动补全、导入词表入口默认词卡、复习剩余数包含已评分卡、词库行不可选/来源重复、生词箱零选择仍显示批处理栏、生词箱把导入释义标成AI生成、阅读正文首帧被截断、音频自然结束后不能重播、文章无历史/日期筛选/已读状态、统计无单点覆盖率/已学词分页、完成阅读后统计不刷新、备份成功提示固定写成不含音频等。对应测试覆盖见 `cargo test --workspace`（UI 31项、存储44项、桌面 tour/e2e）。
+在 Xvfb 隔离数据目录中通过 `seed_acceptance_fixture` 建立原创 fixture，使用 loopback OpenAI-compatible/TTS stub，按页面逐项操作并截图。记录见 [ui-fix-tour.json](evidence/rust/ui-fix-tour.json)。本轮修复了：点词后加入复习丢失释义、复习缺释义不自动补全、导入词表入口默认词卡、复习剩余数包含已评分卡、词库行不可选/来源重复、生词箱零选择仍显示批处理栏、生词箱把导入释义标成AI生成、阅读正文首帧被截断、音频自然结束后不能重播、文章无历史/日期筛选/已读状态、统计无单点覆盖率/已学词分页、完成阅读后统计不刷新、备份成功提示固定写成不含音频等。对应测试覆盖见 `cargo test --workspace`（UI 31项、存储45项、桌面 tour/e2e）。
 
-学习步骤原先固定为 ts-fsrs 的 1m/6m/10m，且等待态需要离开页面再进入。现在按 Anki 26.09.3 默认逻辑：learn 1m/10m、relearn 10m、Hard 停在当前步（首步 5.5m、末步 10m）、Good 推进并在末步毕业到 1d、Easy 毕业到 4d；主队列的 Review/New 按 Anki 默认 MixWithReviews 交错；主队列为空时 20 分钟 learn-ahead 内的 learning/relearning 直接进入队列，允许提前评分，不再显示倒计时。领域测试覆盖步骤序列、提前评分和队列顺序，存储测试覆盖 ahead 队列与超窗口等待，UI 测试覆盖 1m/6m/10m/4d 显示。复习卡仍使用 FSRS。
+学习步骤原先固定为 ts-fsrs 的 1m/6m/10m，且等待态需要离开页面再进入。现在按 Anki 26.09.3 默认逻辑：learn 1m/10m、relearn 10m、Hard 停在当前步（首步 5.5m、末步 10m）、Good 推进并在末步毕业到 1d、Easy 毕业到 4d；主队列的 Review/New 按 Anki 默认 MixWithReviews 交错；主队列为空时 20 分钟 learn-ahead 内的 learning/relearning 直接进入队列，允许提前评分，不再显示倒计时。领域测试覆盖步骤序列、提前评分、队列顺序和 Anki ease 复习间隔，存储测试覆盖 ahead 队列与超窗口等待，UI 测试覆盖 1m/6m/10m/4d 显示。复习卡间隔按 Anki ease，FSRS 记忆状态保留用于可提取率/统计。
 
 仍未完成：文件选择器与备份/旧库迁移的自动化链路、远端TTS配置显式清除、超过50条已学词和超过30篇历史文章的自动化分页测试。这三类在 CI 覆盖后即可收口；Windows／macOS、IME、触摸、真实模型/TTS质量与长期效果不在本轮 AC（D54）。本轮巡检不是完整 R17 通过。
 

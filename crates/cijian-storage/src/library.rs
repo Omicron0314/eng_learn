@@ -52,6 +52,7 @@ pub(super) fn read_card(row: &Row<'_>) -> rusqlite::Result<CardView> {
             elapsed_days: row.get("elapsed_days")?,
             scheduled_days: row.get("scheduled_days")?,
             learning_steps: row.get("learning_steps")?,
+            ease_factor: row.get("ease_factor")?,
         },
     })
 }
@@ -98,7 +99,7 @@ impl Store {
                 if c.kind==BookKind::Study {
                     let card_exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM cards WHERE profile_id=?1 AND lexeme_id=?2)",params![c.profile_id,lexeme],|r|r.get(0)).map_err(unavailable)?;
                     if !card_exists {
-                        tx.execute("INSERT INTO cards(id,profile_id,lexeme_id,front,meaning,example,text_source,origin,state,due,stability,difficulty,reps,lapses,elapsed_days,scheduled_days,learning_steps,scheduler_version,created_at,updated_at,revision) VALUES (?1,?2,?3,?4,?5,?6,?7,'import','new',?8,0,0,0,0,0,0,0,?9,?8,?8,1)",params![ids.card,c.profile_id,lexeme,row.front,row.meaning,row.example,if row.meaning.is_empty(){"missing"}else{"imported"},c.now,SCHEDULER_VERSION]).map_err(unavailable)?;
+                        tx.execute("INSERT INTO cards(id,profile_id,lexeme_id,front,meaning,example,text_source,origin,state,due,stability,difficulty,reps,lapses,elapsed_days,scheduled_days,learning_steps,ease_factor,scheduler_version,created_at,updated_at,revision) VALUES (?1,?2,?3,?4,?5,?6,?7,'import','new',?8,0,0,0,0,0,0,0,2500,?9,?8,?8,1)",params![ids.card,c.profile_id,lexeme,row.front,row.meaning,row.example,if row.meaning.is_empty(){"missing"}else{"imported"},c.now,SCHEDULER_VERSION]).map_err(unavailable)?;
                         report.cards_added+=1;
                     }
                 }
@@ -293,7 +294,7 @@ impl Store {
                 if count>=limit{return Err(AppError::new(ErrorCode::QuotaExceeded,"今日该类复习额度已用完"));}
             }
             let before=card.srs.clone();let next=srs::rate(&before,c.rating,c.now,settings.request_retention).map_err(|e|invalid(&e.to_string()))?;
-            let changed=tx.execute("UPDATE cards SET state=?1,due=?2,stability=?3,difficulty=?4,reps=?5,lapses=?6,last_review=?7,elapsed_days=?8,scheduled_days=?9,learning_steps=?10,scheduler_version=?11,updated_at=?12,revision=revision+1 WHERE profile_id=?13 AND id=?14 AND revision=?15",params![state_name(next.state),next.due,next.stability,next.difficulty,next.reps,next.lapses,next.last_review,next.elapsed_days,next.scheduled_days,next.learning_steps,SCHEDULER_VERSION,c.now,c.profile_id,c.card_id,expected]).map_err(unavailable)?;
+            let changed=tx.execute("UPDATE cards SET state=?1,due=?2,stability=?3,difficulty=?4,reps=?5,lapses=?6,last_review=?7,elapsed_days=?8,scheduled_days=?9,learning_steps=?10,ease_factor=?11,scheduler_version=?12,updated_at=?13,revision=revision+1 WHERE profile_id=?14 AND id=?15 AND revision=?16",params![state_name(next.state),next.due,next.stability,next.difficulty,next.reps,next.lapses,next.last_review,next.elapsed_days,next.scheduled_days,next.learning_steps,next.ease_factor,SCHEDULER_VERSION,c.now,c.profile_id,c.card_id,expected]).map_err(unavailable)?;
             if changed!=1{return Err(AppError::new(ErrorCode::StaleState,"词卡已变更"));}
             tx.execute("INSERT INTO review_logs(id,profile_id,card_id,operation_id,rating,state_before,state_after,due_before,due_after,scheduler_version,reviewed_at,duration_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",params![c.review_id,c.profile_id,c.card_id,c.operation_id,serde_json::to_value(c.rating).map_err(unavailable)?.as_str(),state_name(before.state),state_name(next.state),before.due,next.due,SCHEDULER_VERSION,c.now,c.duration_ms]).map_err(unavailable)?;
             card.srs=next;card.revision+=1;
