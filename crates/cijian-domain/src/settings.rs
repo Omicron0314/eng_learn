@@ -160,12 +160,24 @@ fn default_playback_rate() -> f64 {
 fn default_theme() -> Theme {
     Theme::System
 }
+fn default_review_accent() -> crate::audio::Accent {
+    crate::audio::Accent::default()
+}
+fn default_review_auto_play() -> bool {
+    true
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DevicePreferences {
     pub theme: Theme,
     pub playback_rate: f64,
     pub system_voice: Option<String>,
+    /// Accent used for the card pronunciation line and for reading a new card.
+    #[serde(default = "default_review_accent")]
+    pub pronunciation_accent: crate::audio::Accent,
+    /// Read each new card aloud. Older preference rows default to on.
+    #[serde(default = "default_review_auto_play")]
+    pub review_auto_play: bool,
 }
 impl Default for DevicePreferences {
     fn default() -> Self {
@@ -173,6 +185,8 @@ impl Default for DevicePreferences {
             theme: Theme::System,
             playback_rate: 1.,
             system_voice: None,
+            pronunciation_accent: default_review_accent(),
+            review_auto_play: default_review_auto_play(),
         }
     }
 }

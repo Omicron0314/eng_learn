@@ -14,9 +14,9 @@ impl Store {
         let value = DevicePreferences {
             theme: legacy.theme,
             playback_rate: legacy.playback_rate,
-            system_voice: None,
+            ..DevicePreferences::default()
         };
-        tx.execute("INSERT OR IGNORE INTO device_preferences(profile_id,device_id,theme,playback_rate,json,revision) VALUES (?1,?2,?3,?4,?5,1)",params![profile,device,serde_json::to_string(&value.theme).map_err(unavailable)?,value.playback_rate,serde_json::to_string(&value).map_err(unavailable)?]).map_err(unavailable)?;
+        tx.execute("INSERT OR IGNORE INTO device_preferences(profile_id,device_id,theme,playback_rate,pronunciation_accent,review_auto_play,json,revision) VALUES (?1,?2,?3,?4,?5,?6,?7,1)",params![profile,device,serde_json::to_string(&value.theme).map_err(unavailable)?,value.playback_rate,value.pronunciation_accent.key(),i64::from(value.review_auto_play),serde_json::to_string(&value).map_err(unavailable)?]).map_err(unavailable)?;
         tx.commit().map_err(unavailable)
     }
     pub fn device_preferences(
@@ -51,7 +51,7 @@ impl Store {
             serde_json::json!({"device":c.device,"revision":c.expected_revision,"value":c.value})
                 .to_string();
         self.command(&c.profile,&c.operation,"device_preferences_update",&request,c.now,|tx|{
-            let count=tx.execute("UPDATE device_preferences SET theme=?1,playback_rate=?2,json=?3,revision=?4 WHERE profile_id=?5 AND device_id=?6 AND revision=?7",params![serde_json::to_string(&c.value.theme).map_err(unavailable)?,c.value.playback_rate,serde_json::to_string(&c.value).map_err(unavailable)?,revision as i64,c.profile,c.device,c.expected_revision as i64]).map_err(unavailable)?;
+            let count=tx.execute("UPDATE device_preferences SET theme=?1,playback_rate=?2,pronunciation_accent=?3,review_auto_play=?4,json=?5,revision=?6 WHERE profile_id=?7 AND device_id=?8 AND revision=?9",params![serde_json::to_string(&c.value.theme).map_err(unavailable)?,c.value.playback_rate,c.value.pronunciation_accent.key(),i64::from(c.value.review_auto_play),serde_json::to_string(&c.value).map_err(unavailable)?,revision as i64,c.profile,c.device,c.expected_revision as i64]).map_err(unavailable)?;
             if count!=1{return Err(AppError::new(ErrorCode::StaleState,"本机偏好已改变，请重新加载"));}
             Ok((serde_json::json!(revision),vec![Event{id:c.event,kind:"device_preferences_update".into(),schema_version:1,payload:serde_json::json!({"deviceId":c.device,"revision":revision})}]))
         })?.as_u64().ok_or(invalid("设备设置回执无效"))
@@ -93,6 +93,8 @@ mod tests {
             theme: cijian_domain::settings::Theme::Dark,
             playback_rate: 1.25,
             system_voice: None,
+            pronunciation_accent: cijian_domain::audio::Accent::Uk,
+            review_auto_play: false,
         };
         let command = |event: &str, operation: &str| SaveDevicePreferences {
             profile: "p".into(),

@@ -10,6 +10,7 @@
 ## 验收条件
 
 - **AC1**：复习卡在词下方显示 `口音按钮 + 音标`，默认美式；点音标重播当前口音，点按钮在英／美之间切换并播放切换后的口音；两者都不触发翻面。
+- **AC1c**：设置 ·“学习偏好”提供发音类型（英式／美式）与自动发音开关，写入本机设备偏好并立即生效；关闭自动发音后换卡不再朗读。
 - **AC1b**：新词卡出现时自动朗读当前口音一次；同一张卡翻面、切换口音或重绘都不再自动重播，没有录音的卡静默且不重试。
 - **AC2**：没有音频时按钮与音标不可点并明确显示“暂无”，卡片其余功能不受影响；有一个口音缺失时按另一个口音兜底，不静默失败。
 - **AC3**：发音数据按 `(档案, 词元, 口音)` 唯一，重复补齐不产生重复行；同一字节内容只占一份磁盘。
@@ -23,12 +24,14 @@
 - 领域 `Accent`／`Pronunciation`（含兜底与校验），端口 `CardView.pronunciation`、`WordAudioAsset`、`SaveWordAudio`。
 - 存储：`words_missing_audio`（可断点续补）、`word_audio`、`save_word_audio`（音标只填空值，不覆盖已学内容）。
 - 平台：`AudioCommand::PlayWord` 使用独立 sink；应用 `Command::PlayWord` → `Response::WordAudio`。
-- UI：复习卡发音行（`review-ipa`／`review-accent`）与换卡自动朗读（`announce_review_card`），测试覆盖点播、切换与“每卡只读一次”。
+- UI：复习卡发音行（`review-ipa`／`review-accent`）、换卡自动朗读（`announce_review_card`）与设置页“学习偏好”卡片（`settings/pronunciation.rs`），测试覆盖点播、切换、“每卡只读一次”与“关闭自动发音后静默”。
 - 维护工具（需先关闭应用，命令独占学习目录）：
   - `cijian-fill fill --data-dir <目录> [--limit N] [--interval 毫秒] [--dry-run]` 补齐录音与音标
   - `cijian-fill pack --data-dir <目录> --output <词包> ` 生成 `.cijianpack`
   - `cijian-fill import-pack --data-dir <目录> <词包>` 无头导入（应用内导入对话框等价）
 - 无头验证：`apps/desktop/src/backend/e2e_tests.rs` 覆盖“打包 → 导入 → 复习队列带双口音与音标”和“损坏包整包拒绝”。
+
+- 偏好：`DevicePreferences.pronunciation_accent`／`review_auto_play`（迁移 `0008_device_pronunciation.sql`），命令 `SetPronunciationAccent`／`SetReviewAutoPlay`，均为 quiet，不占忙碌状态。
 
 ## 代码缺口
 

@@ -8,6 +8,7 @@ use cijian_ports::provider::{Secret, SecretPatch};
 use gpui_kit_material::components::TextField;
 mod drafts;
 mod editor;
+mod pronunciation;
 pub(super) use drafts::{PendingSettings, SettingsPage, SettingsState};
 pub(super) use editor::Editor;
 /// Copy must follow the store that actually accepted the secret.
@@ -732,6 +733,7 @@ impl Shell {
             .gap(px(18.))
             .overflow_y_scroll();
         page = page.child(self.settings_header("学习与阅读", "合理的上限，让学习更轻一点", cx));
+        page = page.child(self.pronunciation_preferences(cx));
         let mut level = design::card()
             .rounded(px(28.))
             .p(px(20.))

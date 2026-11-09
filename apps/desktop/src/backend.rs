@@ -231,6 +231,14 @@ impl DesktopBackend {
                 preferences.system_voice = Some(voice);
                 Ok(())
             }),
+            Command::SetPronunciationAccent { accent } => self.save_preferences(|preferences| {
+                preferences.pronunciation_accent = accent;
+                Ok(())
+            }),
+            Command::SetReviewAutoPlay { value } => self.save_preferences(|preferences| {
+                preferences.review_auto_play = value;
+                Ok(())
+            }),
             Command::PlayStoredAudio { article, audio } => self.play_stored_audio(&article, &audio),
             Command::EnsureSystemAudio { article, voice } => {
                 self.ensure_system_audio(&article, &voice)

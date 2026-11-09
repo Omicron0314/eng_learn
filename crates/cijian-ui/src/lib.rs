@@ -72,6 +72,7 @@ struct Shell {
     intervals: Option<[i64; 4]>,
     revealed: bool,
     review_accent: cijian_domain::audio::Accent,
+    review_auto_play: bool,
     review_started: Instant,
     review_done: u32,
     key_intercept: Option<gpui_kit::Subscription>,
@@ -163,6 +164,7 @@ impl Shell {
             intervals: None,
             revealed: false,
             review_accent: cijian_domain::audio::Accent::default(),
+            review_auto_play: true,
             review_started: Instant::now(),
             review_done: 0,
             key_intercept: None,
@@ -252,6 +254,8 @@ impl Shell {
                     Ok(Response::Preferences(value)) => {
                         this.settings.theme = value.theme;
                         this.settings.playback_rate = value.playback_rate;
+                        this.review_accent = value.pronunciation_accent;
+                        this.review_auto_play = value.review_auto_play;
                         let _ = this.playback.set_rate(value.playback_rate);
                         this.poll_audio(cx);
                         if let Some(voice) = value.system_voice {
@@ -263,7 +267,9 @@ impl Shell {
                         }
                     }
                     Ok(Response::Audio(state)) => this.receive_audio(state, cx),
-                    Ok(Response::WordAudio { accent }) => this.review_accent = accent,
+                    // The chosen accent is a preference now; a fallback playback
+                    // must not silently rewrite it.
+                    Ok(Response::WordAudio { .. }) => {}
                     Ok(Response::LegacyProfiles {
                         selection,
                         profiles,
@@ -540,6 +546,8 @@ impl Shell {
                         this.gloss_pending = None;
                         this.gloss_failed = None;
                         this.review_started = Instant::now();
+                        this.review_announced = None;
+                        this.announce_review_card(cx);
                         if this.navigation.current() == &Route::Today && empty_inbox && inbox_pending > 0 {
                             this.request(Command::LoadInbox { page: 0 }, cx);
                         }
@@ -581,8 +589,6 @@ impl Shell {
         self.navigate_to(route, false, cx);
     }
     fn navigate_to(&mut self, route: Route, back: bool, cx: &mut Context<Self>) {
-                        this.review_announced = None;
-                        this.announce_review_card(cx);
         if !back
             && self.navigation.current() == &route
             && (self.loading || route == Route::Settings)

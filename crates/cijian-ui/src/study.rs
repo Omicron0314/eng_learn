@@ -103,8 +103,10 @@ impl Shell {
             .when(playable.is_none(), |chip| chip.opacity(0.55))
             .on_click(cx.listener(move |this, _, _, cx| {
                 cx.stop_propagation();
-                this.review_accent = this.review_accent.toggle();
-                this.play_word(this.review_accent, cx);
+                let accent = this.review_accent.toggle();
+                this.review_accent = accent;
+                this.request(Command::SetPronunciationAccent { accent }, cx);
+                this.play_word(accent, cx);
             }))
             .child(design::text(13., 18., 650.).child(accent.label()))
             .child(design::icon_role(
@@ -154,6 +156,9 @@ impl Shell {
     /// Reads the word out as soon as a card comes up, once per card.
     /// Silent when the card has no recording; it never blocks reveal or rating.
     pub(super) fn announce_review_card(&mut self, cx: &mut Context<Self>) {
+        if !self.review_auto_play {
+            return;
+        }
         if !matches!(self.navigation.current(), Route::Review) {
             return;
         }

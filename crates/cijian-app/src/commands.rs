@@ -16,6 +16,12 @@ pub enum Command {
     SetSystemVoice {
         voice: String,
     },
+    SetPronunciationAccent {
+        accent: cijian_domain::audio::Accent,
+    },
+    SetReviewAutoPlay {
+        value: bool,
+    },
     PlayStoredAudio {
         article: String,
         audio: String,

@@ -359,6 +359,13 @@ impl CommandBus for WordAudioBus {
         self.0.lock().unwrap().push(command.clone());
         let result = match command {
             Command::PlayWord { accent, .. } => Ok(Response::WordAudio { accent }),
+            // Switching the accent on the card persists the preference.
+            Command::SetPronunciationAccent { accent } => {
+                Ok(Response::Preferences(cijian_domain::settings::DevicePreferences {
+                    pronunciation_accent: accent,
+                    ..Default::default()
+                }))
+            }
             _ => Err(AppError::new(
                 cijian_ports::ErrorCode::InvalidInput,
                 "原创测试只播放单词发音",
@@ -560,6 +567,7 @@ fn a_new_card_is_read_aloud_once_and_silent_cards_do_not_retry(cx: &mut TestAppC
             gpui_kit::open_window(
                 WindowOptions {
                     window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+    // The preference is on by default; the switch covers the disabled case below.
                         Default::default(),
                         size(px(1000.), px(900.)),
                     ))),
@@ -606,4 +614,53 @@ fn a_new_card_is_read_aloud_once_and_silent_cards_do_not_retry(cx: &mut TestAppC
         "each new card is read once; a card without a recording stays silent"
     );
     let _ = shell;
+}
+
+#[gpui_kit::test]
+fn auto_play_preference_off_keeps_new_cards_silent(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let bus = std::sync::Arc::new(QueueBus(std::sync::Mutex::new((
+        vec![vec![review_card("first", "overlook", true)]],
+        Vec::new(),
+    ))));
+    let (handle, shell) = cx
+        .update(|cx| {
+            let bus = bus.clone();
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1000.), px(900.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                move |_, cx| {
+                    cx.new(|_| {
+                        let mut shell = Shell::new();
+                        shell.navigation.navigate(Route::Review);
+                        shell.backend = Some(bus);
+                        shell.review_auto_play = false;
+                        shell
+                    })
+                },
+            )
+        })
+        .unwrap();
+    shell.update(cx, |shell, cx| shell.request(Command::LoadReview, cx));
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    assert!(
+        !bus.0.lock().unwrap().1.iter().any(|command| matches!(
+            command,
+            Command::PlayWord { .. }
+        )),
+        "auto-play off must not read a new card aloud"
+    );
 }
