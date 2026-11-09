@@ -163,3 +163,78 @@ fn flag_failure_keeps_multisentence_draft_and_retry_operation(cx: &mut TestAppCo
             .unwrap();
     }
 }
+
+#[gpui_kit::test]
+fn long_articles_keep_the_feedback_actions_on_screen(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let bus = Arc::new(Bus::default());
+    let (handle, _shell) = cx
+        .update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1440.), px(900.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |_, cx| {
+                    cx.new(|_| {
+                        let body = (0..40)
+                            .map(|index| format!("The lantern number {index} is here."))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        let mut shell = Shell::new();
+                        shell.backend = Some(bus.clone());
+                        shell.navigation.navigate(Route::Article {
+                            id: "original".into(),
+                            listening: false,
+                        });
+                        shell.article = Some(cijian_ports::articles::Article {
+                            id: "original".into(),
+                            title: "原创长文".into(),
+                            body_hash: "original-test-hash".into(),
+                            analysis: cijian_domain::analysis::analyze(
+                                &body,
+                                &Default::default(),
+                                &Default::default(),
+                                &Default::default(),
+                                &Default::default(),
+                            ),
+                            body,
+                            genre: cijian_domain::settings::Genre::Story,
+                            tier: cijian_domain::settings::Tier::Easy,
+                            diagnostics: Vec::new(),
+                            created_at: 0,
+                            read_at: None,
+                        });
+                        shell
+                    })
+                },
+            )
+        })
+        .unwrap();
+    cx.update_window(handle, |_, window, cx| {
+        open(window, cx);
+        window.render_frame(cx);
+    })
+    .unwrap();
+    for id in ["submit-sentence-feedback", "close-sentence-feedback"] {
+        cx.update_window(handle, |_, window, _| {
+            let bounds = window.find(id).bounds();
+            assert!(
+                bounds.origin.y >= px(0.) && bounds.bottom() <= window.viewport_size().height,
+                "{id} must stay inside the window, got {bounds:?}"
+            );
+        })
+        .unwrap();
+    }
+    cx.update_window(handle, |_, window, _| window.remove_window())
+        .unwrap();
+}

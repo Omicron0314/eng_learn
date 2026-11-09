@@ -4,7 +4,7 @@ use cijian_domain::{reading::TextRange, srs::Rating};
 use cijian_ports::{
     inbox::{MarkAction, MarkWord},
     library::RateCard,
-    reading::ReaderCommand,
+    reading::{Feedback, ReaderCommand},
 };
 #[test]
 fn empty_statistics_have_null_denominators_and_future_cells() {
@@ -82,4 +82,41 @@ fn counts_heatmap_and_first_experiment_rating_reconcile() {
             .again_rate
             .is_none()
     );
+}
+
+#[test]
+fn difficulty_feedback_reports_every_measured_share() {
+    let s = store();
+    s.start_generation(request()).unwrap();
+    s.claim_generation("p", "job", 0).unwrap();
+    let saved = s.save_article(article()).unwrap();
+    let context = |operation: &str| ReaderCommand {
+        profile: "p".into(),
+        operation: operation.into(),
+        event: format!("event-{operation}"),
+        article: "article".into(),
+        body_hash: saved.body_hash.clone(),
+        now: 2,
+    };
+    use cijian_domain::reading::{Difficulty, FeedbackMode};
+    s.submit_feedback(
+        context("read-feedback"),
+        Feedback {
+            mode: FeedbackMode::Reading,
+            value: Difficulty::TooEasy,
+        },
+    )
+    .unwrap();
+    s.submit_feedback(
+        context("listen-feedback"),
+        Feedback {
+            mode: FeedbackMode::Listening,
+            value: Difficulty::JustRight,
+        },
+    )
+    .unwrap();
+    let stats = s.stats("p", 100000, 0).unwrap();
+    assert_eq!(stats.feedback_too_easy, Some(0.5));
+    assert_eq!(stats.feedback_just_right, Some(0.5));
+    assert_eq!(stats.feedback_too_hard, Some(0.));
 }

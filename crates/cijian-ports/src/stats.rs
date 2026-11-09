@@ -44,7 +44,12 @@ pub struct StatsSnapshot {
     pub today: StudyCounts,
     pub week: StudyCounts,
     pub reading_completion: Option<f64>,
+    /// Shares of the last feedback per article and mode. Each is `None` until
+    /// at least one reading or listening feedback exists, so the page can show
+    /// a measurement instead of a hardcoded dash.
+    pub feedback_too_hard: Option<f64>,
     pub feedback_just_right: Option<f64>,
+    pub feedback_too_easy: Option<f64>,
     pub heatmap: Vec<ActivityDay>,
     pub coverage: Vec<CoveragePoint>,
     pub unknown_median_all: Option<f64>,

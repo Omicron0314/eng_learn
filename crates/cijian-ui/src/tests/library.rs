@@ -299,6 +299,7 @@ fn word_list_import_choice_reaches_the_backend(cx: &mut TestAppContext) {
         shell.selected = Some(cijian_app::commands::SelectedFile {
             handle: "original".into(),
             name: "原创词表.txt".into(),
+            word_pack: false,
         });
         shell.library_ui.file_handle = None;
         shell.library_ui.import_name = None;
@@ -578,4 +579,222 @@ fn slash_focuses_library_search_without_typing(cx: &mut TestAppContext) {
         );
     })
     .unwrap();
+}
+
+#[gpui_kit::test]
+fn switching_cards_keeps_an_unsaved_draft_behind_the_discard_dialog(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let card = |id: &str, front: &str| CardView {
+        id: id.into(),
+        lexeme_id: format!("lexeme-{id}"),
+        front: front.into(),
+        meaning: format!("{front} meaning"),
+        example: String::new(),
+        text_source: "imported".into(),
+        suspended: false,
+        archived: false,
+        revision: 1,
+        created_at: 0,
+        srs: cijian_domain::srs::SrsState::new(0),
+        pronunciation: Default::default(),
+    };
+    let bus = Arc::new(RejectingBus::default());
+    let (handle, shell) = cx
+        .update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1440.), px(900.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |_, cx| {
+                    cx.new(|_| {
+                        let mut shell = Shell::new();
+                        shell.backend = Some(bus.clone());
+                        shell.navigation.navigate(Route::Library {
+                            book: None,
+                            search: String::new(),
+                        });
+                        shell.library = Some(CardPage {
+                            total: 2,
+                            cards: vec![card("first", "lantern"), card("second", "nectar")],
+                        });
+                        shell
+                    })
+                },
+            )
+        })
+        .unwrap();
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        window.click("edit-card-first", cx);
+        window.render_frame(cx);
+        window.within("card-meaning").click("input-state", cx);
+        window.press("ctrl-a", cx);
+        window.input("unsaved draft", cx);
+        window.render_frame(cx);
+        window.click("library-card-second", cx);
+        window.render_frame(cx);
+    })
+    .unwrap();
+    assert!(shell.read_with(cx, |shell, cx| {
+        let editor = shell.library_ui.editor.as_ref().unwrap();
+        shell.library_ui.discard && editor.card.id == "first" && editor.dirty(cx)
+    }));
+    cx.update_window(handle, |_, window, cx| {
+        window.click("keep-card-draft", cx);
+        window.render_frame(cx);
+    })
+    .unwrap();
+    assert!(shell.read_with(cx, |shell, cx| {
+        let editor = shell.library_ui.editor.as_ref().unwrap();
+        !shell.library_ui.discard && editor.card.id == "first" && editor.dirty(cx)
+    }));
+}
+
+#[gpui_kit::test]
+fn a_selected_word_pack_does_not_ask_for_a_purpose_or_target(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let (handle, shell) = cx
+        .update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1440.), px(900.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |_, cx| {
+                    cx.new(|_| {
+                        let mut shell = Shell::new();
+                        shell.navigation.navigate(Route::Library {
+                            book: None,
+                            search: String::new(),
+                        });
+                        shell.library_ui.import_open = true;
+                        shell
+                    })
+                },
+            )
+        })
+        .unwrap();
+    let pick = |shell: &mut Shell, word_pack: bool| {
+        shell.selected = Some(cijian_app::commands::SelectedFile {
+            handle: "original".into(),
+            name: "原创词包.cijianpack".into(),
+            word_pack,
+        });
+        shell.library_ui.file_handle = None;
+        shell.library_ui.import_name = None;
+    };
+    shell.update(cx, |shell, cx| {
+        pick(shell, false);
+        cx.notify();
+    });
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        assert!(
+            window.try_find("import-new-book").is_some(),
+            "a CSV import still needs a target book"
+        );
+    })
+    .unwrap();
+    shell.update(cx, |shell, cx| {
+        pick(shell, true);
+        cx.notify();
+    });
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        assert!(
+            window.try_find("import-new-book").is_none(),
+            "a word pack declares its own purpose and book"
+        );
+        assert!(window.try_find("import-file").is_some());
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
+fn a_finished_import_report_is_not_replaced_by_an_older_stored_one(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let (handle, shell) = cx
+        .update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1440.), px(900.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |_, cx| {
+                    cx.new(|_| {
+                        let mut shell = Shell::new();
+                        shell.navigation.navigate(Route::Library {
+                            book: None,
+                            search: String::new(),
+                        });
+                        shell
+                    })
+                },
+            )
+        })
+        .unwrap();
+    let _ = &handle;
+    let fresh = ImportReport {
+        parsed: 1,
+        words_added: 1,
+        cards_added: 1,
+        entries_added: 1,
+        ..Default::default()
+    };
+    let older = ImportReport {
+        parsed: 9,
+        words_added: 9,
+        ..Default::default()
+    };
+    shell.update(cx, |shell, cx| {
+        shell.apply_response(Ok(Response::Imported(fresh.clone())), false, true, cx);
+        shell.apply_response(
+            Ok(Response::Library {
+                page: CardPage {
+                    total: 0,
+                    cards: Vec::new(),
+                },
+                books: Vec::new(),
+                entries: None,
+                latest_import: Some(("旧导入.csv".into(), older.clone())),
+            }),
+            false,
+            true,
+            cx,
+        );
+    });
+    assert_eq!(
+        shell.read_with(cx, |shell, _| shell.report.clone().map(|r| r.words_added)),
+        Some(1),
+        "the dialog keeps the result of the import that just ran"
+    );
+    assert!(shell.read_with(cx, |shell, _| shell.library_ui.report_pinned));
 }

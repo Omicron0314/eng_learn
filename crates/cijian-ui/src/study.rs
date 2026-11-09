@@ -546,9 +546,11 @@ impl Shell {
                     .flex_1()
                     .gap(px(4.))
                     .child(design::text(16., 22., 650.).child("今天的复习，成为下一篇的词汇"))
-                    .child(design::text(13., 18., 400.).child(format!(
-                        "已完成 {review_count} 次复习，可以开始生成。难度和体裁由你选择。"
-                    ))),
+                    .child(design::text(13., 18., 400.).child(if review_count > 0 {
+                        format!("已完成 {review_count} 次复习，可以开始生成。难度和体裁由你选择。")
+                    } else {
+                        "还没有复习记录。先复习几张卡片，生成时才有词可用。".to_owned()
+                    })),
             )
             .child(
                 design::tag(ColorRole::SUCCESS_BG, ColorRole::ON_SUCCESS)
@@ -786,7 +788,11 @@ impl Shell {
                 .child(
                     design::muted_text(12., 16.)
                         .flex_1()
-                        .child("先复习几张卡片，再生成你的文章。"),
+                        .child(if review_count > 0 {
+                            "复用今天复习过的词，难度和体裁由你选择。"
+                        } else {
+                            "先复习几张卡片，再生成你的文章。"
+                        }),
                 ),
         );
         grid = grid.child(generate);

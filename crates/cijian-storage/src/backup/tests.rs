@@ -217,3 +217,48 @@ fn audio_inclusive_backup_requires_matching_verified_blob_entries() {
         .ok();
     assert!(audio.is_none());
 }
+
+#[test]
+fn audio_inclusive_backup_restores_played_audio_sessions() {
+    let source = populated();
+    let blob = format!("{}.wav", "b".repeat(64));
+    {
+        let db = source.connection.lock().unwrap();
+        db.execute(
+            "INSERT INTO audio_assets VALUES ('audio','p','cache','hash','fp','model','voice','wav',?1,1.0,2,1)",
+            [&blob],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO article_audio_links VALUES ('p','article','audio')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO audio_sessions VALUES ('played','p','article','audio','remote',1,2,1.0)",
+            [],
+        )
+        .unwrap();
+    }
+    let mut package = source.export_profile("p", true).unwrap();
+    package.payload["audioBlobs"] = json!([{
+        "blobKey": blob,
+        "sha256": "b".repeat(64),
+        "bytes": "AA=="
+    }]);
+    package.checksum = hash(&cijian_domain::json::canonical_json(&package.payload));
+    let target = Store::memory().unwrap();
+    let result = target
+        .restore_profile(package, "new", "event", "op", 1)
+        .unwrap();
+    assert!(result.audio_included);
+    let db = target.connection.lock().unwrap();
+    let audio: String = db
+        .query_row(
+            "SELECT audio_id FROM audio_sessions WHERE profile_id='new' AND id='played'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(audio, "audio");
+}

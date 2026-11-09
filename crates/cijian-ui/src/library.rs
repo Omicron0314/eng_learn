@@ -35,6 +35,9 @@ pub(super) struct LibraryState {
     pub suspended_open: bool,
     pub suspended_focus: Option<FocusHandle>,
     pub import_source: Option<String>,
+    /// Set while the report shown belongs to the import that just ran, so a
+    /// background library reload cannot swap in an older stored report.
+    pub report_pinned: bool,
     pub error_page: usize,
 }
 pub(super) struct CardEditor {
@@ -251,11 +254,33 @@ impl Shell {
         }
         cx.notify();
     }
+    /// Switching cards must never silently replace an unsaved draft: the
+    /// discard dialog asks first, and its scrim keeps rows from reacting.
+    fn open_card_editor(&mut self, card: CardView, window: &mut Window, cx: &mut Context<Self>) {
+        if self.loading || self.library_ui.discard {
+            return;
+        }
+        if self
+            .library_ui
+            .editor
+            .as_ref()
+            .is_some_and(|editor| editor.card.id != card.id && editor.dirty(cx))
+        {
+            self.library_ui.discard = true;
+            cx.notify();
+            return;
+        }
+        self.library_ui.editor = Some(CardEditor::new(card, window, cx));
+        self.error = None;
+        cx.notify();
+    }
     pub(super) fn library_dialogs(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         if self.library_ui.discard {
             return div()
+                .id("discard-card-draft-scrim")
                 .absolute()
                 .inset_0()
+                .occlude()
                 .flex()
                 .items_center()
                 .justify_center()
@@ -588,10 +613,9 @@ impl Shell {
                 .flex_col()
                 .gap(px(4.))
                 .child(design::text(13., 18., 650.).child("支持的格式"))
-                .child(
-                    design::muted_text(12., 16.)
-                        .child("词卡 CSV · 兼容旧版 .apkg · 词表 TXT / CSV（UTF-8）"),
-                ),
+                .child(design::muted_text(12., 16.).child(
+                    "词卡 CSV · 兼容旧版 .apkg · 词表 TXT / CSV（UTF-8）· 词包 .cijianpack",
+                )),
         );
         nav.into_any_element()
     }
@@ -1180,12 +1204,16 @@ impl Shell {
                 .child(
                     design::mono(13., 18., 400.)
                         .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
-                        .child(format!(
-                            "{}–{} / {}",
-                            self.library_ui.page * 30 + 1,
-                            (self.library_ui.page * 30 + rows as u32).min(total as u32),
-                            total
-                        )),
+                        .child(if rows == 0 {
+                            format!("0 / {total}")
+                        } else {
+                            format!(
+                                "{}–{} / {}",
+                                self.library_ui.page * 30 + 1,
+                                (self.library_ui.page * 30 + rows as u32).min(total as u32),
+                                total
+                            )
+                        }),
                 )
                 .child(self.page_button(
                     "library-previous",
@@ -1328,13 +1356,7 @@ impl Shell {
                     })
                     .on_click(cx.listener(move |this, _, window, cx| {
                         cx.stop_propagation();
-                        if this.loading {
-                            return;
-                        }
-                        this.library_ui.editor = Some(CardEditor::new(edit.clone(), window, cx));
-                        this.library_ui.discard = false;
-                        this.error = None;
-                        cx.notify();
+                        this.open_card_editor(edit.clone(), window, cx);
                     }))
                     .child(design::icon_role(
                         Icon::Edit,
@@ -1419,15 +1441,7 @@ impl Shell {
             .when(card.suspended, |row| row.opacity(0.6))
             .on_click(cx.listener({
                 let edit = card.clone();
-                move |this, _, window, cx| {
-                    if this.loading {
-                        return;
-                    }
-                    this.library_ui.editor = Some(CardEditor::new(edit.clone(), window, cx));
-                    this.library_ui.discard = false;
-                    this.error = None;
-                    cx.notify();
-                }
+                move |this, _, window, cx| this.open_card_editor(edit.clone(), window, cx)
             }))
             .child(
                 div()
@@ -1593,24 +1607,33 @@ impl Shell {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll();
-        content = content.child(
-            div()
-                .flex()
-                .gap(px(8.))
-                .child(self.import_mode_button(false, "词卡", cx))
-                .child(self.import_mode_button(true, "词表", cx)),
-        );
-        if self.word_list {
+        let word_pack = self.selected.as_ref().is_some_and(|file| file.word_pack);
+        if word_pack {
+            // A pack already names its book and declares baseline or study, so
+            // asking again would promise a choice the import silently ignores.
+            content = content.child(design::muted_text(13., 18.).child(
+                "词包自带词语、释义、双口音音标与录音；导入后成为一本新词书，用途以包内声明为准。",
+            ));
+        } else {
             content = content.child(
                 div()
                     .flex()
-                    .flex_wrap()
                     .gap(px(8.))
-                    .child(self.import_kind_button(BookKind::Baseline, "基线：作为已知词", cx))
-                    .child(self.import_kind_button(BookKind::Study, "学习：加入复习", cx)),
+                    .child(self.import_mode_button(false, "词卡", cx))
+                    .child(self.import_mode_button(true, "词表", cx)),
             );
+            if self.word_list {
+                content = content.child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap(px(8.))
+                        .child(self.import_kind_button(BookKind::Baseline, "基线：作为已知词", cx))
+                        .child(self.import_kind_button(BookKind::Study, "学习：加入复习", cx)),
+                );
+            }
+            content = content.child(self.import_controls(cx));
         }
-        content = content.child(self.import_controls(cx));
         dialog = dialog.child(content);
 
         let mut footer = div().flex().flex_col().gap(px(10.));
@@ -1653,9 +1676,9 @@ impl Shell {
                             ColorRole::ON_SECONDARY_CONTAINER,
                         ))
                         .child(if self.word_list {
-                            "选择词表 CSV / TXT"
+                            "选择词表 CSV / TXT / 词包"
                         } else {
-                            "选择词卡 CSV / APKG"
+                            "选择词卡 CSV / APKG / 词包"
                         }),
                 )
                 .child(
@@ -1840,6 +1863,7 @@ impl Shell {
                                 .justify_center()
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.library_ui.report_open = false;
+                                    this.library_ui.report_pinned = false;
                                     cx.notify();
                                 }))
                                 .child(design::icon_role(

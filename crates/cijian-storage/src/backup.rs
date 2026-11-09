@@ -401,7 +401,7 @@ impl Store {
                         return Err(invalid("备份事件包含凭据字段"));
                     }
                 }
-                if *table == "audio_sessions" && !object["audio_id"].is_null() {
+                if *table == "audio_sessions" && !audio_included && !object["audio_id"].is_null() {
                     return Err(invalid("无音频备份不能引用音频缓存"));
                 }
                 let values = names

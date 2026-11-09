@@ -1653,9 +1653,9 @@ impl Shell {
                 .child(design::muted_text(12., 16.).child("阅读与听力分别取最后一次")),
         );
         for (label, value, role) in [
-            ("太难", None, ColorRole::ERROR),
+            ("太难", stats.feedback_too_hard, ColorRole::ERROR),
             ("刚好", stats.feedback_just_right, ColorRole::SUCCESS),
-            ("太简单", None, ColorRole::SECONDARY),
+            ("太简单", stats.feedback_too_easy, ColorRole::SECONDARY),
         ] {
             let fraction = value.unwrap_or(0.) as f32;
             side = side.child(
@@ -1669,7 +1669,8 @@ impl Shell {
                     .child(design::bar(fraction, role))
                     .child(
                         design::text(13., 18., 400.)
-                            .w(px(32.))
+                            .w(px(48.))
+                            .flex_shrink_0()
                             .text_align(gpui_kit::TextAlign::Right)
                             .child(
                                 value

@@ -551,11 +551,19 @@ impl DesktopBackend {
                     )
                     .map_err(|e| AppError::new(ErrorCode::InvalidInput, e.to_string()))?;
                     let handle = id();
+                    let word_pack = path
+                        .extension()
+                        .and_then(|s| s.to_str())
+                        .is_some_and(|extension| extension.eq_ignore_ascii_case("cijianpack"));
                     self.files
                         .lock()
                         .map_err(|_| failure())?
                         .insert(handle.clone(), path);
-                    Ok(Response::Selected(Some(SelectedFile { handle, name })))
+                    Ok(Response::Selected(Some(SelectedFile {
+                        handle,
+                        name,
+                        word_pack,
+                    })))
                 } else {
                     Ok(Response::Selected(None))
                 }
@@ -735,9 +743,11 @@ impl DesktopBackend {
                         Err(_) => return Err(failure()),
                     }
                 }
-                audios.push(cijian_ports::library::SaveWordAudio {
-                    profile_id: self.profile.clone(),
+                audios.push(PendingWordAudio {
+                    lemma: word.word.clone(),
+                    phrase: word.word.contains(' '),
                     lexeme_id: ids.lexeme.clone(),
+                    profile_id: self.profile.clone(),
                     accent,
                     blob_key: key.clone(),
                     format: format.to_owned(),
@@ -790,9 +800,52 @@ impl DesktopBackend {
             },
             row_ids,
         })?;
-        self.store.attach_word_audio(audios)?;
+        // The import reuses lexemes that already exist, so the generated row
+        // ids are not necessarily the stored identity. Attaching to them made
+        // a second import of the same pack fail with "词元不存在".
+        self.store.attach_word_audio(
+            audios
+                .into_iter()
+                .map(|audio| {
+                    let lexeme_id = self
+                        .store
+                        .lexeme_id(&audio.lemma, audio.phrase)?
+                        .unwrap_or(audio.lexeme_id);
+                    Ok(cijian_ports::library::SaveWordAudio {
+                        lexeme_id,
+                        profile_id: audio.profile_id,
+                        accent: audio.accent,
+                        blob_key: audio.blob_key,
+                        format: audio.format,
+                        bytes: audio.bytes,
+                        duration: audio.duration,
+                        source: audio.source,
+                        ipa_uk: audio.ipa_uk,
+                        ipa_us: audio.ipa_us,
+                        now: audio.now,
+                    })
+                })
+                .collect::<cijian_ports::Result<Vec<_>>>()?,
+        )?;
         Ok(Response::Imported(report))
     }
+}
+/// Recordings wait for the import to resolve which lexeme identity a word
+/// actually got; a re-import may reuse an existing one.
+struct PendingWordAudio {
+    lemma: String,
+    phrase: bool,
+    lexeme_id: String,
+    profile_id: String,
+    accent: cijian_domain::audio::Accent,
+    blob_key: String,
+    format: String,
+    bytes: u64,
+    duration: Option<f64>,
+    source: String,
+    ipa_uk: Option<String>,
+    ipa_us: Option<String>,
+    now: i64,
 }
 impl CommandBus for DesktopBackend {
     fn dispatch(&self, command: Command) -> BoxFuture<'_, Result<Response>> {

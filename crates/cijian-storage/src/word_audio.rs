@@ -60,6 +60,21 @@ impl Store {
     pub fn save_word_audio(&self, c: SaveWordAudio) -> Result<()> {
         self.attach_word_audio(vec![c])
     }
+    /// An import may reuse a lexeme that already exists, so audio must be
+    /// attached to the stored identity rather than the id generated per row.
+    pub fn lexeme_id(&self, lemma: &str, phrase: bool) -> Result<Option<String>> {
+        let kind = if phrase { "phrase" } else { "word" };
+        self.connection
+            .lock()
+            .map_err(unavailable)?
+            .query_row(
+                "SELECT id FROM lexemes WHERE lemma=?1 AND pos='' AND kind=?2",
+                params![lemma, kind],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(unavailable)
+    }
     /// Records many recordings in one transaction so a pack import either lands
     /// completely or not at all. Blobs are already on disk when this runs.
     pub fn attach_word_audio(&self, batch: Vec<SaveWordAudio>) -> Result<()> {

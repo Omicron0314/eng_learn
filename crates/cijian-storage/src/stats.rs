@@ -114,13 +114,18 @@ impl Store {
                 feedback.insert((article.to_owned(), mode.to_owned()), value.to_owned());
             }
         }
-        let feedback_just_right = ratio(
-            feedback
-                .values()
-                .filter(|v| ["justRight", "just_right"].contains(&v.as_str()))
-                .count() as u64,
-            feedback.len() as u64,
-        );
+        let share = |wanted: &[&str]| {
+            ratio(
+                feedback
+                    .values()
+                    .filter(|v| wanted.contains(&v.as_str()))
+                    .count() as u64,
+                feedback.len() as u64,
+            )
+        };
+        let feedback_too_hard = share(&["tooHard", "too_hard"]);
+        let feedback_just_right = share(&["justRight", "just_right"]);
+        let feedback_too_easy = share(&["tooEasy", "too_easy"]);
         let mut daily = BTreeMap::<String, u64>::new();
         let mut statement=db.prepare("SELECT reviewed_at FROM review_logs WHERE profile_id=?1 AND reviewed_at>=?2 AND reviewed_at<=?3").map_err(unavailable)?;
         for row in statement
@@ -215,7 +220,9 @@ impl Store {
             today,
             week,
             reading_completion: ratio(completed as u64, opened as u64),
+            feedback_too_hard,
             feedback_just_right,
+            feedback_too_easy,
             heatmap,
             coverage,
             unknown_median_all: median(all),

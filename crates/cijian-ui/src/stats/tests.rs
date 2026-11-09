@@ -8,7 +8,9 @@ fn snapshot() -> StatsSnapshot {
         today: Default::default(),
         week: Default::default(),
         reading_completion: None,
+        feedback_too_hard: None,
         feedback_just_right: None,
+        feedback_too_easy: None,
         heatmap: (0..91)
             .map(|index| cijian_ports::stats::ActivityDay {
                 date: format!("day-{index}"),

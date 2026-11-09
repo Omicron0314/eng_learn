@@ -101,14 +101,18 @@ impl Shell {
         };
         let note = draft.note.read(cx).value();
         let error = validate_flag(&article.body, &draft.ranges, &note).err();
-        let mut content = div()
+        // A long article can list dozens of sentences. They scroll inside
+        // their own box so the dialog actions stay on screen.
+        let mut sentences_list = div()
+            .id("flag-sentence-list")
             .flex()
             .flex_col()
             .gap_3()
-            .child("选择不自然的句子，也可以只填写备注。关闭面板会保留本次窗口中的草稿。");
+            .max_h(px(320.))
+            .overflow_y_scroll();
         for (index, range) in sentences(&article.body).into_iter().enumerate() {
             let key = key.clone();
-            content = content.child(
+            sentences_list = sentences_list.child(
                 MaterialCheckbox::new(
                     gpui_kit::SharedString::from(format!("flag-sentence-{index}")),
                     range.text(&article.body).unwrap_or_default().to_owned(),
@@ -129,6 +133,12 @@ impl Shell {
                 })),
             );
         }
+        let mut content = div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child("选择不自然的句子，也可以只填写备注。关闭面板会保留本次窗口中的草稿。")
+            .child(sentences_list);
         content = content.child(
             TextField::multi_line("sentence-note", &draft.note)
                 .label("备注（最多200字符）")

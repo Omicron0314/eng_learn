@@ -523,7 +523,12 @@ impl Shell {
                 entries,
                 latest_import,
             }) => {
-                if let Some((source, report)) = latest_import {
+                // The reload that follows an import must not replace the report
+                // just shown with an older stored one: a replayed pack import
+                // writes no new row, so the newest stored import is unrelated.
+                if let Some((source, report)) = latest_import
+                    && !self.library_ui.report_pinned
+                {
                     self.library_ui.import_source = Some(source);
                     self.report = Some(report);
                 }
@@ -568,6 +573,7 @@ impl Shell {
             }
             Ok(Response::Imported(report)) => {
                 self.library_ui.import_source = None;
+                self.library_ui.report_pinned = true;
                 self.library_ui.error_page = 0;
                 self.library_ui.import_open = false;
                 self.library_ui.report_open = true;

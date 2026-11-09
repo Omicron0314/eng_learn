@@ -416,6 +416,40 @@ fn word_pack_import_provides_recordings_and_transcriptions() {
             .join(&stored.blob_key)
             .exists()
     );
+    // Importing the same pack again must reuse the existing lexemes instead of
+    // attaching recordings to throwaway ids.
+    backend.files.lock().unwrap().insert(
+        "pack-again".into(),
+        directory.path().join("original.cijianpack"),
+    );
+    let again = backend
+        .execute(Command::ImportSelected {
+            target_book: None,
+            handle: "pack-again".into(),
+            name: "忽略".into(),
+            kind: BookKind::Study,
+            word_list: false,
+        })
+        .unwrap();
+    assert!(
+        matches!(again, Response::Imported(_)),
+        "re-importing the same pack must not fail on reused lexemes"
+    );
+    let books = backend.store.books(&backend.profile).unwrap();
+    assert_eq!(
+        books.iter().filter(|book| book.name == "原创词书").count(),
+        1,
+        "the pack does not create a duplicate book"
+    );
+    let stored_again = backend
+        .store
+        .word_audio(
+            &backend.profile,
+            &card.lexeme_id,
+            cijian_domain::audio::Accent::Us,
+        )
+        .unwrap();
+    assert!(stored_again.is_some(), "recordings stay attached");
 }
 
 /// A pack whose archive claims a recording it does not contain must not import.

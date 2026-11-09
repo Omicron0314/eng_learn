@@ -219,6 +219,9 @@ impl Command {
 pub struct SelectedFile {
     pub handle: String,
     pub name: String,
+    /// A `.cijianpack` already carries its own words, meanings and purpose, so
+    /// the dialog must not ask for an import kind or a merge target.
+    pub word_pack: bool,
 }
 #[derive(Debug, Clone)]
 pub enum Response {
