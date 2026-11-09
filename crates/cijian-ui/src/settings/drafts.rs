@@ -1,4 +1,5 @@
 use super::*;
+use cijian_domain::provider::ProviderConfig;
 use gpui_kit_material::components::MaterialDialog;
 #[derive(Clone)]
 pub(crate) enum PendingSettings {
@@ -7,7 +8,6 @@ pub(crate) enum PendingSettings {
     Close,
     Reset,
     Reload,
-    Provider(ProviderKind),
 }
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsPage {
@@ -23,13 +23,24 @@ pub(crate) struct SettingsState {
     pub advanced: bool,
     pub focus_advanced: bool,
     pub refresh_learning: bool,
-    pub refresh_provider: bool,
+    pub refresh_provider: Option<ProviderKind>,
+    /// Providers still waiting for their turn: one save request at a time keeps
+    /// the shared command channel and each provider's revision intact.
+    pub queued_providers: std::collections::VecDeque<QueuedProviderSave>,
+}
+
+/// A validated provider write waiting for the single command slot.
+pub(crate) struct QueuedProviderSave {
+    pub kind: ProviderKind,
+    pub config: ProviderConfig,
+    pub revision: u64,
+    pub secret: SecretPatch,
 }
 impl Shell {
     pub(super) fn settings_dirty(&self, cx: &App) -> bool {
         self.navigation.current() == &Route::Settings
             && self.settings_editor.as_ref().is_some_and(|editor| {
-                editor.learning_dirty(&self.settings, cx) || editor.provider_dirty(cx)
+                editor.learning_dirty(&self.settings, cx) || editor.any_provider_dirty(cx)
             })
     }
     pub(crate) fn guard_settings_exit(
@@ -82,28 +93,26 @@ impl Shell {
         if self.navigation.current() != &Route::Settings {
             return;
         }
-        let provider = if self.provider_kind == ProviderKind::Tts {
-            self.tts_config.as_ref()
-        } else {
-            self.provider_config.as_ref()
-        };
-        if self.settings_editor.is_none() {
-            self.settings_editor = Some(Editor::new(
-                &self.settings,
-                self.provider_kind,
-                provider,
-                window,
-                cx,
-            ));
-            self.settings_ui.refresh_learning = false;
-            self.settings_ui.refresh_provider = false;
-        } else if let Some(editor) = &mut self.settings_editor {
-            if std::mem::take(&mut self.settings_ui.refresh_learning) {
+        let llm = self.provider_config.as_ref();
+        let tts = self.tts_config.as_ref();
+        if let Some(editor) = &mut self.settings_editor {
+            let refresh_learning = std::mem::take(&mut self.settings_ui.refresh_learning);
+            let refresh_provider = self.settings_ui.refresh_provider.take();
+            if refresh_learning {
                 editor.reset_learning(&self.settings, window, cx);
             }
-            if std::mem::take(&mut self.settings_ui.refresh_provider) {
-                editor.reset_provider(self.provider_kind, provider, window, cx);
+            if let Some(kind) = refresh_provider {
+                editor.reset_provider(
+                    kind,
+                    if kind == ProviderKind::Tts { tts } else { llm },
+                    window,
+                    cx,
+                );
             }
+        } else {
+            self.settings_editor = Some(Editor::new(&self.settings, [llm, tts], window, cx));
+            self.settings_ui.refresh_learning = false;
+            self.settings_ui.refresh_provider = None;
         }
         if self.settings_ui.focus_advanced && !self.loading {
             self.settings_ui.focus_advanced = false;
@@ -114,56 +123,144 @@ impl Shell {
             }
         }
     }
-    pub(super) fn switch_provider(
-        &mut self,
-        kind: ProviderKind,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.loading {
-            return;
-        }
-        if self
-            .settings_editor
-            .as_ref()
-            .is_some_and(|editor| editor.provider_dirty(cx))
-        {
-            self.settings_ui.pending = Some(PendingSettings::Provider(kind));
-            cx.notify();
-            return;
-        }
-        self.apply_provider_kind(kind, window, cx);
-    }
-    fn apply_provider_kind(
-        &mut self,
-        kind: ProviderKind,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.provider_kind = kind;
-        let provider = if kind == ProviderKind::Tts {
+    fn provider_baseline(&self, kind: ProviderKind) -> Option<&ProviderConfig> {
+        if kind == ProviderKind::Tts {
             self.tts_config.as_ref()
         } else {
             self.provider_config.as_ref()
-        };
+        }
+    }
+    pub(super) fn provider_has_key(&self, kind: ProviderKind) -> bool {
+        if kind == ProviderKind::Tts {
+            self.has_tts_key
+        } else {
+            self.has_session_key
+        }
+    }
+    pub(super) fn reset_providers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.loading {
+            return;
+        }
+        let llm = self.provider_config.clone();
+        let tts = self.tts_config.clone();
         if let Some(editor) = &mut self.settings_editor {
-            editor.reset_provider(kind, provider, window, cx);
+            editor.reset_provider(ProviderKind::Llm, llm.as_ref(), window, cx);
+            editor.reset_provider(ProviderKind::Tts, tts.as_ref(), window, cx);
         }
         cx.notify();
+    }
+    /// One click saves every edited provider. Each provider owns its revision
+    /// and secret, so commands run one after another instead of as a single
+    /// all-or-nothing write; every draft is validated before the first one is
+    /// sent so a bad field cannot leave a half-applied page.
+    pub(super) fn save_providers(&mut self, cx: &mut Context<Self>) {
+        if self.loading {
+            return;
+        }
+        let prepared = {
+            let Some(editor) = &self.settings_editor else {
+                return;
+            };
+            [ProviderKind::Llm, ProviderKind::Tts]
+                .into_iter()
+                .filter(|kind| editor.provider_dirty(*kind, cx))
+                .map(|kind| {
+                    let revision = self
+                        .provider_baseline(kind)
+                        .map_or(0, |config| config.revision);
+                    let draft = editor.provider(kind);
+                    let config = draft.config(kind, revision + 1, cx);
+                    config.validate().map_err(|error| error.to_string())?;
+                    let secret = draft.secret(false, cx).map_err(|error| error.message)?;
+                    Ok(QueuedProviderSave {
+                        kind,
+                        config,
+                        revision,
+                        secret,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()
+        };
+        let mut saves = match prepared {
+            Ok(saves) => saves,
+            Err(message) => {
+                self.error = Some(message);
+                cx.notify();
+                return;
+            }
+        };
+        if saves.is_empty() {
+            return;
+        }
+        let first = saves.remove(0);
+        self.settings_ui.queued_providers = saves.into();
+        self.dispatch_provider_save(first, cx);
+    }
+    pub(crate) fn next_queued_provider(&mut self) -> Option<QueuedProviderSave> {
+        self.settings_ui.queued_providers.pop_front()
+    }
+    pub(super) fn clear_provider_key(&mut self, kind: ProviderKind, cx: &mut Context<Self>) {
+        if self.loading || !self.provider_has_key(kind) {
+            return;
+        }
+        let revision = self
+            .provider_baseline(kind)
+            .map_or(0, |config| config.revision);
+        let prepared = {
+            let Some(editor) = &self.settings_editor else {
+                return;
+            };
+            if editor.provider_dirty(kind, cx) {
+                return;
+            }
+            let config = editor.provider(kind).config(kind, revision + 1, cx);
+            match config.validate() {
+                Ok(()) => Ok(QueuedProviderSave {
+                    kind,
+                    config,
+                    revision,
+                    secret: SecretPatch::Clear,
+                }),
+                Err(error) => Err(error.to_string()),
+            }
+        };
+        match prepared {
+            Ok(save) => self.dispatch_provider_save(save, cx),
+            Err(message) => {
+                self.error = Some(message);
+                cx.notify();
+            }
+        }
+    }
+    pub(crate) fn dispatch_provider_save(
+        &mut self,
+        save: QueuedProviderSave,
+        cx: &mut Context<Self>,
+    ) {
+        let operation = format!(
+            "provider-{:?}-{}-{}",
+            save.kind, save.revision, self.request_id
+        );
+        self.request(
+            Command::SaveProvider {
+                config: save.config,
+                revision: save.revision,
+                secret: save.secret,
+                operation,
+            },
+            cx,
+        );
     }
     fn discard_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(pending) = self.settings_ui.pending.take() else {
             return;
         };
-        if let PendingSettings::Provider(kind) = pending {
-            self.apply_provider_kind(kind, window, cx);
-            return;
-        }
         if let Some(editor) = &self.settings_editor {
             self.settings = editor.baseline(&self.settings);
         }
         self.settings_editor = None;
         self.error = None;
+        self.settings_ui.queued_providers.clear();
         match pending {
             PendingSettings::Navigate(route) => self.navigate(route, cx),
             PendingSettings::Back => self.go_back(cx),
@@ -174,7 +271,6 @@ impl Shell {
             }
             PendingSettings::Reset => {}
             PendingSettings::Reload => self.request(Command::LoadSettings, cx),
-            PendingSettings::Provider(_) => unreachable!(),
         };
         cx.notify();
     }
@@ -183,12 +279,7 @@ impl Shell {
             return div().into_any_element();
         };
         let weak = cx.entity().downgrade();
-        let (headline, detail) = if matches!(pending, PendingSettings::Provider(_)) {
-            (
-                "放弃当前 AI 配置草稿？",
-                "切换服务类型会清空尚未保存的地址、模型、语音和密钥输入。学习设置草稿会保留。",
-            )
-        } else if matches!(pending, PendingSettings::Close) {
+        let (headline, detail) = if matches!(pending, PendingSettings::Close) {
             (
                 "放弃未保存的设置并关闭窗口？",
                 "未保存的学习设置和 AI 配置输入将被丢弃。",

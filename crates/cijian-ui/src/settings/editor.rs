@@ -72,16 +72,109 @@ pub(super) const FIELDS: [Field; 10] = [
 pub(super) fn advanced(id: &str) -> bool {
     matches!(id, "targets" | "control-ratio" | "retries")
 }
-pub(crate) struct Editor {
-    pub(super) fields: BTreeMap<&'static str, Entity<InputState>>,
-    sliders: BTreeMap<&'static str, Entity<SliderState>>,
+/// One provider's editable draft. LLM and TTS are configured independently and
+/// stay editable at the same time, so each keeps its own inputs.
+pub(super) struct ProviderDraft {
     pub(super) endpoint: Entity<InputState>,
     pub(super) model: Entity<InputState>,
     pub(super) voice: Entity<InputState>,
     pub(super) key: Entity<InputState>,
+    baseline: Option<ProviderConfig>,
+}
+pub(super) fn provider_index(kind: ProviderKind) -> usize {
+    if kind == ProviderKind::Llm { 0 } else { 1 }
+}
+impl ProviderDraft {
+    fn new(
+        provider: Option<&ProviderConfig>,
+        window: &mut Window,
+        cx: &mut Context<Shell>,
+    ) -> Self {
+        let endpoint = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(provider.map(|p| p.endpoint.clone()).unwrap_or_default())
+        });
+        let model = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(provider.map(|p| p.model.clone()).unwrap_or_default())
+        });
+        let voice = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(provider.and_then(|p| p.voice.clone()).unwrap_or_default())
+        });
+        let key = cx.new(|cx| InputState::new(window, cx).masked(true));
+        for input in [&endpoint, &model, &voice, &key] {
+            cx.observe(input, |_, _, cx| cx.notify()).detach();
+        }
+        Self {
+            endpoint,
+            model,
+            voice,
+            key,
+            baseline: provider.cloned(),
+        }
+    }
+    fn reset(
+        &mut self,
+        provider: Option<&ProviderConfig>,
+        window: &mut Window,
+        cx: &mut Context<Shell>,
+    ) {
+        self.baseline = provider.cloned();
+        for (input, value) in [
+            (
+                &self.endpoint,
+                provider.map(|p| p.endpoint.clone()).unwrap_or_default(),
+            ),
+            (
+                &self.model,
+                provider.map(|p| p.model.clone()).unwrap_or_default(),
+            ),
+            (
+                &self.voice,
+                provider.and_then(|p| p.voice.clone()).unwrap_or_default(),
+            ),
+            (&self.key, String::new()),
+        ] {
+            input.update(cx, |input, cx| input.set_value(value, window, cx));
+        }
+    }
+    pub(super) fn dirty(&self, kind: ProviderKind, cx: &App) -> bool {
+        let baseline = self.baseline.as_ref();
+        self.endpoint.read(cx).value().trim() != baseline.map_or("", |p| p.endpoint.as_str())
+            || self.model.read(cx).value().trim() != baseline.map_or("", |p| p.model.as_str())
+            || (kind == ProviderKind::Tts
+                && self.voice.read(cx).value().trim()
+                    != baseline.and_then(|p| p.voice.as_deref()).unwrap_or(""))
+            || !self.key.read(cx).value().is_empty()
+    }
+    pub(super) fn config(&self, kind: ProviderKind, revision: u64, cx: &App) -> ProviderConfig {
+        ProviderConfig {
+            kind,
+            endpoint: self.endpoint.read(cx).value().trim().into(),
+            model: self.model.read(cx).value().trim().into(),
+            voice: (kind == ProviderKind::Tts).then(|| self.voice.read(cx).value().trim().into()),
+            revision,
+        }
+    }
+    pub(super) fn secret(&self, clear: bool, cx: &App) -> Result<SecretPatch, AppError> {
+        if clear {
+            return Ok(SecretPatch::Clear);
+        }
+        let text = self.key.read(cx).value().to_string();
+        if text.is_empty() {
+            return Ok(SecretPatch::Keep);
+        }
+        Secret::new(text)
+            .map(SecretPatch::Replace)
+            .map_err(|error| AppError::new(cijian_ports::ErrorCode::InvalidInput, error.message))
+    }
+}
+pub(crate) struct Editor {
+    pub(super) fields: BTreeMap<&'static str, Entity<InputState>>,
+    sliders: BTreeMap<&'static str, Entity<SliderState>>,
+    providers: [ProviderDraft; 2],
     baseline: Settings,
-    provider: Option<ProviderConfig>,
-    kind: ProviderKind,
 }
 fn values(value: &Settings) -> BTreeMap<&'static str, String> {
     [
@@ -103,8 +196,7 @@ fn values(value: &Settings) -> BTreeMap<&'static str, String> {
 impl Editor {
     pub(crate) fn new(
         value: &Settings,
-        kind: ProviderKind,
-        provider: Option<&ProviderConfig>,
+        profile_providers: [Option<&ProviderConfig>; 2],
         window: &mut Window,
         cx: &mut Context<Shell>,
     ) -> Self {
@@ -183,33 +275,22 @@ impl Editor {
             .detach();
             sliders.insert(id, slider);
         }
-        let endpoint = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(provider.map(|p| p.endpoint.clone()).unwrap_or_default())
-        });
-        let model = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(provider.map(|p| p.model.clone()).unwrap_or_default())
-        });
-        let voice = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(provider.and_then(|p| p.voice.clone()).unwrap_or_default())
-        });
-        let key = cx.new(|cx| InputState::new(window, cx).masked(true));
-        for input in fields.values().chain([&endpoint, &model, &voice, &key]) {
+        let providers = [
+            ProviderDraft::new(profile_providers[0], window, cx),
+            ProviderDraft::new(profile_providers[1], window, cx),
+        ];
+        for input in fields.values() {
             cx.observe(input, |_, _, cx| cx.notify()).detach();
         }
         Self {
             fields,
             sliders,
-            endpoint,
-            model,
-            voice,
-            key,
+            providers,
             baseline: value.clone(),
-            provider: provider.cloned(),
-            kind,
         }
+    }
+    pub(super) fn provider(&self, kind: ProviderKind) -> &ProviderDraft {
+        &self.providers[provider_index(kind)]
     }
     pub(crate) fn draft(
         &self,
@@ -282,27 +363,13 @@ impl Editor {
         value.playback_rate = self.baseline.playback_rate;
         !errors.is_empty() || value != self.baseline
     }
-    pub(crate) fn provider_dirty(&self, cx: &App) -> bool {
-        self.endpoint.read(cx).value().trim()
-            != self
-                .provider
-                .as_ref()
-                .map(|p| p.endpoint.as_str())
-                .unwrap_or("")
-            || self.model.read(cx).value().trim()
-                != self
-                    .provider
-                    .as_ref()
-                    .map(|p| p.model.as_str())
-                    .unwrap_or("")
-            || (self.kind == ProviderKind::Tts
-                && self.voice.read(cx).value().trim()
-                    != self
-                        .provider
-                        .as_ref()
-                        .and_then(|p| p.voice.as_deref())
-                        .unwrap_or(""))
-            || !self.key.read(cx).value().is_empty()
+    pub(crate) fn provider_dirty(&self, kind: ProviderKind, cx: &App) -> bool {
+        self.provider(kind).dirty(kind, cx)
+    }
+    pub(crate) fn any_provider_dirty(&self, cx: &App) -> bool {
+        [ProviderKind::Llm, ProviderKind::Tts]
+            .into_iter()
+            .any(|kind| self.provider_dirty(kind, cx))
     }
     pub(crate) fn baseline(&self, current: &Settings) -> Settings {
         let mut value = self.baseline.clone();
@@ -328,25 +395,7 @@ impl Editor {
         window: &mut Window,
         cx: &mut Context<Shell>,
     ) {
-        self.kind = kind;
-        self.provider = provider.cloned();
-        for (input, value) in [
-            (
-                &self.endpoint,
-                provider.map(|p| p.endpoint.clone()).unwrap_or_default(),
-            ),
-            (
-                &self.model,
-                provider.map(|p| p.model.clone()).unwrap_or_default(),
-            ),
-            (
-                &self.voice,
-                provider.and_then(|p| p.voice.clone()).unwrap_or_default(),
-            ),
-            (&self.key, String::new()),
-        ] {
-            input.update(cx, |input, cx| input.set_value(value, window, cx));
-        }
+        self.providers[provider_index(kind)].reset(provider, window, cx);
     }
     pub(crate) fn focus_advanced(&self, window: &mut Window, cx: &mut App) {
         let focus = self.fields["control-ratio"].read(cx).focus_handle(cx);

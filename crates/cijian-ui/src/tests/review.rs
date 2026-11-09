@@ -360,12 +360,12 @@ impl CommandBus for WordAudioBus {
         let result = match command {
             Command::PlayWord { accent, .. } => Ok(Response::WordAudio { accent }),
             // Switching the accent on the card persists the preference.
-            Command::SetPronunciationAccent { accent } => {
-                Ok(Response::Preferences(cijian_domain::settings::DevicePreferences {
+            Command::SetPronunciationAccent { accent } => Ok(Response::Preferences(
+                cijian_domain::settings::DevicePreferences {
                     pronunciation_accent: accent,
                     ..Default::default()
-                }))
-            }
+                },
+            )),
             _ => Err(AppError::new(
                 cijian_ports::ErrorCode::InvalidInput,
                 "原创测试只播放单词发音",
@@ -454,7 +454,27 @@ fn pronunciation_chip_switches_accent_and_ipa_replays_the_word(cx: &mut TestAppC
             ..
         })
     ));
-    let _ = shell;
+    drop(commands);
+    // Pronunciation is fire-and-forget: it must not take the busy flag, blink a
+    // message window, or block revealing the card.
+    assert!(!shell.read_with(cx, |shell, _| shell.loading));
+    cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(500));
+    cx.run_until_parked();
+    assert!(
+        !shell.read_with(cx, |shell, _| shell.busy_visible),
+        "playing a word never reports progress as a request"
+    );
+    assert!(shell.read_with(cx, |shell, _| shell.snackbar().is_none()));
+    cx.update_window(handle, |_, window, cx| {
+        window.press("space", cx);
+        window.render_frame(cx);
+    })
+    .unwrap();
+    assert!(
+        shell.read_with(cx, |shell, _| shell.revealed),
+        "playback must not swallow the next reveal"
+    );
 }
 
 /// Serves one review queue per call so a test can advance card by card.
@@ -547,6 +567,7 @@ fn review_card(id: &str, word: &str, audio: bool) -> cijian_ports::library::Card
 
 #[gpui_kit::test]
 fn a_new_card_is_read_aloud_once_and_silent_cards_do_not_retry(cx: &mut TestAppContext) {
+    // The preference is on by default; the switch covers the disabled case below.
     cx.update(|cx| {
         gpui_kit::init(cx);
         gpui_kit_material::init(cx);
@@ -567,7 +588,6 @@ fn a_new_card_is_read_aloud_once_and_silent_cards_do_not_retry(cx: &mut TestAppC
             gpui_kit::open_window(
                 WindowOptions {
                     window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
-    // The preference is on by default; the switch covers the disabled case below.
                         Default::default(),
                         size(px(1000.), px(900.)),
                     ))),
@@ -657,10 +677,12 @@ fn auto_play_preference_off_keeps_new_cards_silent(cx: &mut TestAppContext) {
     cx.update_window(handle, |_, window, cx| window.render_frame(cx))
         .unwrap();
     assert!(
-        !bus.0.lock().unwrap().1.iter().any(|command| matches!(
-            command,
-            Command::PlayWord { .. }
-        )),
+        !bus.0
+            .lock()
+            .unwrap()
+            .1
+            .iter()
+            .any(|command| matches!(command, Command::PlayWord { .. })),
         "auto-play off must not read a new card aloud"
     );
 }

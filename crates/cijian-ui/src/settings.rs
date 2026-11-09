@@ -296,29 +296,137 @@ impl Shell {
         row.into_any_element()
     }
 
-    fn provider_field(
+    /// One provider's card. LLM and TTS are configured at the same time, so both
+    /// forms always stay editable instead of a mode switch that hides one.
+    fn provider_form(
         &self,
-        label: &'static str,
-        value: Option<&str>,
-        input: Option<gpui_kit::AnyElement>,
+        kind: ProviderKind,
+        editor: &Editor,
+        cx: &mut Context<Self>,
     ) -> gpui_kit::AnyElement {
-        if let Some(input) = input {
-            return input;
-        }
-        let text = value.unwrap_or("未配置");
-        design::field_label(label)
+        let llm = kind == ProviderKind::Llm;
+        let prefix = if llm { "llm" } else { "tts" };
+        let draft = editor.provider(kind);
+        let configured = if llm {
+            self.provider_config.as_ref()
+        } else {
+            self.tts_config.as_ref()
+        };
+        let has_key = self.provider_has_key(kind);
+        let clearable = has_key && !draft.dirty(kind, cx);
+        let id = |name: &str| gpui_kit::SharedString::from(format!("{prefix}-{name}"));
+        let mut form = design::card()
             .w_full()
+            .rounded(px(28.))
+            .p(px(22.))
+            .px(px(24.))
+            .gap(px(16.))
+            .flex()
+            .flex_col();
+        form = form.child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(12.))
+                .child(design::text(16., 22., 650.).flex_1().child(if llm {
+                    "LLM · 写作与释义"
+                } else {
+                    "TTS · 整篇音频"
+                }))
+                .child(design::muted_text(12., 16.).child(if llm {
+                    "全部必填 · 无默认模型"
+                } else {
+                    "留空则用本机朗读"
+                }))
+                .child(if configured.is_some() {
+                    design::tag(ColorRole::SUCCESS_BG, ColorRole::ON_SUCCESS)
+                        .child(design::dot(ColorRole::SUCCESS, 8.))
+                        .child("已配置")
+                } else {
+                    design::tag(
+                        ColorRole::SURFACE_CONTAINER_HIGH,
+                        ColorRole::ON_SURFACE_VARIANT,
+                    )
+                    .child("未配置")
+                }),
+        );
+        let mut fields = div()
+            .flex()
+            .gap(px(12.))
             .child(
-                design::mono(15., 22., 400.)
-                    .text_color(design::c(if value.is_some() {
-                        ColorRole::ON_SURFACE
-                    } else {
-                        ColorRole::OUTLINE
-                    }))
-                    .text_ellipsis()
-                    .child(text.to_owned()),
+                div().flex_grow(1.4).flex_basis(px(0.)).min_w_0().child(
+                    TextField::new(id("endpoint"), &draft.endpoint)
+                        .outlined()
+                        .label("端点 Base URL")
+                        .disabled(self.loading)
+                        .w_full(),
+                ),
             )
-            .into_any_element()
+            .child(
+                div().flex_grow(1.).flex_basis(px(0.)).min_w_0().child(
+                    TextField::new(id("model"), &draft.model)
+                        .outlined()
+                        .label("模型")
+                        .disabled(self.loading)
+                        .w_full(),
+                ),
+            );
+        if !llm {
+            fields = fields.child(
+                div().flex_grow(0.8).flex_basis(px(0.)).min_w_0().child(
+                    TextField::new(id("voice"), &draft.voice)
+                        .outlined()
+                        .label("声音")
+                        .disabled(self.loading)
+                        .w_full(),
+                ),
+            );
+        }
+        form = form.child(fields);
+        form = form.child(
+            TextField::new(id("key"), &draft.key)
+                .outlined()
+                .label("API 密钥")
+                .disabled(self.loading)
+                .w_full(),
+        );
+        form = form.child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(12.))
+                .child(
+                    design::text(12., 16., 400.)
+                        .flex_1()
+                        .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
+                        .child(key_source_copy(self.key_source, has_key).1),
+                )
+                .child(
+                    div()
+                        .id(id("clear-key"))
+                        .test_support()
+                        .role(gpui_kit::Role::Button)
+                        .aria_label(if llm {
+                            "清除已保存的 LLM 密钥"
+                        } else {
+                            "清除已保存的 TTS 密钥"
+                        })
+                        .cursor_pointer()
+                        .h(px(32.))
+                        .px(px(12.))
+                        .rounded(px(16.))
+                        .flex()
+                        .items_center()
+                        .text_color(design::c(ColorRole::ERROR))
+                        .text_size(px(12.))
+                        .when(self.loading || !clearable, |button| button.opacity(0.38))
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| this.clear_provider_key(kind, cx)),
+                        )
+                        .child("清除密钥"),
+                ),
+        );
+        form.into_any_element()
     }
 
     fn provider_page(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
@@ -327,333 +435,46 @@ impl Shell {
                 .child("正在读取设置…")
                 .into_any_element();
         };
-        let llm = self.provider_config.as_ref();
-        let tts = self.tts_config.as_ref();
-        let llm_active = self.provider_kind == ProviderKind::Llm;
-        let tts_active = self.provider_kind == ProviderKind::Tts;
-        let has_key = if self.provider_kind == ProviderKind::Llm {
-            self.has_session_key
-        } else {
-            self.has_tts_key
-        };
-        let (key_hint, key_field) = key_source_copy(self.key_source, has_key);
+        let provider_dirty = editor.any_provider_dirty(cx);
         let mut page = div()
             .id("provider-page")
             .flex()
             .flex_col()
             .flex_1()
             .min_h_0()
-            .gap(px(18.))
-            .when(self.compact, |page| page.overflow_y_scroll().pb(px(90.)));
+            .gap(px(18.));
         page = page.child(self.settings_header(
             "AI 服务",
             "保存后立即生效，无需重启 · 此页不会发起测试调用",
             cx,
         ));
-        page = page.child(self.provider_summary());
-        let provider_dirty = editor.provider_dirty(cx);
-
-        let mut llm_form = design::card()
-            .w_full()
-            .rounded(px(28.))
-            .p(px(22.))
-            .px(px(24.))
-            .gap(px(18.))
+        // Both provider cards scroll; the actions stay reachable at any height.
+        let mut content = div()
+            .id("provider-scroll")
+            .track_scroll(&self.page_scroll)
             .flex()
-            .flex_col();
-        llm_form = llm_form
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .child(design::text(16., 22., 650.).flex_1().child("LLM"))
-                    .child(design::muted_text(12., 16.).child("全部必填 · 无默认模型")),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap(px(12.))
-                    .child(div().flex_grow(1.4).flex_basis(px(0.)).min_w_0().child(
-                        self.provider_field(
-                            "端点 Base URL",
-                            llm.map(|config| config.endpoint.as_str()),
-                            llm_active.then(|| {
-                                TextField::new("provider-endpoint", &editor.endpoint)
-                                    .outlined()
-                                    .label("端点 Base URL")
-                                    .disabled(self.loading)
-                                    .w_full()
-                                    .into_any_element()
-                            }),
-                        ),
-                    ))
-                    .child(div().flex_grow(1.).flex_basis(px(0.)).min_w_0().child(
-                        self.provider_field(
-                            "模型",
-                            llm.map(|config| config.model.as_str()),
-                            llm_active.then(|| {
-                                TextField::new("provider-model", &editor.model)
-                                    .outlined()
-                                    .label("模型")
-                                    .disabled(self.loading)
-                                    .w_full()
-                                    .into_any_element()
-                            }),
-                        ),
-                    )),
-            )
-            .child(self.provider_field(
-                "API 密钥",
-                if has_key {
-                    Some("已设置，留空则保持不变")
-                } else {
-                    None
-                },
-                llm_active.then(|| {
-                    TextField::new("provider-key", &editor.key)
-                        .outlined()
-                        .label("API 密钥")
-                        .disabled(self.loading)
-                        .w_full()
-                        .into_any_element()
-                }),
-            ))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .child(
-                        design::text(12., 16., 400.)
-                            .flex_1()
-                            .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
-                            .child(key_hint),
-                    )
-                    .when(llm_active, |row| {
-                        row.child(
-                            div()
-                                .id("clear-provider-key")
-                                .test_support()
-                                .role(gpui_kit::Role::Button)
-                                .aria_label("清除已保存密钥")
-                                .cursor_pointer()
-                                .h(px(32.))
-                                .px(px(12.))
-                                .rounded(px(16.))
-                                .flex()
-                                .items_center()
-                                .text_color(design::c(ColorRole::ERROR))
-                                .text_size(px(12.))
-                                .when(self.loading || provider_dirty || !has_key, |button| {
-                                    button.opacity(0.38)
-                                })
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    if !this.loading && has_key && !provider_dirty {
-                                        this.save_provider(true, cx);
-                                    }
-                                }))
-                                .child("清除密钥"),
-                        )
-                    }),
-            );
-        page = page.child(llm_form);
-
-        let mut tts_form = design::card()
-            .w_full()
-            .rounded(px(28.))
-            .p(px(22.))
-            .px(px(24.))
-            .gap(px(16.))
-            .flex()
-            .flex_col();
-        let mut tts_switch = div().flex().gap(px(2.)).w(px(420.));
-        for (kind, label, selected) in [
-            (ProviderKind::Llm, "编辑 LLM", !tts_active),
-            (ProviderKind::Tts, "编辑 TTS", tts_active),
-        ] {
-            let first = kind == ProviderKind::Llm;
-            let radii = if first {
-                [20., 6., 6., 20.]
-            } else {
-                [6., 20., 20., 6.]
-            };
-            let cell = design::shaped(
-                radii,
-                design::c(if selected {
-                    ColorRole::SECONDARY
-                } else {
-                    ColorRole::SURFACE_CONTAINER_HIGH
-                }),
-            )
-            .id(if selected {
-                gpui_kit::SharedString::from(if first {
-                    "provider-kind-tts-none"
-                } else {
-                    "provider-kind-tts"
-                })
-            } else {
-                gpui_kit::SharedString::from("provider-kind")
-            })
-            .test_support()
-            .role(gpui_kit::Role::Button)
-            .aria_label(label)
-            .cursor_pointer()
-            .h(px(40.))
+            .flex_col()
             .flex_1()
-            .flex()
-            .items_center()
-            .justify_center()
-            .gap(px(6.))
-            .text_color(design::c(if selected {
-                ColorRole::SURFACE_CONTAINER_LOWEST
-            } else {
-                ColorRole::ON_SURFACE_VARIANT
-            }))
-            .text_size(px(14.))
-            .font_weight(gpui_kit::FontWeight(if selected { 700. } else { 600. }))
-            .on_click(cx.listener(move |this, _, window, cx| {
-                if this.provider_kind != kind {
-                    this.switch_provider(kind, window, cx);
-                }
-            }))
-            .when(selected, |cell| {
-                cell.child(design::icon_role(
-                    Icon::Check,
-                    18.,
-                    ColorRole::SURFACE_CONTAINER_LOWEST,
-                ))
-            })
-            .child(label);
-            tts_switch = tts_switch.child(cell);
-        }
-        tts_form = tts_form.child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(16.))
-                .child(design::text(16., 22., 650.).flex_1().child("TTS"))
-                .child(tts_switch),
-        );
-        let mut tts_fields = div().flex().gap(px(12.));
-        tts_fields =
-            tts_fields
-                .child(div().flex_grow(1.4).flex_basis(px(0.)).min_w_0().child(
-                    self.provider_field(
-                        "端点 Base URL",
-                        tts.map(|config| config.endpoint.as_str()),
-                        tts_active.then(|| {
-                            TextField::new("provider-endpoint", &editor.endpoint)
-                                .outlined()
-                                .label("端点 Base URL")
-                                .disabled(self.loading)
-                                .w_full()
-                                .into_any_element()
-                        }),
-                    ),
-                ))
-                .child(
-                    div()
-                        .flex_grow(1.)
-                        .flex_basis(px(0.))
-                        .min_w_0()
-                        .child(self.provider_field(
-                            "模型",
-                            tts.map(|config| config.model.as_str()),
-                            tts_active.then(|| {
-                                TextField::new("provider-model", &editor.model)
-                                    .outlined()
-                                    .label("模型")
-                                    .disabled(self.loading)
-                                    .w_full()
-                                    .into_any_element()
-                            }),
-                        )),
-                )
-                .child(div().flex_grow(0.8).flex_basis(px(0.)).min_w_0().child(
-                    self.provider_field(
-                        "声音",
-                        tts.and_then(|config| config.voice.as_deref()),
-                        tts_active.then(|| {
-                            TextField::new("provider-voice", &editor.voice)
-                                .outlined()
-                                .label("声音")
-                                .disabled(self.loading)
-                                .w_full()
-                                .into_any_element()
-                        }),
-                    ),
-                ));
-        tts_form = tts_form.child(tts_fields);
-        tts_form = tts_form.child(self.provider_field(
-            "API 密钥",
-            if has_key && tts_active {
-                Some("已设置，留空则保持不变")
-            } else {
-                None
-            },
-            tts_active.then(|| {
-                TextField::new("provider-key", &editor.key)
-                    .outlined()
-                    .label("API 密钥")
-                    .disabled(self.loading)
-                    .w_full()
-                    .into_any_element()
-            }),
-        ));
-        if tts_active {
-            tts_form = tts_form.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .child(
-                        design::text(12., 16., 400.)
-                            .flex_1()
-                            .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
-                            .child(if has_key {
-                                "本次会话已设置朗读密钥；留空表示保留"
-                            } else {
-                                "本次会话未设置朗读密钥"
-                            }),
-                    )
-                    .child(
-                        div()
-                            .id("clear-provider-key")
-                            .test_support()
-                            .role(gpui_kit::Role::Button)
-                            .aria_label("清除已保存密钥")
-                            .cursor_pointer()
-                            .h(px(32.))
-                            .px(px(12.))
-                            .rounded(px(16.))
-                            .flex()
-                            .items_center()
-                            .text_color(design::c(ColorRole::ERROR))
-                            .text_size(px(12.))
-                            .when(self.loading || provider_dirty || !has_key, |button| {
-                                button.opacity(0.38)
-                            })
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                if !this.loading && has_key && !provider_dirty {
-                                    this.save_provider(true, cx);
-                                }
-                            }))
-                            .child("清除密钥"),
-                    ),
-            );
-        }
-        page = page.child(tts_form);
-
-        page = page.child(div().flex_1());
+            .min_h_0()
+            .gap(px(18.))
+            .overflow_y_scroll()
+            .when(self.compact, |content| content.pb(px(90.)));
+        content = content.child(self.provider_summary());
+        content = content.child(self.provider_form(ProviderKind::Llm, editor, cx));
+        content = content.child(self.provider_form(ProviderKind::Tts, editor, cx));
+        page = page.child(content);
         page = page.child(
             div()
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .child(design::muted_text(12., 16.).flex_1().child(key_field))
+                .child(design::muted_text(12., 16.).flex_1().child(
+                    key_source_copy(self.key_source, self.has_session_key || self.has_tts_key).0,
+                ))
                 .child(
                     div()
                         .id("reset-provider-draft")
+                        .test_support()
                         .role(gpui_kit::Role::Button)
                         .aria_label("撤销 AI 配置修改")
                         .cursor_pointer()
@@ -666,21 +487,9 @@ impl Shell {
                         .when(self.loading || !provider_dirty, |button| {
                             button.opacity(0.38)
                         })
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            if this.loading {
-                                return;
-                            }
-                            let kind = this.provider_kind;
-                            let provider = if kind == ProviderKind::Tts {
-                                this.tts_config.clone()
-                            } else {
-                                this.provider_config.clone()
-                            };
-                            if let Some(editor) = &mut this.settings_editor {
-                                editor.reset_provider(kind, provider.as_ref(), window, cx);
-                            }
-                            cx.notify();
-                        }))
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.reset_providers(window, cx)),
+                        )
                         .child("撤销修改"),
                 )
                 .child(
@@ -705,7 +514,7 @@ impl Shell {
                         })
                         .on_click(cx.listener(|this, _, _, cx| {
                             if !this.loading {
-                                this.save_provider(false, cx);
+                                this.save_providers(cx);
                             }
                         }))
                         .child(design::icon_role(Icon::Check, 18., ColorRole::ON_PRIMARY))
@@ -1653,57 +1462,5 @@ impl Shell {
             .child(main)
             .child(self.settings_dialog(cx))
             .into_any_element()
-    }
-
-    fn save_provider(&mut self, clear: bool, cx: &mut Context<Self>) {
-        let Some(editor) = &self.settings_editor else {
-            return;
-        };
-        let revision = (if self.provider_kind == ProviderKind::Tts {
-            self.tts_config.as_ref()
-        } else {
-            self.provider_config.as_ref()
-        })
-        .map_or(0, |p| p.revision);
-        let config = ProviderConfig {
-            kind: self.provider_kind,
-            endpoint: editor.endpoint.read(cx).value().trim().into(),
-            model: editor.model.read(cx).value().trim().into(),
-            voice: if self.provider_kind == ProviderKind::Tts {
-                Some(editor.voice.read(cx).value().trim().into())
-            } else {
-                None
-            },
-            revision: revision + 1,
-        };
-        if let Err(error) = config.validate() {
-            self.error = Some(error.to_string());
-            cx.notify();
-            return;
-        }
-        let text = editor.key.read(cx).value().to_string();
-        let secret = if clear {
-            SecretPatch::Clear
-        } else if text.is_empty() {
-            SecretPatch::Keep
-        } else {
-            match Secret::new(text) {
-                Ok(secret) => SecretPatch::Replace(secret),
-                Err(error) => {
-                    self.error = Some(error.message);
-                    cx.notify();
-                    return;
-                }
-            }
-        };
-        self.request(
-            Command::SaveProvider {
-                config,
-                revision,
-                secret,
-                operation: format!("provider-{revision}-{}", self.request_id),
-            },
-            cx,
-        );
     }
 }

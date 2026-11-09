@@ -273,29 +273,6 @@ pub(crate) fn divider() -> gpui_kit::Div {
     div().h(px(1.)).w_full().bg(c(ColorRole::OUTLINE_VARIANT))
 }
 
-pub(crate) fn field_label(label: impl Into<SharedString>) -> gpui_kit::Div {
-    let label: SharedString = label.into();
-    div()
-        .relative()
-        .h(px(56.))
-        .flex()
-        .items_center()
-        .px(px(16.))
-        .rounded(px(12.))
-        .border_1()
-        .border_color(c(ColorRole::OUTLINE))
-        .child(
-            mono(12., 16., 600.)
-                .absolute()
-                .top(px(-9.))
-                .left(px(12.))
-                .px(px(4.))
-                .bg(c(ColorRole::SURFACE_CONTAINER_LOWEST))
-                .text_color(c(ColorRole::ON_SURFACE_VARIANT))
-                .child(label),
-        )
-}
-
 pub(crate) fn empty_state(message: impl Into<SharedString>) -> gpui_kit::Div {
     div()
         .flex_1()

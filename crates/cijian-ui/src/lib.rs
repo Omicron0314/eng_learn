@@ -37,6 +37,9 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+/// How long a foreground request may run before the busy notice appears. Local
+/// queries answer well inside this window, so ordinary clicks stay silent.
+const BUSY_NOTICE_DELAY: u64 = 400;
 
 struct Shell {
     focus: Option<gpui_kit::FocusHandle>,
@@ -52,6 +55,9 @@ struct Shell {
     rendered_dark: bool,
     backend: Option<Arc<dyn CommandBus>>,
     loading: bool,
+    /// Set only after a foreground request stays unanswered past
+    /// `BUSY_NOTICE_DELAY`, so quick local queries never blink the snackbar.
+    busy_visible: bool,
     compact_reader: bool,
     reader_scroll: gpui_kit::ScrollHandle,
     heatmap_focus: std::cell::RefCell<Vec<gpui_kit::FocusHandle>>,
@@ -72,6 +78,7 @@ struct Shell {
     intervals: Option<[i64; 4]>,
     revealed: bool,
     review_accent: cijian_domain::audio::Accent,
+    review_announced: Option<String>,
     review_auto_play: bool,
     review_started: Instant,
     review_done: u32,
@@ -79,7 +86,6 @@ struct Shell {
     settings: cijian_domain::settings::Settings,
     settings_revision: u64,
     legacy_selection: Option<String>,
-    review_announced: Option<String>,
     legacy_profiles: Vec<cijian_ports::legacy::LegacyProfile>,
     legacy_report: Option<cijian_ports::legacy::LegacyReport>,
     stored_audio: Vec<cijian_ports::audio::AudioAsset>,
@@ -91,7 +97,6 @@ struct Shell {
     system_voice_index: usize,
     show_listening_text: bool,
     playback: cijian_domain::audio::Playback,
-    provider_kind: cijian_domain::provider::ProviderKind,
     tts_config: Option<cijian_domain::provider::ProviderConfig>,
     has_tts_key: bool,
     key_source: cijian_ports::provider::SecretSource,
@@ -144,6 +149,7 @@ impl Shell {
             rendered_dark: false,
             backend: None,
             loading: false,
+            busy_visible: false,
             compact_reader: false,
             reader_scroll: gpui_kit::ScrollHandle::new(),
             heatmap_focus: Default::default(),
@@ -164,6 +170,7 @@ impl Shell {
             intervals: None,
             revealed: false,
             review_accent: cijian_domain::audio::Accent::default(),
+            review_announced: None,
             review_auto_play: true,
             review_started: Instant::now(),
             review_done: 0,
@@ -171,7 +178,6 @@ impl Shell {
             settings: Default::default(),
             settings_revision: 1,
             legacy_selection: None,
-            review_announced: None,
             legacy_profiles: Vec::new(),
             legacy_report: None,
             stored_audio: Vec::new(),
@@ -183,7 +189,6 @@ impl Shell {
             system_voice_index: 0,
             show_listening_text: false,
             playback: Default::default(),
-            provider_kind: cijian_domain::provider::ProviderKind::Llm,
             tts_config: None,
             has_tts_key: false,
             key_source: cijian_ports::provider::SecretSource::Session,
@@ -225,351 +230,393 @@ impl Shell {
         let Some(backend) = self.backend.clone() else {
             return;
         };
-        self.loading = true;
-        self.lookup_loading = matches!(command, Command::Lookup { .. });
-        self.error = None;
-        self.request_id += 1;
+        // Polls and local playback controls are scheduled by the UI itself.
+        // They must not take the busy flag: doing so blinked the snackbar and
+        // disabled the card while a word was playing.
+        let poll = command.is_background_poll();
+        let quiet = command.is_quiet();
+        if !quiet {
+            self.loading = true;
+            self.busy_visible = false;
+            self.lookup_loading = matches!(command, Command::Lookup { .. });
+            self.error = None;
+            self.request_id += 1;
+        }
         let request_id = self.request_id;
         let rating = matches!(command, Command::Rate { .. });
+        if !quiet {
+            // Instant local queries answer within a frame; showing the busy
+            // notice up front made every click flash a message window.
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(BUSY_NOTICE_DELAY))
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    if this.loading && this.request_id == request_id && !this.busy_visible {
+                        this.busy_visible = true;
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
+        }
         let task = cx
             .background_executor()
             .spawn(async move { backend.dispatch(command).await });
         cx.spawn(async move |this, cx| {
             let response = task.await;
             let _ = this.update(cx, |this, cx| {
-                if request_id != this.request_id {
+                if !quiet && request_id != this.request_id {
                     return;
                 }
-                this.loading = false;
-                this.lookup_loading = false;
-                match response {
-                    Err(error) => {
-                        if rating && error.code == cijian_ports::ErrorCode::StaleState {
-                            this.notice = Some("词卡已更新，已重新加载；请重新评分".into());
-                            this.request(Command::LoadReview, cx);
-                        } else {
-                            this.error = Some(error.message);
-                        }
-                    }
-                    Ok(Response::Preferences(value)) => {
-                        this.settings.theme = value.theme;
-                        this.settings.playback_rate = value.playback_rate;
-                        this.review_accent = value.pronunciation_accent;
-                        this.review_auto_play = value.review_auto_play;
-                        let _ = this.playback.set_rate(value.playback_rate);
-                        this.poll_audio(cx);
-                        if let Some(voice) = value.system_voice {
-                            this.system_voice_index = this
-                                .system_voices
-                                .iter()
-                                .position(|available| available.id == voice)
-                                .unwrap_or(0);
-                        }
-                    }
-                    Ok(Response::Audio(state)) => this.receive_audio(state, cx),
-                    // The chosen accent is a preference now; a fallback playback
-                    // must not silently rewrite it.
-                    Ok(Response::WordAudio { .. }) => {}
-                    Ok(Response::LegacyProfiles {
-                        selection,
-                        profiles,
-                    }) => {
-                        this.legacy_selection = Some(selection);
-                        this.legacy_profiles = profiles;
-                        this.legacy_report = None;
-                    }
-                    Ok(Response::LegacyPreview { selection, report }) => {
-                        this.legacy_selection = Some(selection);
-                        this.legacy_profiles.clear();
-                        this.legacy_report = Some(*report);
-                    }
-                    Ok(Response::LegacyImported {
-                        already_present,
-                        directory,
-                    }) => {
-                        this.notice = Some(if already_present {
-                            format!("相同快照已迁入，没有重复创建学习记录。位置：{directory}")
-                        } else {
-                            format!(
-                                "迁入完成，新学习库已打开。原 Web 数据未改动。位置：{directory}"
-                            )
-                        });
-                    }
-                    Ok(Response::BackupSaved { include_audio }) => {
-                        this.notice = Some(
-                            if include_audio {
-                                "学习备份已保存，包含音频缓存，不包含密钥"
-                            } else {
-                                "学习备份已保存，不包含密钥和音频缓存"
-                            }
-                            .into(),
-                        )
-                    }
-                    Ok(Response::RestoreOpened) => {
-                        this.notice =
-                            Some("恢复完成，新学习库已在另一个窗口打开；当前学习库保留".into())
-                    }
-                    Ok(Response::FileCancelled) => {}
-                    Ok(Response::Stats(stats)) => this.stats = Some(*stats),
-                    Ok(Response::Articles(articles)) => {
-                        if !this.articles_history && this.articles_page == 0 {
-                            this.today_article_count = articles.len() as u64;
-                        }
-                        this.articles = articles;
-                    }
-                    Ok(Response::Article {
-                        article,
-                        session,
-                        audio,
-                        feedback,
-                    }) => {
-                        if this
-                            .source_reveal
-                            .as_ref()
-                            .is_some_and(|(id, hash, _)| id != &article.id || hash != &article.body_hash)
-                        {
-                            this.source_reveal = None;
-                            this.notice = Some("来源文章正文已变化，无法定位原词".into());
-                        }
-                        this.reading_feedback = feedback;
-                        this.reader_flags.open = false;
-                        this.audio_ready = !audio.is_empty();
-                        this.last_audio_system = false;
-                        this.stored_audio = audio;
-                        let listening=matches!(this.navigation.current(),Route::Article{id,listening:true} if id==&article.id);
-                        this.navigation.navigate(Route::Article {
-                            id: article.id.clone(),
-                            listening,
-                        });
-                        this.article = Some(*article);
-                        this.reading_session = Some(session);
-                        this.lookup = None;
-                        cx.spawn(async move |this, cx| {
-                            cx.background_executor()
-                                .timer(std::time::Duration::from_millis(24))
-                                .await;
-                            let _ = this.update(cx, |_, cx| cx.notify());
-                        })
-                        .detach();
-                    }
-                    Ok(Response::Lookup {
-                        context,
-                        revision,
-                        meaning,
-                    }) => {this.mark_result = None;this.lookup = Some((context, revision, meaning));},
-                    Ok(Response::Marked(result)) => {
-                        if let Some((_, revision, _)) = &mut this.lookup {
-                            *revision = result.revision;
-                        }
-                        this.notice = Some(
-                            if result.archived {
-                                "词卡已归档，未自动恢复"
-                            } else if result.paused {
-                                "词卡已暂停，可在词库恢复"
-                            } else if result.card_id.is_some() {
-                                "已加入复习"
-                            } else if result.inbox_id.is_some() {
-                                "已放入生词箱"
-                            } else {
-                                "已标记认识"
-                            }
-                            .into(),
-                        );
-                    }
-                    Ok(Response::Inbox { items, total }) => {
-                        this.inbox = items;
-                        this.inbox_total = total;
-                        this.inbox_selected.clear();
-                    }
-                    Ok(Response::InboxProcessed(_)) => {
-                        this.request(Command::LoadInbox { page: 0 }, cx)
-                    }
-                    Ok(Response::ReadingPositionSaved {..}) => {}
-                    Ok(Response::Completed(session)) => {
-                        this.reading_session = Some(session);
-                        this.notice = Some("已记录本次阅读完成".into());
-                        this.request(Command::LoadStats { page: 0 }, cx);
-                    }
-                    Ok(Response::FeedbackSaved(feedback)) => {
-                        this.reading_feedback.retain(|value| value.mode != feedback.mode);
-                        this.reading_feedback.push(feedback);
-                        this.notice = Some("反馈已保存".into());
-                        this.request(Command::LoadStats { page: 0 }, cx);
-                    }
-                    Ok(Response::SentencesFlagged {article,body_hash}) => this.flag_saved(article,body_hash),
-                    Ok(Response::Job(job)) => this.receive_job(job, cx),
-                    Ok(Response::LearningSettingsSaved {
-                        mut value,
-                        revision,
-                    }) => {
-                        value.theme = this.settings.theme;
-                        value.playback_rate = this.settings.playback_rate;
-                        this.settings = value;
-                        this.settings_revision = revision;
-                        this.settings_ui.refresh_learning = true;
-                        this.notice = Some("学习设置已保存".into());
-                    }
-                    Ok(Response::ProviderSaved {
-                        config,
-                        has_key,
-                        source,
-                    }) => {
-                        let kind = config.kind;
-                        this.key_source = source;
-                        if kind == cijian_domain::provider::ProviderKind::Tts {
-                            this.tts_config = Some(config);
-                            this.has_tts_key = has_key;
-                        } else {
-                            this.provider_config = Some(config);
-                            this.has_session_key = has_key;
-                        }
-                        this.settings_ui.refresh_provider = kind == this.provider_kind;
-                        this.notice = Some("AI 配置已保存".into());
-                    }
-                    Ok(Response::Settings {
-                        value,
-                        revision,
-                        provider,
-                        has_session_key,
-                        tts,
-                        has_tts_key,
-                        source,
-                        voices,
-                        system_voice,
-                    }) => {
-                        this.key_source = source;
-                        this.settings = value;
-                        this.settings_revision = revision;
-                        this.provider_config = provider;
-                        this.has_session_key = has_session_key;
-                        this.tts_config = tts;
-                        this.has_tts_key = has_tts_key;
-                        this.system_voices = voices;
-                        this.system_voice_index = this
-                            .system_voice_index
-                            .min(this.system_voices.len().saturating_sub(1));
-                        if let Some(voice) = system_voice {
-                            this.system_voice_index = this
-                                .system_voices
-                                .iter()
-                                .position(|available| available.id == voice)
-                                .unwrap_or(0);
-                        }
-                        this.settings_editor = None;
-                        this.dark =
-                            matches!(this.settings.theme, cijian_domain::settings::Theme::Dark);
-                        if this.navigation.current() == &Route::Today {
-                            this.request(Command::LoadReview, cx);
-                        }
-                    }
-                    Ok(Response::Library {
-                        page,
-                        books,
-                        entries,
-                        latest_import,
-                    }) => {
-                        if let Some((source, report)) = latest_import {
-                            this.library_ui.import_source = Some(source);
-                            this.report = Some(report);
-                        }
-                        this.library = Some(page);
-                        this.library_ui.books = books;
-                        this.library_ui.entries = entries;
-                    }
-                    Ok(Response::LibraryCardEdited(_)) => {
-                        this.library_ui.editor = None;
-                        this.library_ui.discard = false;
-                        this.notice = Some("词卡已保存".into());
-                        this.request(
-                            Command::LoadLibrary {
-                                filter: this.library_filter(),
-                            },
-                            cx,
-                        );
-                    }
-                    Ok(Response::DeleteBookPreview(preview)) => {
-                        this.library_ui.deletion = Some(preview)
-                    }
-                    Ok(Response::BookDeleted(preview)) => {
-                        this.library_ui.deletion = None;
-                        if this.library_ui.target.as_ref() == Some(&preview.book_id) {
-                            this.library_ui.target = None;
-                        }
-                        this.library_ui.page = 0;
-                        this.notice = Some(format!(
-                            "词书已删除；保留共享卡 {}，归档历史卡 {}",
-                            preview.shared_cards, preview.archived_cards
-                        ));
-                        this.navigate(
-                            Route::Library {
-                                book: None,
-                                search: String::new(),
-                            },
-                            cx,
-                        );
-                    }
-                    Ok(Response::Selected(selected)) => {
-                        if selected.is_some() {
-                            this.selected = selected;
-                        }
-                    }
-                    Ok(Response::Imported(report)) => {
-                        this.library_ui.import_source = None;
-                        this.library_ui.error_page = 0;
-                        this.library_ui.import_open = false;
-                        this.library_ui.report_open = true;
-                        this.report = Some(report);
-                        this.selected = None;
-                        this.request(
-                            Command::LoadLibrary {
-                                filter: this.library_filter(),
-                            },
-                            cx,
-                        );
-                    }
-                    Ok(Response::Review {
-                        cards,
-                        waiting,
-                        intervals,
-                        stats,
-                        books,
-                        inbox_pending,
-                    }) => {
-                        this.stats = Some(*stats);
-                        this.books = books;
-                        this.inbox_total = inbox_pending;
-                        let empty_inbox = this.inbox.is_empty();
-                        this.review = cards;
-                        this.waiting = waiting;
-                        this.intervals = intervals;
-                        this.revealed = false;
-                        this.gloss_pending = None;
-                        this.gloss_failed = None;
-                        this.review_started = Instant::now();
-                        this.review_announced = None;
-                        this.announce_review_card(cx);
-                        if this.navigation.current() == &Route::Today && empty_inbox && inbox_pending > 0 {
-                            this.request(Command::LoadInbox { page: 0 }, cx);
-                        }
-                    }
-                    Ok(Response::Rated(_)) => {
-                        this.review_done = this.review_done.saturating_add(1);
-                        this.request(Command::LoadReview, cx)
-                    }
-                    Ok(Response::CardExplained(card)) => {
-                        if let Some(index) = this.review.iter().position(|value| value.id == card.id)
-                        {
-                            this.review[index] = card;
-                        }
-                        this.gloss_pending = None;
-                        this.gloss_failed = None;
-                    }
+                if !quiet {
+                    this.loading = false;
+                    this.busy_visible = false;
+                    this.lookup_loading = false;
                 }
+                this.apply_response(response, rating, !poll, cx);
                 cx.notify();
             });
         })
         .detach();
         cx.notify();
+    }
+    /// Applies a command response. `surface` is false for silent polls whose
+    /// failure is retried by the next tick.
+    fn apply_response(
+        &mut self,
+        response: cijian_ports::Result<Response>,
+        rating: bool,
+        surface: bool,
+        cx: &mut Context<Self>,
+    ) {
+        match response {
+            Err(error) => {
+                if !surface {
+                    return;
+                }
+                self.settings_ui.queued_providers.clear();
+                if rating && error.code == cijian_ports::ErrorCode::StaleState {
+                    self.notice = Some("词卡已更新，已重新加载；请重新评分".into());
+                    self.request(Command::LoadReview, cx);
+                } else {
+                    self.error = Some(error.message);
+                }
+            }
+            Ok(Response::Preferences(value)) => {
+                self.settings.theme = value.theme;
+                self.settings.playback_rate = value.playback_rate;
+                self.review_accent = value.pronunciation_accent;
+                self.review_auto_play = value.review_auto_play;
+                let _ = self.playback.set_rate(value.playback_rate);
+                self.poll_audio(cx);
+                if let Some(voice) = value.system_voice {
+                    self.system_voice_index = self
+                        .system_voices
+                        .iter()
+                        .position(|available| available.id == voice)
+                        .unwrap_or(0);
+                }
+            }
+            Ok(Response::Audio(state)) => self.receive_audio(state, cx),
+            // The chosen accent is a preference now; a fallback playback
+            // must not silently rewrite it.
+            Ok(Response::WordAudio { .. }) => {}
+            Ok(Response::LegacyProfiles {
+                selection,
+                profiles,
+            }) => {
+                self.legacy_selection = Some(selection);
+                self.legacy_profiles = profiles;
+                self.legacy_report = None;
+            }
+            Ok(Response::LegacyPreview { selection, report }) => {
+                self.legacy_selection = Some(selection);
+                self.legacy_profiles.clear();
+                self.legacy_report = Some(*report);
+            }
+            Ok(Response::LegacyImported {
+                already_present,
+                directory,
+            }) => {
+                self.notice = Some(if already_present {
+                    format!("相同快照已迁入，没有重复创建学习记录。位置：{directory}")
+                } else {
+                    format!("迁入完成，新学习库已打开。原 Web 数据未改动。位置：{directory}")
+                });
+            }
+            Ok(Response::BackupSaved { include_audio }) => {
+                self.notice = Some(
+                    if include_audio {
+                        "学习备份已保存，包含音频缓存，不包含密钥"
+                    } else {
+                        "学习备份已保存，不包含密钥和音频缓存"
+                    }
+                    .into(),
+                )
+            }
+            Ok(Response::RestoreOpened) => {
+                self.notice = Some("恢复完成，新学习库已在另一个窗口打开；当前学习库保留".into())
+            }
+            Ok(Response::FileCancelled) => {}
+            Ok(Response::Stats(stats)) => self.stats = Some(*stats),
+            Ok(Response::Articles(articles)) => {
+                if !self.articles_history && self.articles_page == 0 {
+                    self.today_article_count = articles.len() as u64;
+                }
+                self.articles = articles;
+            }
+            Ok(Response::Article {
+                article,
+                session,
+                audio,
+                feedback,
+            }) => {
+                if self
+                    .source_reveal
+                    .as_ref()
+                    .is_some_and(|(id, hash, _)| id != &article.id || hash != &article.body_hash)
+                {
+                    self.source_reveal = None;
+                    self.notice = Some("来源文章正文已变化，无法定位原词".into());
+                }
+                self.reading_feedback = feedback;
+                self.reader_flags.open = false;
+                self.audio_ready = !audio.is_empty();
+                self.last_audio_system = false;
+                self.stored_audio = audio;
+                let listening = matches!(self.navigation.current(),Route::Article{id,listening:true} if id==&article.id);
+                self.navigation.navigate(Route::Article {
+                    id: article.id.clone(),
+                    listening,
+                });
+                self.article = Some(*article);
+                self.reading_session = Some(session);
+                self.lookup = None;
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(24))
+                        .await;
+                    let _ = this.update(cx, |_, cx| cx.notify());
+                })
+                .detach();
+            }
+            Ok(Response::Lookup {
+                context,
+                revision,
+                meaning,
+            }) => {
+                self.mark_result = None;
+                self.lookup = Some((context, revision, meaning));
+            }
+            Ok(Response::Marked(result)) => {
+                if let Some((_, revision, _)) = &mut self.lookup {
+                    *revision = result.revision;
+                }
+                self.notice = Some(
+                    if result.archived {
+                        "词卡已归档，未自动恢复"
+                    } else if result.paused {
+                        "词卡已暂停，可在词库恢复"
+                    } else if result.card_id.is_some() {
+                        "已加入复习"
+                    } else if result.inbox_id.is_some() {
+                        "已放入生词箱"
+                    } else {
+                        "已标记认识"
+                    }
+                    .into(),
+                );
+            }
+            Ok(Response::Inbox { items, total }) => {
+                self.inbox = items;
+                self.inbox_total = total;
+                self.inbox_selected.clear();
+            }
+            Ok(Response::InboxProcessed(_)) => self.request(Command::LoadInbox { page: 0 }, cx),
+            Ok(Response::ReadingPositionSaved { .. }) => {}
+            Ok(Response::Completed(session)) => {
+                self.reading_session = Some(session);
+                self.notice = Some("已记录本次阅读完成".into());
+                self.request(Command::LoadStats { page: 0 }, cx);
+            }
+            Ok(Response::FeedbackSaved(feedback)) => {
+                self.reading_feedback
+                    .retain(|value| value.mode != feedback.mode);
+                self.reading_feedback.push(feedback);
+                self.notice = Some("反馈已保存".into());
+                self.request(Command::LoadStats { page: 0 }, cx);
+            }
+            Ok(Response::SentencesFlagged { article, body_hash }) => {
+                self.flag_saved(article, body_hash)
+            }
+            Ok(Response::Job(job)) => self.receive_job(job, cx),
+            Ok(Response::LearningSettingsSaved {
+                mut value,
+                revision,
+            }) => {
+                value.theme = self.settings.theme;
+                value.playback_rate = self.settings.playback_rate;
+                self.settings = value;
+                self.settings_revision = revision;
+                self.settings_ui.refresh_learning = true;
+                self.notice = Some("学习设置已保存".into());
+            }
+            Ok(Response::ProviderSaved {
+                config,
+                has_key,
+                source,
+            }) => {
+                let kind = config.kind;
+                self.key_source = source;
+                if kind == cijian_domain::provider::ProviderKind::Tts {
+                    self.tts_config = Some(config);
+                    self.has_tts_key = has_key;
+                } else {
+                    self.provider_config = Some(config);
+                    self.has_session_key = has_key;
+                }
+                self.settings_ui.refresh_provider = Some(kind);
+                self.notice = Some("AI 配置已保存".into());
+                if let Some(next) = self.next_queued_provider() {
+                    self.dispatch_provider_save(next, cx);
+                }
+            }
+            Ok(Response::Settings {
+                value,
+                revision,
+                provider,
+                has_session_key,
+                tts,
+                has_tts_key,
+                source,
+                voices,
+                system_voice,
+            }) => {
+                self.key_source = source;
+                self.settings = value;
+                self.settings_revision = revision;
+                self.provider_config = provider;
+                self.has_session_key = has_session_key;
+                self.tts_config = tts;
+                self.has_tts_key = has_tts_key;
+                self.system_voices = voices;
+                self.system_voice_index = self
+                    .system_voice_index
+                    .min(self.system_voices.len().saturating_sub(1));
+                if let Some(voice) = system_voice {
+                    self.system_voice_index = self
+                        .system_voices
+                        .iter()
+                        .position(|available| available.id == voice)
+                        .unwrap_or(0);
+                }
+                self.settings_editor = None;
+                self.dark = matches!(self.settings.theme, cijian_domain::settings::Theme::Dark);
+                if self.navigation.current() == &Route::Today {
+                    self.request(Command::LoadReview, cx);
+                }
+            }
+            Ok(Response::Library {
+                page,
+                books,
+                entries,
+                latest_import,
+            }) => {
+                if let Some((source, report)) = latest_import {
+                    self.library_ui.import_source = Some(source);
+                    self.report = Some(report);
+                }
+                self.library = Some(page);
+                self.library_ui.books = books;
+                self.library_ui.entries = entries;
+            }
+            Ok(Response::LibraryCardEdited(_)) => {
+                self.library_ui.editor = None;
+                self.library_ui.discard = false;
+                self.notice = Some("词卡已保存".into());
+                self.request(
+                    Command::LoadLibrary {
+                        filter: self.library_filter(),
+                    },
+                    cx,
+                );
+            }
+            Ok(Response::DeleteBookPreview(preview)) => self.library_ui.deletion = Some(preview),
+            Ok(Response::BookDeleted(preview)) => {
+                self.library_ui.deletion = None;
+                if self.library_ui.target.as_ref() == Some(&preview.book_id) {
+                    self.library_ui.target = None;
+                }
+                self.library_ui.page = 0;
+                self.notice = Some(format!(
+                    "词书已删除；保留共享卡 {}，归档历史卡 {}",
+                    preview.shared_cards, preview.archived_cards
+                ));
+                self.navigate(
+                    Route::Library {
+                        book: None,
+                        search: String::new(),
+                    },
+                    cx,
+                );
+            }
+            Ok(Response::Selected(selected)) => {
+                if selected.is_some() {
+                    self.selected = selected;
+                }
+            }
+            Ok(Response::Imported(report)) => {
+                self.library_ui.import_source = None;
+                self.library_ui.error_page = 0;
+                self.library_ui.import_open = false;
+                self.library_ui.report_open = true;
+                self.report = Some(report);
+                self.selected = None;
+                self.request(
+                    Command::LoadLibrary {
+                        filter: self.library_filter(),
+                    },
+                    cx,
+                );
+            }
+            Ok(Response::Review {
+                cards,
+                waiting,
+                intervals,
+                stats,
+                books,
+                inbox_pending,
+            }) => {
+                self.stats = Some(*stats);
+                self.books = books;
+                self.inbox_total = inbox_pending;
+                let empty_inbox = self.inbox.is_empty();
+                self.review = cards;
+                self.waiting = waiting;
+                self.intervals = intervals;
+                self.revealed = false;
+                self.gloss_pending = None;
+                self.gloss_failed = None;
+                self.review_started = Instant::now();
+                self.review_announced = None;
+                self.announce_review_card(cx);
+                if self.navigation.current() == &Route::Today && empty_inbox && inbox_pending > 0 {
+                    self.request(Command::LoadInbox { page: 0 }, cx);
+                }
+            }
+            Ok(Response::Rated(_)) => {
+                self.review_done = self.review_done.saturating_add(1);
+                self.request(Command::LoadReview, cx)
+            }
+            Ok(Response::CardExplained(card)) => {
+                if let Some(index) = self.review.iter().position(|value| value.id == card.id) {
+                    self.review[index] = card;
+                }
+                self.gloss_pending = None;
+                self.gloss_failed = None;
+            }
+        }
     }
     fn library_filter(&self) -> cijian_ports::library::CardFilter {
         let (book_id, search) = match self.navigation.current() {

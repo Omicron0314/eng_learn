@@ -602,3 +602,228 @@ fn complete_reading_reaches_the_command_bus(cx: &mut TestAppContext) {
             .is_some_and(|session| session.completed_at.is_some())
     }));
 }
+
+/// Answers the polling commands and keeps every dispatch for assertions.
+#[derive(Default)]
+struct QuietBus(std::sync::Mutex<Vec<Command>>);
+impl CommandBus for QuietBus {
+    fn dispatch(
+        &self,
+        command: Command,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = cijian_ports::Result<Response>> + Send + '_>,
+    > {
+        self.0.lock().unwrap().push(command.clone());
+        let response = match command {
+            Command::LoadArticles { .. } => Ok(Response::Articles(Vec::new())),
+            Command::ObserveJob { job } => {
+                Ok(Response::Job(cijian_ports::articles::GenerationJob {
+                    id: job,
+                    operation_id: "original-operation".into(),
+                    status: cijian_ports::articles::JobStatus::Running,
+                    result_ref: None,
+                    error: None,
+                    config_revision: 1,
+                }))
+            }
+            Command::AudioStatus => {
+                let mut playback = cijian_domain::audio::Playback::default();
+                let _ = playback.start(
+                    "original-session".into(),
+                    "original-article".into(),
+                    Some(12.),
+                );
+                Ok(Response::Audio(playback))
+            }
+            _ => Err(AppError::new(
+                cijian_ports::ErrorCode::UnsupportedCapability,
+                "原创测试未提供此操作",
+            )),
+        };
+        Box::pin(async move { response })
+    }
+}
+
+/// Never answers, so a request stays in flight while the test advances time.
+struct PendingBus;
+impl CommandBus for PendingBus {
+    fn dispatch(
+        &self,
+        _: Command,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = cijian_ports::Result<Response>> + Send + '_>,
+    > {
+        Box::pin(std::future::pending())
+    }
+}
+
+fn quiet_window(
+    cx: &mut TestAppContext,
+    route: Route,
+    bus: Arc<dyn CommandBus>,
+) -> (gpui_kit::AnyWindowHandle, Entity<Shell>) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let (handle, shell) = cx
+        .update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1200.), px(900.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                move |_, cx| {
+                    cx.new(|_| {
+                        let mut shell = Shell::new();
+                        shell.backend = Some(bus);
+                        shell.navigation.navigate(route);
+                        shell
+                    })
+                },
+            )
+        })
+        .unwrap();
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    (handle, shell)
+}
+
+#[gpui_kit::test]
+fn a_generation_poll_never_flashes_the_busy_window(cx: &mut TestAppContext) {
+    let bus = Arc::new(QuietBus::default());
+    let (handle, shell) = quiet_window(cx, Route::Articles, bus.clone());
+    shell.update(cx, |shell, _| {
+        shell.notice = Some("已记录本次阅读完成".into());
+        shell.generation_job = Some(cijian_ports::articles::GenerationJob {
+            id: "original-job".into(),
+            operation_id: "original-operation".into(),
+            status: cijian_ports::articles::JobStatus::Running,
+            result_ref: None,
+            error: None,
+            config_revision: 1,
+        });
+    });
+    shell.update(cx, |shell, cx| shell.poll_generation(cx));
+    cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(750));
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    assert!(
+        bus.0
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|command| matches!(command, Command::ObserveJob { .. })),
+        "the poll still refreshes the job"
+    );
+    let (loading, busy, notice) = shell.read_with(cx, |shell, _| {
+        (shell.loading, shell.busy_visible, shell.notice.clone())
+    });
+    assert!(!loading, "a poll must not take the busy flag");
+    assert!(!busy, "a poll must not show the busy message");
+    assert_eq!(
+        notice.as_deref(),
+        Some("已记录本次阅读完成"),
+        "a poll must not replace the visible notice"
+    );
+}
+
+#[gpui_kit::test]
+fn an_audio_poll_while_listening_keeps_the_message_window_still(cx: &mut TestAppContext) {
+    let bus = Arc::new(QuietBus::default());
+    let (handle, shell) = quiet_window(
+        cx,
+        Route::Article {
+            id: "original-article".into(),
+            listening: true,
+        },
+        bus.clone(),
+    );
+    shell.update(cx, |shell, _| {
+        shell.playback = cijian_domain::audio::Playback::default();
+        let _ = shell.playback.start(
+            "original-session".into(),
+            "original-article".into(),
+            Some(12.),
+        );
+        shell.notice = Some("已听完，可以填写听力难度反馈".into());
+    });
+    shell.update(cx, |shell, cx| shell.poll_audio(cx));
+    cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(750));
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    assert!(
+        bus.0
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|command| matches!(command, Command::AudioStatus)),
+        "playback is still observed"
+    );
+    assert!(
+        !shell.read_with(cx, |shell, _| shell.loading)
+            && !shell.read_with(cx, |shell, _| shell.busy_visible)
+    );
+    assert!(
+        shell.read_with(cx, |shell, _| shell.snackbar().is_some()),
+        "the listening notice stays on screen instead of blinking"
+    );
+    assert_eq!(
+        shell
+            .read_with(cx, |shell, _| shell.notice.clone())
+            .as_deref(),
+        Some("已听完，可以填写听力难度反馈")
+    );
+}
+
+#[gpui_kit::test]
+fn only_slow_requests_show_the_busy_window(cx: &mut TestAppContext) {
+    let (handle, shell) = quiet_window(cx, Route::Articles, Arc::new(PendingBus));
+    shell.update(cx, |shell, cx| {
+        shell.request(Command::LoadStats { page: 0 }, cx)
+    });
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    assert!(!shell.read_with(cx, |shell, _| shell.busy_visible));
+    assert!(
+        shell.read_with(cx, |shell, _| shell.snackbar().is_none()),
+        "a fresh request must not flash a message before it is slow"
+    );
+    cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(500));
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    assert!(shell.read_with(cx, |shell, _| shell.busy_visible));
+    assert!(
+        shell.read_with(cx, |shell, _| shell.snackbar().is_some()),
+        "a request that really takes time still reports progress"
+    );
+}
+
+#[gpui_kit::test]
+fn an_instant_request_never_shows_the_busy_window(cx: &mut TestAppContext) {
+    let (handle, shell) = quiet_window(cx, Route::Articles, Arc::new(QuietBus::default()));
+    shell.update(cx, |shell, cx| shell.load_articles(0, cx));
+    cx.run_until_parked();
+    cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(500));
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    assert!(!shell.read_with(cx, |shell, _| shell.busy_visible));
+    assert!(shell.read_with(cx, |shell, _| shell.snackbar().is_none()));
+}

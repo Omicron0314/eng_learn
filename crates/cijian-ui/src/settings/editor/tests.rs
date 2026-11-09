@@ -198,27 +198,10 @@ fn independent_saves_preserve_other_drafts_and_validate_every_field(cx: &mut Tes
         input(window, "daily-new", "27", cx);
         window.click("settings-ai", cx);
         window.render_frame(cx);
-        button(window, "provider-kind", cx);
-    })
-    .unwrap();
-    assert!(shell.read_with(cx, |shell, cx| {
-        shell.provider_kind == ProviderKind::Tts
-            && shell.settings_editor.as_ref().unwrap().fields["daily-new"]
-                .read(cx)
-                .value()
-                .as_ref()
-                == "27"
-    }));
-    cx.update_window(handle, |_, window, cx| {
-        button(window, "provider-kind", cx);
-        input(
-            window,
-            "provider-endpoint",
-            "https://example.invalid/v1",
-            cx,
-        );
-        input(window, "provider-model", "original-model", cx);
-        input(window, "provider-key", "original-only-test-key", cx);
+        // Both provider forms are on screen; neither needs a mode switch.
+        input(window, "llm-endpoint", "https://example.invalid/v1", cx);
+        input(window, "llm-model", "original-model", cx);
+        input(window, "llm-key", "original-only-test-key", cx);
         window.click("settings-learning", cx);
         window.render_frame(cx);
         button(window, "save-settings", cx);
@@ -230,8 +213,13 @@ fn independent_saves_preserve_other_drafts_and_validate_every_field(cx: &mut Tes
     assert!(shell.read_with(cx, |shell, cx| {
         let editor = shell.settings_editor.as_ref().unwrap();
         !editor.learning_dirty(&shell.settings, cx)
-            && editor.provider_dirty(cx)
-            && !editor.key.read(cx).value().is_empty()
+            && editor.provider_dirty(ProviderKind::Llm, cx)
+            && !editor
+                .provider(ProviderKind::Llm)
+                .key
+                .read(cx)
+                .value()
+                .is_empty()
     }));
     assert_eq!(bus.0.lock().unwrap().value.daily_new_limit, 27);
     cx.update_window(handle, |_, window, cx| {
@@ -247,33 +235,36 @@ fn independent_saves_preserve_other_drafts_and_validate_every_field(cx: &mut Tes
     assert!(shell.read_with(cx, |shell, cx| {
         let editor = shell.settings_editor.as_ref().unwrap();
         editor.learning_dirty(&shell.settings, cx)
-            && !editor.provider_dirty(cx)
-            && editor.key.read(cx).value().is_empty()
+            && !editor.any_provider_dirty(cx)
+            && editor
+                .provider(ProviderKind::Llm)
+                .key
+                .read(cx)
+                .value()
+                .is_empty()
             && editor.fields["daily-new"].read(cx).value().as_ref() == "31"
     }));
     let before = bus.0.lock().unwrap().commands.len();
     cx.update_window(handle, |_, window, cx| {
-        input(window, "provider-model", "unsaved-model", cx);
-        button(window, "provider-kind", cx);
-        window.click("keep-settings-draft", cx);
-        window.render_frame(cx);
-        button(window, "clear-provider-key", cx);
-        button(window, "provider-kind", cx);
-        window.click("discard-settings-confirm", cx);
+        input(window, "llm-model", "unsaved-model", cx);
+        button(window, "llm-clear-key", cx);
+        window.click("reset-provider-draft", cx);
         window.render_frame(cx);
     })
     .unwrap();
-    assert_eq!(bus.0.lock().unwrap().commands.len(), before);
+    let commands = bus.0.lock().unwrap().commands.len();
+    if commands != before {
+        println!(
+            "extra commands: {:?}",
+            &bus.0.lock().unwrap().commands[before..]
+        );
+    }
+    assert_eq!(commands, before);
     assert!(shell.read_with(cx, |shell, cx| {
-        shell.provider_kind == ProviderKind::Tts
-            && shell.settings_editor.as_ref().unwrap().fields["daily-new"]
-                .read(cx)
-                .value()
-                .as_ref()
-                == "31"
+        let editor = shell.settings_editor.as_ref().unwrap();
+        !editor.any_provider_dirty(cx)
+            && editor.fields["daily-new"].read(cx).value().as_ref() == "31"
     }));
-    cx.update_window(handle, |_, window, cx| button(window, "provider-kind", cx))
-        .unwrap();
     {
         let mut state = bus.0.lock().unwrap();
         state.revision += 1;
@@ -542,4 +533,184 @@ fn credential_copy_never_claims_restart_persistence_for_session_memory() {
         assert!(!session.contains("重启后仍可使用"));
         assert_eq!(state.contains("已设置密钥"), has_key);
     }
+}
+
+#[gpui_kit::test]
+fn both_provider_forms_save_together_and_keep_their_keys(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let bus = Arc::new(Bus::default());
+    let (handle, shell) = cx
+        .update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1000.), px(900.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |_, cx| {
+                    cx.new(|_| {
+                        let mut shell = Shell::new();
+                        shell.backend = Some(bus.clone());
+                        shell.navigation.navigate(Route::Settings);
+                        shell
+                    })
+                },
+            )
+        })
+        .unwrap();
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        // No mode switch: both cards accept text in the same visit.
+        input(window, "llm-endpoint", "https://llm.example.invalid/v1", cx);
+        input(window, "llm-model", "llm-model", cx);
+        input(window, "llm-key", "llm-test-key", cx);
+        input(window, "tts-endpoint", "https://tts.example.invalid/v1", cx);
+        input(window, "tts-model", "tts-model", cx);
+        input(window, "tts-voice", "tts-voice", cx);
+        input(window, "tts-key", "tts-test-key", cx);
+    })
+    .unwrap();
+    assert!(shell.read_with(cx, |shell, cx| {
+        let editor = shell.settings_editor.as_ref().unwrap();
+        editor.provider_dirty(ProviderKind::Llm, cx) && editor.provider_dirty(ProviderKind::Tts, cx)
+    }));
+    cx.update_window(handle, |_, window, cx| {
+        button(window, "save-provider", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    {
+        let state = bus.0.lock().unwrap();
+        let saves = state
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                Command::SaveProvider {
+                    config,
+                    revision,
+                    secret,
+                    ..
+                } => Some((config.clone(), *revision, secret)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(saves.len(), 2, "one command per edited provider");
+        assert_eq!(saves[0].0.kind, ProviderKind::Llm);
+        assert_eq!(saves[0].0.endpoint, "https://llm.example.invalid/v1");
+        assert_eq!(saves[0].0.model, "llm-model");
+        assert_eq!(saves[0].0.voice, None);
+        assert_eq!(saves[0].1, 0, "a first save starts from revision zero");
+        assert!(matches!(saves[0].2, SecretPatch::Replace(_)));
+        assert_eq!(saves[1].0.kind, ProviderKind::Tts);
+        assert_eq!(saves[1].0.endpoint, "https://tts.example.invalid/v1");
+        assert_eq!(saves[1].0.voice.as_deref(), Some("tts-voice"));
+        assert!(matches!(saves[1].2, SecretPatch::Replace(_)));
+        assert_eq!(state.keys, [true, true]);
+        assert_eq!(
+            state.providers[1]
+                .as_ref()
+                .map(|config| config.model.as_str()),
+            Some("tts-model")
+        );
+    }
+    assert!(shell.read_with(cx, |shell, cx| {
+        let editor = shell.settings_editor.as_ref().unwrap();
+        !editor.any_provider_dirty(cx)
+            && editor
+                .provider(ProviderKind::Llm)
+                .key
+                .read(cx)
+                .value()
+                .is_empty()
+            && editor
+                .provider(ProviderKind::Tts)
+                .key
+                .read(cx)
+                .value()
+                .is_empty()
+    }));
+    cx.update_window(handle, |_, window, cx| {
+        button(window, "tts-clear-key", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    {
+        let state = bus.0.lock().unwrap();
+        assert!(matches!(
+            state.commands.last(),
+            Some(Command::SaveProvider { config, secret, .. })
+                if config.kind == ProviderKind::Tts && matches!(secret, SecretPatch::Clear)
+        ));
+        assert_eq!(state.keys, [true, false], "clearing TTS keeps the LLM key");
+    }
+}
+
+#[gpui_kit::test]
+fn an_invalid_provider_blocks_both_saves_before_anything_is_sent(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let bus = Arc::new(Bus::default());
+    let (handle, shell) = cx
+        .update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1000.), px(900.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |_, cx| {
+                    cx.new(|_| {
+                        let mut shell = Shell::new();
+                        shell.backend = Some(bus.clone());
+                        shell.navigation.navigate(Route::Settings);
+                        shell
+                    })
+                },
+            )
+        })
+        .unwrap();
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        input(window, "llm-endpoint", "https://llm.example.invalid/v1", cx);
+        input(window, "llm-model", "llm-model", cx);
+        input(window, "tts-endpoint", "not-a-url", cx);
+        input(window, "tts-model", "tts-model", cx);
+        button(window, "save-provider", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    assert!(
+        !bus.0
+            .lock()
+            .unwrap()
+            .commands
+            .iter()
+            .any(|command| matches!(command, Command::SaveProvider { .. })),
+        "a bad TTS endpoint must not save the valid LLM draft first"
+    );
+    assert!(shell.read_with(cx, |shell, cx| {
+        shell.error.is_some()
+            && shell
+                .settings_editor
+                .as_ref()
+                .unwrap()
+                .provider_dirty(ProviderKind::Llm, cx)
+    }));
 }

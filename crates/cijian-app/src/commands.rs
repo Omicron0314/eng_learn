@@ -185,6 +185,36 @@ pub enum Command {
         duration_ms: u32,
     },
 }
+impl Command {
+    /// Polling keeps a long-running job or the playback cursor in sync. It is
+    /// scheduled by the UI itself, so it must stay invisible: no busy notice,
+    /// no disabled controls and no error surface. The next tick retries.
+    pub fn is_background_poll(&self) -> bool {
+        matches!(self, Self::ObserveJob { .. } | Self::AudioStatus)
+    }
+
+    /// Local playback and preference writes are fire-and-forget from the user's
+    /// point of view. They must never take the busy flag: that flashed the
+    /// snackbar and disabled the card on every pronunciation click.
+    pub fn is_quiet(&self) -> bool {
+        self.is_background_poll()
+            || matches!(
+                self,
+                Self::PlayWord { .. }
+                    | Self::PlayStoredAudio { .. }
+                    | Self::AudioPause
+                    | Self::AudioResume
+                    | Self::AudioStop
+                    | Self::AudioSeek { .. }
+                    | Self::AudioRate { .. }
+                    | Self::SetTheme { .. }
+                    | Self::SetPlaybackRate { .. }
+                    | Self::SetSystemVoice { .. }
+                    | Self::SetPronunciationAccent { .. }
+                    | Self::SetReviewAutoPlay { .. }
+            )
+    }
+}
 #[derive(Debug, Clone)]
 pub struct SelectedFile {
     pub handle: String,
