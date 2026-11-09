@@ -11,6 +11,7 @@ cijian-app.workspace = true
 cijian-storage.workspace = true
 cijian-platform.workspace = true
 cijian-providers.workspace = true
+cijian-pack.workspace = true
 gpui-kit.workspace = true
 cijian-domain.workspace = true
 cijian-ports.workspace = true

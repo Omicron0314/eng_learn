@@ -40,22 +40,9 @@ pub fn encode(text: &str) -> String {
     out
 }
 
-/// Recognises the containers this source actually returns: MP3 frames, an ID3-tagged
-/// MP3, or a bare RIFF/WAVE. Anything else is rejected instead of being cached.
+/// Anything outside the accepted containers is rejected instead of being cached.
 pub fn audio_format(bytes: &[u8]) -> Option<&'static str> {
-    if bytes.len() < 4 {
-        return None;
-    }
-    if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WAVE") {
-        return Some("wav");
-    }
-    if bytes.starts_with(b"ID3") {
-        return Some("mp3");
-    }
-    if bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0 {
-        return Some("mp3");
-    }
-    None
+    cijian_domain::audio::container(bytes)
 }
 
 /// Extracts the two transcriptions from the dictionary entry payload.

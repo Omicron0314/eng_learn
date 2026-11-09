@@ -949,6 +949,7 @@ dependencies = [
  "base64 0.22.1",
  "cijian-app",
  "cijian-domain",
+ "cijian-pack",
  "cijian-platform",
  "cijian-ports",
  "cijian-providers",
@@ -990,12 +991,25 @@ name = "cijian-fill"
 version = "0.1.0"
 dependencies = [
  "cijian-domain",
+ "cijian-pack",
  "cijian-ports",
  "cijian-providers",
  "cijian-storage",
  "sha2 0.10.9",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "cijian-pack"
+version = "0.1.0"
+dependencies = [
+ "cijian-domain",
+ "cijian-ports",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "zip",
 ]
 
 [[package]]

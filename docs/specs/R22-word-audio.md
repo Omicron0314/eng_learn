@@ -23,12 +23,15 @@
 - 存储：`words_missing_audio`（可断点续补）、`word_audio`、`save_word_audio`（音标只填空值，不覆盖已学内容）。
 - 平台：`AudioCommand::PlayWord` 使用独立 sink；应用 `Command::PlayWord` → `Response::WordAudio`。
 - UI：复习卡发音行（`review-ipa`／`review-accent`），测试覆盖点播与切换。
-- 维护工具：`cargo run -p cijian-fill -- --data-dir <目录> [--limit N] [--interval 毫秒] [--dry-run]`，需先关闭应用。
+- 维护工具（需先关闭应用，命令独占学习目录）：
+  - `cijian-fill fill --data-dir <目录> [--limit N] [--interval 毫秒] [--dry-run]` 补齐录音与音标
+  - `cijian-fill pack --data-dir <目录> --output <词包> ` 生成 `.cijianpack`
+  - `cijian-fill import-pack --data-dir <目录> <词包>` 无头导入（应用内导入对话框等价）
+- 无头验证：`apps/desktop/src/backend/e2e_tests.rs` 覆盖“打包 → 导入 → 复习队列带双口音与音标”和“损坏包整包拒绝”。
 
 ## 代码缺口
 
-- **词包格式**：`.cijianpack`（清单 + 音频 blob 集合）的打包与导入尚未实现；当前只有本地补齐路径。
-- **体积压缩**：直接保存来源 MP3（约 12 KB/词/口音）。6000 词双口音约 80 MB；
+- **体积压缩**：直接保存来源 MP3（实测 10–22 KB/词/口音，3070 词双口音 125 MiB）；
   若需压到 20 MB 量级，需在打包阶段转码为低码率单声道并在播放侧确认解码支持。
 - **音标来源单一**：目前只有 `jsonapi` 一个来源；词书自带音标仍在导入时被丢弃，
   接入后应优先使用词书自带值（来源优先级需要在实现时确定并写进 D 决策）。

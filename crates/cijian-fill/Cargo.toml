@@ -14,6 +14,7 @@ cijian-domain.workspace = true
 cijian-ports.workspace = true
 cijian-storage.workspace = true
 cijian-providers.workspace = true
+cijian-pack.workspace = true
 sha2 = "0.10"
 tempfile.workspace = true
 tokio = { version = "1", features = ["macros", "rt"] }

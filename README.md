@@ -28,12 +28,19 @@ cargo run -p cijian-desktop -- --data-dir /tmp/cijian-dev
 复习卡的单词发音随词书提供。导入纯词表后需要补齐英／美录音时，先关闭应用再运行维护工具（它会访问有道词典音频与条目接口，不占远程 TTS 额度）：
 
 ```sh
-cargo run -p cijian-fill -- --data-dir ~/.local/share/cijian            # 补齐所有缺失词
-cargo run -p cijian-fill -- --data-dir ~/.local/share/cijian --limit 20 # 先试跑
-cargo run -p cijian-fill -- --data-dir ~/.local/share/cijian --dry-run  # 只列待补词
+# 补齐已有词卡的英/美录音
+cargo run -p cijian-fill -- fill --data-dir ~/.local/share/cijian
+cargo run -p cijian-fill -- fill --data-dir ~/.local/share/cijian --limit 20  # 先试跑
+cargo run -p cijian-fill -- fill --data-dir ~/.local/share/cijian --dry-run   # 只列待补词
+
+# 生成可分发的词包（先补齐，再打包）
+cargo run -p cijian-fill -- pack --data-dir ~/.local/share/cijian --output ~/cijian-packs/cet4.cijianpack
+
+# 无头导入词包（应用内也可通过导入对话框选择 .cijianpack）
+cargo run -p cijian-fill -- import-pack --data-dir ~/.local/share/cijian ~/cijian-packs/cet4.cijianpack
 ```
 
-工具可中断续跑：每写一条即落库，重跑只处理仍缺口音的词。
+工具可中断续跑：每写一条即落库，重跑只处理仍缺口音的词。词包是自包含的（清单 + 词表 + 双口音录音），导入前会校验每条录音的 sha256 与容器格式，损坏的包整包拒绝。
 
 构建产物统一落在仓库根 `target/`（cargo 默认目录，见 D58），与 `cargo test/clippy`、rust-analyzer 共用同一份缓存，不需要设置 `CARGO_TARGET_DIR`。
 

@@ -330,3 +330,124 @@ fn local_stub_generation_reader_lookup_mark_and_feedback_are_auditable() {
     }
     stop.store(true, Ordering::Release);
 }
+
+/// Headless pack round trip: build a pack on disk, import it through the same
+/// command the import dialog uses, then read the review queue the way the UI does.
+#[test]
+fn word_pack_import_provides_recordings_and_transcriptions() {
+    let directory = tempfile::tempdir().unwrap();
+    let audio = directory.path().join("audio-source");
+    std::fs::create_dir_all(&audio).unwrap();
+    let mut blobs = Vec::new();
+    let mut words = Vec::new();
+    for (index, word) in ["overlook", "abandon"].iter().enumerate() {
+        let uk = format!("ID3uk-{index}").into_bytes();
+        let us = format!("ID3us-{index}").into_bytes();
+        let uk_key = format!("{:x}.mp3", Sha256::digest(&uk));
+        let us_key = format!("{:x}.mp3", Sha256::digest(&us));
+        words.push(cijian_domain::pack::PackWord {
+            word: (*word).into(),
+            meaning: format!("原创释义{index}"),
+            ipa_uk: format!("/uk{index}/"),
+            ipa_us: format!("/us{index}/"),
+            uk: uk_key.clone(),
+            us: us_key.clone(),
+        });
+        blobs.push((uk_key, uk));
+        blobs.push((us_key, us));
+    }
+    let pack_path = directory.path().join("original.cijianpack");
+    let manifest = cijian_domain::pack::Manifest::new(
+        "原创词书".into(),
+        "study".into(),
+        "original.txt".into(),
+        1,
+        words.len(),
+    );
+    let audio_rows = blobs
+        .iter()
+        .map(|(key, bytes)| (key.as_str(), bytes.as_slice()))
+        .collect::<Vec<_>>();
+    cijian_pack::write(&pack_path, manifest, &words, &audio_rows).unwrap();
+
+    let backend = DesktopBackend::open_for_tests(directory.path()).unwrap();
+    backend
+        .files
+        .lock()
+        .unwrap()
+        .insert("pack".into(), pack_path);
+    let imported = backend
+        .execute(Command::ImportSelected {
+            target_book: None,
+            handle: "pack".into(),
+            name: "忽略".into(),
+            kind: BookKind::Study,
+            word_list: false,
+        })
+        .unwrap();
+    assert!(
+        matches!(imported, Response::Imported(report) if report.cards_added == 2),
+        "the pack becomes one book with both cards"
+    );
+    let Response::Review { cards, .. } = backend.execute(Command::LoadReview).unwrap() else {
+        panic!("review")
+    };
+    assert_eq!(cards.len(), 2);
+    let card = cards
+        .iter()
+        .find(|card| card.front == "overlook")
+        .expect("imported word reaches the queue");
+    assert!(card.pronunciation.audio_uk && card.pronunciation.audio_us);
+    assert_eq!(card.pronunciation.ipa_us, "/us0/");
+    // Blobs are content-addressed and readable by the player.
+    let stored = backend
+        .store
+        .word_audio(
+            &backend.profile,
+            &card.lexeme_id,
+            cijian_domain::audio::Accent::Us,
+        )
+        .unwrap()
+        .unwrap();
+    assert!(
+        directory
+            .path()
+            .join("audio")
+            .join(&stored.blob_key)
+            .exists()
+    );
+}
+
+/// A pack whose archive claims a recording it does not contain must not import.
+#[test]
+fn word_pack_import_rejects_a_corrupt_archive() {
+    let directory = tempfile::tempdir().unwrap();
+    let pack_path = directory.path().join("broken.cijianpack");
+    std::fs::write(&pack_path, b"not a zip").unwrap();
+    let backend = DesktopBackend::open_for_tests(directory.path()).unwrap();
+    backend
+        .files
+        .lock()
+        .unwrap()
+        .insert("pack".into(), pack_path);
+    let failed = backend.execute(Command::ImportSelected {
+        target_book: None,
+        handle: "pack".into(),
+        name: "损坏".into(),
+        kind: BookKind::Study,
+        word_list: false,
+    });
+    assert!(failed.is_err(), "a corrupt pack never creates a book");
+    let Response::Library { page, .. } = backend
+        .execute(Command::LoadLibrary {
+            filter: cijian_ports::library::CardFilter {
+                page_size: 30,
+                ..Default::default()
+            },
+        })
+        .unwrap()
+    else {
+        panic!("library")
+    };
+    assert_eq!(page.total, 0, "a corrupt pack never creates a word book");
+}

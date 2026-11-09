@@ -16,6 +16,7 @@ cijian-app = { path = "crates/cijian-app" }
 cijian-storage = { path = "crates/cijian-storage" }
 cijian-platform = { path = "crates/cijian-platform" }
 cijian-providers = { path = "crates/cijian-providers" }
+cijian-pack = { path = "crates/cijian-pack" }
 cijian-ui = { path = "crates/cijian-ui" }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = { version = "=1.0.154", features = ["preserve_order"] }

@@ -92,6 +92,20 @@ impl Pronunciation {
         }
     }
 }
+/// Recognises the audio containers this product stores: MP3 frames, an
+/// ID3-tagged MP3, or a bare RIFF/WAVE. Shared by the source adapter and packs.
+pub fn container(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.len() < 4 {
+        return None;
+    }
+    if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WAVE") {
+        return Some("wav");
+    }
+    if bytes.starts_with(b"ID3") || (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) {
+        return Some("mp3");
+    }
+    None
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PlaybackState {

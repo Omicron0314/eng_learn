@@ -16,6 +16,7 @@ use cijian_ports::{
 };
 use cijian_storage::Store;
 use futures::future::BoxFuture;
+use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -523,14 +524,14 @@ impl DesktopBackend {
                     .set_title("选择导入文件")
                     .add_filter(
                         if word_list {
-                            "词表 CSV / TXT"
+                            "词表 CSV / TXT / 词包"
                         } else {
-                            "词卡 CSV / APKG"
+                            "词卡 CSV / APKG / 词包"
                         },
                         if word_list {
-                            &["csv", "txt"]
+                            &["csv", "txt", "cijianpack"]
                         } else {
-                            &["csv", "apkg"]
+                            &["csv", "apkg", "cijianpack"]
                         },
                     )
                     .pick_file();
@@ -584,6 +585,13 @@ impl DesktopBackend {
                 } else {
                     (name, id())
                 };
+                if path
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("cijianpack"))
+                {
+                    return self.import_pack(&path, &name);
+                }
                 let (parsed, source_hash) = crate::import_file::read(&path, word_list)?;
                 let row_ids = (0..parsed.rows.len())
                     .map(|_| ImportIds {
@@ -665,6 +673,117 @@ impl DesktopBackend {
                 now: now(),
             })?)),
         }
+    }
+    /// Installs a downloaded word pack: verified archive in, one book out.
+    /// Every blob is written before the database rows that reference it, so a
+    /// failure never leaves a card pointing at an absent recording.
+    fn import_pack(&self, path: &std::path::Path, fallback: &str) -> Result<Response> {
+        let pack = cijian_pack::read(path)?;
+        let directories = self.directory.join("audio");
+        std::fs::create_dir_all(&directories).map_err(|_| failure())?;
+        let rows = pack
+            .words
+            .iter()
+            .enumerate()
+            .map(|(index, word)| cijian_domain::import::ImportRow {
+                word: word.word.clone(),
+                raw: format!("{}\t{}", word.word, word.meaning),
+                front: word.word.clone(),
+                meaning: word.meaning.clone(),
+                example: String::new(),
+                line: index as u64 + 1,
+                phrase: word.word.contains(' '),
+            })
+            .collect::<Vec<_>>();
+        let row_ids = rows
+            .iter()
+            .map(|_| ImportIds {
+                lexeme: id(),
+                card: id(),
+                entry: id(),
+            })
+            .collect::<Vec<_>>();
+        let mut audios = Vec::new();
+        for (word, ids) in pack.words.iter().zip(&row_ids) {
+            for (accent, key) in [
+                (cijian_domain::audio::Accent::Uk, &word.uk),
+                (cijian_domain::audio::Accent::Us, &word.us),
+            ] {
+                let Some(bytes) = pack.audio.get(key) else {
+                    continue;
+                };
+                let format = key
+                    .rsplit_once('.')
+                    .map(|(_, extension)| extension)
+                    .unwrap_or("mp3");
+                let target = directories.join(key);
+                if !target.exists() {
+                    let mut temporary =
+                        tempfile::NamedTempFile::new_in(&directories).map_err(|_| failure())?;
+                    std::io::Write::write_all(&mut temporary, bytes).map_err(|_| failure())?;
+                    match temporary.persist_noclobber(&target) {
+                        Ok(_) => {}
+                        Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                        Err(_) => return Err(failure()),
+                    }
+                }
+                audios.push(cijian_ports::library::SaveWordAudio {
+                    profile_id: self.profile.clone(),
+                    lexeme_id: ids.lexeme.clone(),
+                    accent,
+                    blob_key: key.clone(),
+                    format: format.to_owned(),
+                    bytes: bytes.len() as u64,
+                    duration: None,
+                    source: "pack".into(),
+                    ipa_uk: Some(word.ipa_uk.clone()),
+                    ipa_us: Some(word.ipa_us.clone()),
+                    now: now(),
+                });
+            }
+        }
+        let kind = if pack.manifest.kind == "baseline" {
+            cijian_domain::import::BookKind::Baseline
+        } else {
+            cijian_domain::import::BookKind::Study
+        };
+        let name = if pack.manifest.name.trim().is_empty() {
+            fallback.to_owned()
+        } else {
+            pack.manifest.name.clone()
+        };
+        let source_hash = format!(
+            "{:x}",
+            Sha256::digest(std::fs::read(path).map_err(|_| failure())?)
+        );
+        let report = self.store.import(ImportWords {
+            profile_id: self.profile.clone(),
+            operation_id: format!("pack-{source_hash}"),
+            event_id: id(),
+            book_id: id(),
+            import_id: id(),
+            name,
+            kind,
+            source_name: path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("词包.cijianpack")
+                .into(),
+            source_hash,
+            format: "cijianpack".into(),
+            now: now(),
+            parsed: cijian_domain::import::ParsedImport {
+                parsed: rows.len() as u64,
+                phrases: rows.iter().filter(|row| row.phrase).count() as u64,
+                duplicates: 0,
+                skipped: 0,
+                errors: Vec::new(),
+                rows,
+            },
+            row_ids,
+        })?;
+        self.store.attach_word_audio(audios)?;
+        Ok(Response::Imported(report))
     }
 }
 impl CommandBus for DesktopBackend {

@@ -6,6 +6,7 @@ pub mod import;
 pub mod json;
 pub mod knowledge;
 pub mod lexicon;
+pub mod pack;
 pub mod provider;
 pub mod reading;
 pub mod settings;
