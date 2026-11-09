@@ -78,6 +78,7 @@ struct Shell {
     settings: cijian_domain::settings::Settings,
     settings_revision: u64,
     legacy_selection: Option<String>,
+    review_announced: Option<String>,
     legacy_profiles: Vec<cijian_ports::legacy::LegacyProfile>,
     legacy_report: Option<cijian_ports::legacy::LegacyReport>,
     stored_audio: Vec<cijian_ports::audio::AudioAsset>,
@@ -168,6 +169,7 @@ impl Shell {
             settings: Default::default(),
             settings_revision: 1,
             legacy_selection: None,
+            review_announced: None,
             legacy_profiles: Vec::new(),
             legacy_report: None,
             stored_audio: Vec::new(),
@@ -579,6 +581,8 @@ impl Shell {
         self.navigate_to(route, false, cx);
     }
     fn navigate_to(&mut self, route: Route, back: bool, cx: &mut Context<Self>) {
+                        this.review_announced = None;
+                        this.announce_review_card(cx);
         if !back
             && self.navigation.current() == &route
             && (self.loading || route == Route::Settings)

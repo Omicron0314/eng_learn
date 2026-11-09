@@ -10,6 +10,7 @@
 ## 验收条件
 
 - **AC1**：复习卡在词下方显示 `口音按钮 + 音标`，默认美式；点音标重播当前口音，点按钮在英／美之间切换并播放切换后的口音；两者都不触发翻面。
+- **AC1b**：新词卡出现时自动朗读当前口音一次；同一张卡翻面、切换口音或重绘都不再自动重播，没有录音的卡静默且不重试。
 - **AC2**：没有音频时按钮与音标不可点并明确显示“暂无”，卡片其余功能不受影响；有一个口音缺失时按另一个口音兜底，不静默失败。
 - **AC3**：发音数据按 `(档案, 词元, 口音)` 唯一，重复补齐不产生重复行；同一字节内容只占一份磁盘。
 - **AC4**：播放单词不改变文章播放状态、不写 `audio_sessions`、不计入阅读／听力完成，也不消耗远程 TTS 额度。
@@ -22,7 +23,7 @@
 - 领域 `Accent`／`Pronunciation`（含兜底与校验），端口 `CardView.pronunciation`、`WordAudioAsset`、`SaveWordAudio`。
 - 存储：`words_missing_audio`（可断点续补）、`word_audio`、`save_word_audio`（音标只填空值，不覆盖已学内容）。
 - 平台：`AudioCommand::PlayWord` 使用独立 sink；应用 `Command::PlayWord` → `Response::WordAudio`。
-- UI：复习卡发音行（`review-ipa`／`review-accent`），测试覆盖点播与切换。
+- UI：复习卡发音行（`review-ipa`／`review-accent`）与换卡自动朗读（`announce_review_card`），测试覆盖点播、切换与“每卡只读一次”。
 - 维护工具（需先关闭应用，命令独占学习目录）：
   - `cijian-fill fill --data-dir <目录> [--limit N] [--interval 毫秒] [--dry-run]` 补齐录音与音标
   - `cijian-fill pack --data-dir <目录> --output <词包> ` 生成 `.cijianpack`

@@ -151,6 +151,28 @@ impl Shell {
             .child(transcription)
             .into_any_element()
     }
+    /// Reads the word out as soon as a card comes up, once per card.
+    /// Silent when the card has no recording; it never blocks reveal or rating.
+    pub(super) fn announce_review_card(&mut self, cx: &mut Context<Self>) {
+        if !matches!(self.navigation.current(), Route::Review) {
+            return;
+        }
+        let Some(card) = self.review.first() else {
+            return;
+        };
+        if self.review_announced.as_deref() == Some(card.id.as_str()) {
+            return;
+        }
+        let announced = card.id.clone();
+        if card.pronunciation.playable(self.review_accent).is_none() {
+            // Remember the card anyway: a missing recording must not retry on every frame.
+            self.review_announced = Some(announced);
+            return;
+        }
+        self.review_announced = Some(announced);
+        let accent = self.review_accent;
+        self.play_word(accent, cx);
+    }
     /// Plays the current card, falling back to the accent that actually has audio.
     fn play_word(&mut self, accent: cijian_domain::audio::Accent, cx: &mut Context<Self>) {
         let Some((lexeme, recorded)) = self.review.first().and_then(|card| {

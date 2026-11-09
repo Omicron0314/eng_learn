@@ -449,3 +449,161 @@ fn pronunciation_chip_switches_accent_and_ipa_replays_the_word(cx: &mut TestAppC
     ));
     let _ = shell;
 }
+
+/// Serves one review queue per call so a test can advance card by card.
+struct QueueBus(std::sync::Mutex<(Vec<Vec<cijian_ports::library::CardView>>, Vec<Command>)>);
+impl CommandBus for QueueBus {
+    fn dispatch(
+        &self,
+        command: Command,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = cijian_ports::Result<Response>> + Send + '_>,
+    > {
+        let mut guard = self.0.lock().unwrap();
+        let result = match command {
+            Command::LoadReview => {
+                let cards = if guard.0.len() > 1 {
+                    guard.0.remove(0)
+                } else {
+                    guard.0.first().cloned().unwrap_or_default()
+                };
+                Ok(Response::Review {
+                    cards,
+                    waiting: false,
+                    intervals: None,
+                    stats: Box::new(cijian_ports::stats::StatsSnapshot {
+                        today: Default::default(),
+                        week: Default::default(),
+                        reading_completion: None,
+                        feedback_just_right: None,
+                        heatmap: Vec::new(),
+                        coverage: Vec::new(),
+                        unknown_median_all: None,
+                        unknown_median_week: None,
+                        learned: Vec::new(),
+                        learned_total: 0,
+                        experiment: cijian_ports::stats::ExperimentReport {
+                            version: "original".into(),
+                            exposed: cijian_ports::stats::ExperimentGroup {
+                                sample: 0,
+                                again: 0,
+                                unreviewed: 0,
+                                excluded: 0,
+                                again_rate: None,
+                            },
+                            control: cijian_ports::stats::ExperimentGroup {
+                                sample: 0,
+                                again: 0,
+                                unreviewed: 0,
+                                excluded: 0,
+                                again_rate: None,
+                            },
+                            difference_percentage_points: None,
+                        },
+                    }),
+                    books: Vec::new(),
+                    inbox_pending: 0,
+                })
+            }
+            other => {
+                guard.1.push(other);
+                Ok(Response::WordAudio {
+                    accent: cijian_domain::audio::Accent::Us,
+                })
+            }
+        };
+        Box::pin(async move { result })
+    }
+}
+
+fn review_card(id: &str, word: &str, audio: bool) -> cijian_ports::library::CardView {
+    cijian_ports::library::CardView {
+        id: id.into(),
+        lexeme_id: format!("{id}-lexeme"),
+        front: word.into(),
+        meaning: "原创释义".into(),
+        example: String::new(),
+        text_source: "imported".into(),
+        suspended: false,
+        archived: false,
+        revision: 1,
+        created_at: 0,
+        srs: cijian_domain::srs::SrsState::new(0),
+        pronunciation: cijian_domain::audio::Pronunciation {
+            ipa_uk: "/original/".into(),
+            ipa_us: "/original/".into(),
+            audio_uk: audio,
+            audio_us: audio,
+        },
+    }
+}
+
+#[gpui_kit::test]
+fn a_new_card_is_read_aloud_once_and_silent_cards_do_not_retry(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let bus = std::sync::Arc::new(QueueBus(std::sync::Mutex::new((
+        vec![
+            vec![review_card("first", "overlook", true)],
+            vec![review_card("second", "abandon", true)],
+            vec![review_card("third", "silent", false)],
+        ],
+        Vec::new(),
+    ))));
+    let (handle, shell) = cx
+        .update(|cx| {
+            let bus = bus.clone();
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1000.), px(900.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                move |_, cx| {
+                    cx.new(|_| {
+                        let mut shell = Shell::new();
+                        shell.navigation.navigate(Route::Review);
+                        shell.backend = Some(bus);
+                        shell
+                    })
+                },
+            )
+        })
+        .unwrap();
+    let load = |shell: &gpui_kit::Entity<Shell>, cx: &mut TestAppContext| {
+        shell.update(cx, |shell, cx| shell.request(Command::LoadReview, cx));
+        cx.run_until_parked();
+    };
+    load(&shell, cx);
+    load(&shell, cx);
+    load(&shell, cx);
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    let played = bus
+        .0
+        .lock()
+        .unwrap()
+        .1
+        .iter()
+        .filter_map(|command| match command {
+            Command::PlayWord { lexeme, accent } => Some((lexeme.clone(), *accent)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        played,
+        vec![
+            ("first-lexeme".to_owned(), cijian_domain::audio::Accent::Us),
+            ("second-lexeme".to_owned(), cijian_domain::audio::Accent::Us),
+        ],
+        "each new card is read once; a card without a recording stays silent"
+    );
+    let _ = shell;
+}
