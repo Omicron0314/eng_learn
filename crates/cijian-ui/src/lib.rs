@@ -71,6 +71,7 @@ struct Shell {
     waiting: bool,
     intervals: Option<[i64; 4]>,
     revealed: bool,
+    review_accent: cijian_domain::audio::Accent,
     review_started: Instant,
     review_done: u32,
     key_intercept: Option<gpui_kit::Subscription>,
@@ -160,6 +161,7 @@ impl Shell {
             waiting: false,
             intervals: None,
             revealed: false,
+            review_accent: cijian_domain::audio::Accent::default(),
             review_started: Instant::now(),
             review_done: 0,
             key_intercept: None,
@@ -259,6 +261,7 @@ impl Shell {
                         }
                     }
                     Ok(Response::Audio(state)) => this.receive_audio(state, cx),
+                    Ok(Response::WordAudio { accent }) => this.review_accent = accent,
                     Ok(Response::LegacyProfiles {
                         selection,
                         profiles,

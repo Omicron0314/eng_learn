@@ -64,7 +64,7 @@ impl Store {
         let value=self.command(&context.profile,&context.operation,"mark_word",&request,context.now,|tx|{
             let body=super::reading::body(tx,context)?;let selection=reading::select(&body,c.range).map_err(|e|invalid(&e.to_string()))?;
             let lexeme:Option<String>=tx.query_row("SELECT id FROM lexemes WHERE lemma=?1 AND pos='' AND kind='word'",[&selection.lemma],|r|r.get(0)).optional().map_err(unavailable)?;
-            let lexeme=match lexeme{Some(id)=>id,None=>{tx.execute("INSERT INTO lexemes VALUES (?1,?2,'','word')",params![c.lexeme_id,selection.lemma]).map_err(unavailable)?;c.lexeme_id.clone()}};
+            let lexeme=match lexeme{Some(id)=>id,None=>{tx.execute("INSERT INTO lexemes(id,lemma,pos,kind) VALUES (?1,?2,'','word')",params![c.lexeme_id,selection.lemma]).map_err(unavailable)?;c.lexeme_id.clone()}};
             let previous:i64=tx.query_row("SELECT revision FROM lexeme_marks WHERE profile_id=?1 AND lexeme_id=?2",params![context.profile,lexeme],|r|r.get(0)).optional().map_err(unavailable)?.unwrap_or(0);
             if previous<0 || previous as u64!=c.expected_revision{return Err(AppError::new(ErrorCode::StaleState,"词语标记已变更，请重新加载"));}
             let revision=if c.action==MarkAction::AddToReview{previous}else{previous.checked_add(1).ok_or(invalid("版本超出范围"))?};

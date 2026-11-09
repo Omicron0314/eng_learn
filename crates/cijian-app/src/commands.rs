@@ -28,6 +28,11 @@ pub enum Command {
         article: String,
         operation: String,
     },
+    /// Plays the reviewed word on its own sink; article playback is untouched.
+    PlayWord {
+        lexeme: String,
+        accent: cijian_domain::audio::Accent,
+    },
     AudioPause,
     AudioResume,
     AudioStop,
@@ -183,6 +188,9 @@ pub struct SelectedFile {
 pub enum Response {
     Preferences(cijian_domain::settings::DevicePreferences),
     Audio(cijian_domain::audio::Playback),
+    WordAudio {
+        accent: cijian_domain::audio::Accent,
+    },
     LegacyProfiles {
         selection: String,
         profiles: Vec<cijian_ports::legacy::LegacyProfile>,

@@ -311,3 +311,95 @@ fn duplicate_event_rolls_back_import_and_rating() {
         0
     );
 }
+
+#[test]
+fn word_audio_marks_the_card_accent_and_keeps_transcriptions() {
+    use cijian_domain::audio::Accent;
+    use cijian_ports::library::SaveWordAudio;
+    let store = Store::memory().unwrap();
+    store.create_profile("p", "测试", 0).unwrap();
+    let command = import("words", BookKind::Study, "overlook,忽略\nabandon,放弃");
+    if let Err(error) = store.import(command) {
+        panic!("{error:?}");
+    }
+    let (cards, _) = store.review_queue("p", 1_793_592_000_000).unwrap();
+    let card = cards
+        .into_iter()
+        .find(|card| card.front == "overlook")
+        .unwrap();
+    assert_eq!(card.pronunciation, Default::default());
+    assert_eq!(store.words_missing_audio("p").unwrap().len(), 2);
+    store
+        .save_word_audio(SaveWordAudio {
+            profile_id: "p".into(),
+            lexeme_id: card.lexeme_id.clone(),
+            accent: Accent::Us,
+            blob_key: format!("{}.mp3", "a".repeat(64)),
+            format: "mp3".into(),
+            bytes: 12_000,
+            duration: None,
+            source: "original".into(),
+            ipa_uk: Some("/ˌəʊvəˈlʊk/".into()),
+            ipa_us: Some("/ˌoʊvərˈlʊk/".into()),
+            now: 1_793_592_000_000,
+        })
+        .unwrap();
+    store
+        .save_word_audio(SaveWordAudio {
+            profile_id: "p".into(),
+            lexeme_id: card.lexeme_id.clone(),
+            accent: Accent::Uk,
+            blob_key: format!("{}.mp3", "b".repeat(64)),
+            format: "mp3".into(),
+            bytes: 13_000,
+            duration: None,
+            source: "original".into(),
+            ipa_uk: None,
+            ipa_us: None,
+            now: 1_793_592_000_000,
+        })
+        .unwrap();
+    let (cards, _) = store.review_queue("p", 1_793_592_000_000).unwrap();
+    let card = cards
+        .into_iter()
+        .find(|card| card.front == "overlook")
+        .unwrap();
+    assert!(card.pronunciation.audio_uk && card.pronunciation.audio_us);
+    assert_eq!(card.pronunciation.ipa(Accent::Us), "/ˌoʊvərˈlʊk/");
+    assert_eq!(card.pronunciation.ipa(Accent::Uk), "/ˌəʊvəˈlʊk/");
+    // Only the word without both accents stays pending.
+    assert_eq!(store.words_missing_audio("p").unwrap().len(), 1);
+    let stored = store
+        .word_audio("p", &card.lexeme_id, Accent::Us)
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.bytes, 12_000);
+    assert!(
+        store
+            .word_audio("p", &card.lexeme_id, Accent::Uk)
+            .unwrap()
+            .is_some()
+    );
+    // A transcription already learned is never overwritten by a later fetch.
+    store
+        .save_word_audio(SaveWordAudio {
+            profile_id: "p".into(),
+            lexeme_id: card.lexeme_id.clone(),
+            accent: Accent::Us,
+            blob_key: format!("{}.mp3", "c".repeat(64)),
+            format: "mp3".into(),
+            bytes: 12_000,
+            duration: None,
+            source: "original".into(),
+            ipa_uk: Some("/changed/".into()),
+            ipa_us: Some("/changed/".into()),
+            now: 1_793_592_000_001,
+        })
+        .unwrap();
+    let (cards, _) = store.review_queue("p", 1_793_592_000_000).unwrap();
+    let card = cards
+        .into_iter()
+        .find(|card| card.front == "overlook")
+        .unwrap();
+    assert_eq!(card.pronunciation.ipa(Accent::Us), "/ˌoʊvərˈlʊk/");
+}

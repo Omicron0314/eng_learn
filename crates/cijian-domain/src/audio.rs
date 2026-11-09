@@ -1,5 +1,97 @@
 use crate::ValidationError;
 use serde::{Deserialize, Serialize};
+/// Accent of a single-word recording. Word audio is stored per accent, never mixed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Accent {
+    Uk,
+    #[default]
+    Us,
+}
+impl Accent {
+    pub const ALL: [Self; 2] = [Self::Uk, Self::Us];
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Uk => "uk",
+            Self::Us => "us",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Uk => "英",
+            Self::Us => "美",
+        }
+    }
+    pub fn toggle(self) -> Self {
+        match self {
+            Self::Uk => Self::Us,
+            Self::Us => Self::Uk,
+        }
+    }
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "uk" => Some(Self::Uk),
+            "us" => Some(Self::Us),
+            _ => None,
+        }
+    }
+}
+/// Phonetic transcription and recorded-accent availability carried by a card.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Pronunciation {
+    pub ipa_uk: String,
+    pub ipa_us: String,
+    pub audio_uk: bool,
+    pub audio_us: bool,
+}
+impl Pronunciation {
+    /// Validates the transcription strings a boundary may have supplied.
+    pub fn checked(
+        ipa_uk: String,
+        ipa_us: String,
+        audio_uk: bool,
+        audio_us: bool,
+    ) -> Result<Self, ValidationError> {
+        let valid = |value: &str| value.chars().count() <= 100;
+        if !valid(&ipa_uk) || !valid(&ipa_us) {
+            return Err(ValidationError::new("phonetics", "音标过长"));
+        }
+        Ok(Self {
+            ipa_uk,
+            ipa_us,
+            audio_uk,
+            audio_us,
+        })
+    }
+    /// The transcription to show for the active accent, falling back to the other one.
+    pub fn ipa(&self, accent: Accent) -> &str {
+        let (preferred, other) = match accent {
+            Accent::Uk => (&self.ipa_uk, &self.ipa_us),
+            Accent::Us => (&self.ipa_us, &self.ipa_uk),
+        };
+        if preferred.is_empty() {
+            other
+        } else {
+            preferred
+        }
+    }
+    pub fn has_audio(&self, accent: Accent) -> bool {
+        match accent {
+            Accent::Uk => self.audio_uk,
+            Accent::Us => self.audio_us,
+        }
+    }
+    /// Accent the player should use: the requested one when recorded, else the other.
+    pub fn playable(&self, accent: Accent) -> Option<Accent> {
+        if self.has_audio(accent) {
+            Some(accent)
+        } else {
+            let other = accent.toggle();
+            self.has_audio(other).then_some(other)
+        }
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PlaybackState {
@@ -106,6 +198,21 @@ impl Playback {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pronunciation_falls_back_to_the_accent_that_has_data() {
+        let p = Pronunciation::checked(String::new(), "/kæt/".into(), false, true).unwrap();
+        assert_eq!(p.ipa(Accent::Uk), "/kæt/");
+        assert_eq!(p.playable(Accent::Uk), Some(Accent::Us));
+        assert_eq!(p.playable(Accent::Us), Some(Accent::Us));
+        let empty = Pronunciation::default();
+        assert!(empty.ipa(Accent::Us).is_empty());
+        assert_eq!(empty.playable(Accent::Us), None);
+        assert!(Pronunciation::checked("x".repeat(101), String::new(), false, false).is_err());
+        assert_eq!(Accent::parse("uk"), Some(Accent::Uk));
+        assert_eq!(Accent::parse("us"), Some(Accent::Us));
+        assert_eq!(Accent::parse("au"), None);
+        assert_eq!(Accent::Us.toggle(), Accent::Uk);
+    }
     #[test]
     fn stopping_or_stale_end_never_completes_new_session() {
         let mut p = Playback::default();

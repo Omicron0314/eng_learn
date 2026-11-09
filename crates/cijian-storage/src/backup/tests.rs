@@ -179,7 +179,7 @@ fn audio_inclusive_backup_requires_matching_verified_blob_entries() {
         .unwrap();
     }
     let package = source.export_profile("p", true).unwrap();
-    assert_eq!(package.version, 3);
+    assert_eq!(package.version, 4);
     assert_eq!(package.payload["audioIncluded"], true);
     assert!(
         package.payload["tables"]

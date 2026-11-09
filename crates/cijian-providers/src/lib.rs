@@ -1,5 +1,6 @@
 //! OpenAI-compatible transport. All calls are explicit, recorded and have no retry policy.
 mod speech;
+pub mod youdao;
 use cijian_domain::provider::ProviderKind;
 use cijian_ports::{AppError, ErrorCode, Result, provider::*};
 use serde_json::{Value, json};

@@ -43,7 +43,7 @@ impl Store {
             .map_err(unavailable)?
             .collect::<std::result::Result<BTreeMap<_, _>, _>>()
             .map_err(unavailable)?;
-        let mut statement=db.prepare("SELECT c.*,l.lemma,l.kind AS lexeme_kind FROM cards c JOIN lexemes l ON l.id=c.lexeme_id WHERE c.profile_id=?1").map_err(unavailable)?;
+        let mut statement=db.prepare("SELECT c.*,l.lemma,l.kind AS lexeme_kind FROM card_view c JOIN lexemes l ON l.id=c.lexeme_id WHERE c.profile_id=?1").map_err(unavailable)?;
         let cards = statement
             .query_map([profile], |r| {
                 Ok((

@@ -14,20 +14,24 @@ fn digest(bytes: &[u8]) -> String {
 }
 impl DesktopBackend {
     fn verified_audio_path(&self, asset: &AudioAsset) -> Result<std::path::PathBuf> {
+        self.verified_blob_path(&asset.blob_key)
+    }
+    /// Content-addressed check: the file name must be the sha256 of its own bytes.
+    fn verified_blob_path(&self, blob_key: &str) -> Result<std::path::PathBuf> {
         let invalid = || {
             AppError::new(
                 ErrorCode::StorageUnavailable,
                 "音频文件缺失或损坏，可重新合成或使用本机朗读",
             )
         };
-        let (stem, extension) = asset.blob_key.rsplit_once('.').ok_or_else(invalid)?;
+        let (stem, extension) = blob_key.rsplit_once('.').ok_or_else(invalid)?;
         if stem.len() != 64
             || !stem.bytes().all(|b| b.is_ascii_hexdigit())
             || !["wav", "mp3"].contains(&extension)
         {
             return Err(invalid());
         }
-        let path = self.directory.join("audio").join(&asset.blob_key);
+        let path = self.directory.join("audio").join(blob_key);
         let mut file = std::fs::File::open(&path).map_err(|_| invalid())?;
         let mut hasher = Sha256::new();
         let mut buffer = [0; 65536];
@@ -130,6 +134,31 @@ impl DesktopBackend {
             .map_err(|_| AppError::new(ErrorCode::StorageUnavailable, "本机朗读暂不可用"))? =
             Some(path);
         Ok(result)
+    }
+    /// Word playback is fire-and-forget: it never opens an article audio session and
+    /// never moves the article `Playback` state the listening UI polls.
+    pub(super) fn play_word_audio(
+        &self,
+        lexeme: &str,
+        accent: cijian_domain::audio::Accent,
+    ) -> Result<Response> {
+        let _gate = self
+            .playback_gate
+            .lock()
+            .map_err(|_| AppError::new(ErrorCode::StorageUnavailable, "播放器暂不可用"))?;
+        let asset = self
+            .store
+            .word_audio(&self.profile, lexeme, accent)?
+            .ok_or(AppError::new(ErrorCode::NotFound, "该词暂无这个口音的发音"))?;
+        let path = self.verified_blob_path(&asset.blob_key)?;
+        let (preferences, _) = self.store.device_preferences(&self.profile, &self.device)?;
+        self.audio.command(AudioCommand::PlayWord {
+            path,
+            rate: preferences.playback_rate,
+        })?;
+        Ok(Response::WordAudio {
+            accent: asset.accent,
+        })
     }
     pub(super) fn audio_command(&self, command: AudioCommand) -> Result<Response> {
         let _gate = if matches!(command, AudioCommand::Stop) {

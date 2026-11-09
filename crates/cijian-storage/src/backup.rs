@@ -5,7 +5,9 @@ use cijian_ports::backup::*;
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
-const AUDIO_TABLES: &[&str] = &["audio_assets", "article_audio_links"];
+const AUDIO_TABLES: &[&str] = &["audio_assets", "article_audio_links", "word_audio"];
+/// Word recordings joined the audio payload in version 4; older audio packages lack them.
+const WORD_AUDIO_VERSION: u32 = 4;
 const TABLES: &[&str] = &[
     "profiles",
     "devices",
@@ -42,6 +44,7 @@ const RESTORE_ORDER: &[&str] = &[
     "article_targets",
     "audio_assets",
     "article_audio_links",
+    "word_audio",
     "reading_sessions",
     "lexeme_marks",
     "inbox",
@@ -127,6 +130,7 @@ impl Store {
             .copied()
             .chain(include_audio.then_some("audio_assets"))
             .chain(include_audio.then_some("article_audio_links"))
+            .chain(include_audio.then_some("word_audio"))
             .collect::<Vec<_>>();
         let mut tables = serde_json::Map::new();
         for table in &table_names {
@@ -193,7 +197,7 @@ impl Store {
         tx.commit().map_err(unavailable)?;
         Ok(BackupPackage {
             format: "cijian-profile".into(),
-            version: 3,
+            version: WORD_AUDIO_VERSION,
             checksum,
             payload,
         })
@@ -202,7 +206,7 @@ impl Store {
     pub fn audio_blob_keys(&self, profile: &str) -> Result<Vec<String>> {
         let db = self.connection.lock().map_err(unavailable)?;
         let mut statement = db
-            .prepare("SELECT blob_key FROM audio_assets WHERE profile_id=?1 ORDER BY blob_key")
+            .prepare("SELECT blob_key FROM audio_assets WHERE profile_id=?1 UNION SELECT blob_key FROM word_audio WHERE profile_id=?1 ORDER BY 1")
             .map_err(unavailable)?;
         statement
             .query_map([profile], |row| row.get::<_, String>(0))
@@ -220,7 +224,7 @@ impl Store {
         now: i64,
     ) -> Result<RestoreReport> {
         if package.format != "cijian-profile"
-            || ![1, 2, 3].contains(&package.version)
+            || ![1, 2, 3, 4].contains(&package.version)
             || hash(&if package.version == 1 {
                 package.payload.to_string()
             } else {
@@ -249,6 +253,9 @@ impl Store {
             tables.insert("legacy_records".into(), json!([]));
             tables.insert("legacy_imports".into(), json!([]));
         }
+        if package.version < WORD_AUDIO_VERSION {
+            tables.remove("word_audio");
+        }
         let audio_included = package.payload["audioIncluded"]
             .as_bool()
             .ok_or(invalid("备份音频标记无效"))?;
@@ -271,6 +278,11 @@ impl Store {
         let expected = TABLES.len()
             + if audio_included {
                 AUDIO_TABLES.len()
+            } else {
+                0
+            }
+            - if audio_included && package.version < WORD_AUDIO_VERSION {
+                1
             } else {
                 0
             };

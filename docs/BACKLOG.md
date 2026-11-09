@@ -23,6 +23,7 @@
 | R14 | [统计与对照实验](specs/R14-stats-experiment.md) | R10, R12, R13 | G3 | 进行中：统计与实验查询/UI、覆盖率单点状态及已学词分页已接入；**代码缺口：50 条以上已学词分页的自动化测试未写** |
 | R15 | [学习、外观与实验设置](specs/R15-preferences.md) | R02, R04, R05 | G3 | 进行中：设备偏好与重启恢复、独立草稿、校验/滑块、冲突重载、窗口主题隔离已通过增量验证；**代码缺口：远端 TTS 配置显式清除** |
 | R16 | [旧数据迁入与备份恢复](specs/R16-migration-backup.md) | R03, R06, R08, R10, R11, R12, R15 | G3 | 进行中：WAL 一致性旧库转换、报告、音频校验迁入、隔离备份恢复已接入；**代码缺口：真实 ENOSPC 与 SIGKILL 注入测试未写**；备份/迁移人工链路改为自动化 |
+| R22 | [单词发音与词包音频](specs/R22-word-audio.md) | R06, R07, R12 | G2 | 进行中：`word_audio`/音标迁移、卡片发音信息、复习卡音标点播与英美切换、独立播放 sink、`cijian-fill` 批量补齐、备份含词音频已接入并有测试；**代码缺口：词包（`.cijianpack`）打包与导入未实现，音频转码压缩未接入** |
 | R17 | [桌面完整验收与本地打包](specs/R17-desktop-acceptance.md) | R14, R15, R16 | G3 | 进行中：Linux 现有证据保留；**代码缺口：截图自动驱动与 release 性能采样未写**；Xvfb 启动冒烟与打包已进 CI，Windows/macOS 已从 AC 删除 |
 | R18 | [Web/WASM与手机浏览器适配](specs/R18-wasm-web.md) | R17 | G4 | 后续（远期，暂不实施）：仅保留共享 UI 的 wasm32 类型检查作为编译资产；浏览器仓储、离线、权限和真实设备均未实现 |
 | R19 | [Android/iOS原生可行性验证](specs/R19-mobile-native-spike.md) | R00 | G5 | 后续（远期，暂不实施）：既有结论为锁定栈无 Android 后端（no-go）、iOS 需 macOS/真机（blocked），记录见 docs/spikes/R19-mobile.md |

@@ -50,6 +50,30 @@ pub struct CardView {
     pub revision: u64,
     pub created_at: i64,
     pub srs: SrsState,
+    #[serde(default)]
+    pub pronunciation: cijian_domain::audio::Pronunciation,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WordAudioAsset {
+    pub lexeme_id: String,
+    pub accent: cijian_domain::audio::Accent,
+    pub blob_key: String,
+    pub format: String,
+    pub bytes: u64,
+}
+#[derive(Debug, Clone)]
+pub struct SaveWordAudio {
+    pub profile_id: String,
+    pub lexeme_id: String,
+    pub accent: cijian_domain::audio::Accent,
+    pub blob_key: String,
+    pub format: String,
+    pub bytes: u64,
+    pub duration: Option<f64>,
+    pub source: String,
+    pub ipa_uk: Option<String>,
+    pub ipa_us: Option<String>,
+    pub now: i64,
 }
 #[derive(Debug, Clone, Default)]
 pub struct CardFilter {

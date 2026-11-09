@@ -13,6 +13,7 @@ mod providers;
 mod reading;
 pub use reading::CardGloss;
 mod stats;
+mod word_audio;
 use cijian_domain::settings::{Settings, ValidatedSettings};
 use cijian_ports::{AppError, ErrorCode, Event, Result, SaveSettings, SettingsRepository};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -35,6 +36,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004_legacy_records.sql"),
     include_str!("../migrations/0005_reading_position_revisions.sql"),
     include_str!("../migrations/0006_card_ease.sql"),
+    include_str!("../migrations/0007_word_audio.sql"),
 ];
 fn unavailable(_: impl std::fmt::Display) -> AppError {
     AppError::new(ErrorCode::StorageUnavailable, "本地数据库操作失败")

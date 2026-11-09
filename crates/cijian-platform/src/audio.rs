@@ -13,6 +13,11 @@ pub enum AudioCommand {
         article: String,
         rate: f64,
     },
+    /// Plays one short word recording on its own sink so article state is untouched.
+    PlayWord {
+        path: PathBuf,
+        rate: f64,
+    },
     Pause,
     Resume,
     Stop,
@@ -47,6 +52,7 @@ impl NativeAudio {
         let worker = std::thread::spawn(move || {
             let mut stream: Option<OutputStream> = None;
             let mut sink: Option<Sink> = None;
+            let mut word: Option<Sink> = None;
             let mut state = Playback::default();
             let mut completions = std::collections::VecDeque::new();
             let mut completion_error = None;
@@ -113,6 +119,26 @@ impl NativeAudio {
                                 .map_err(|e| failure(&e.to_string()))?;
                             sink = Some(next);
                         }
+                        AudioCommand::PlayWord { path, rate } => {
+                            if let Some(old) = word.take() {
+                                old.stop();
+                            }
+                            if stream.is_none() {
+                                stream = Some(
+                                    OutputStreamBuilder::open_default_stream()
+                                        .map_err(|_| failure("没有可用的音频输出设备"))?,
+                                );
+                            }
+                            let file = std::fs::File::open(path)
+                                .map_err(|_| failure("单词发音文件不可用"))?;
+                            let decoder = Decoder::try_from(BufReader::new(file))
+                                .map_err(|_| failure("单词发音无法解码"))?;
+                            let next =
+                                Sink::connect_new(stream.as_ref().expect("opened output").mixer());
+                            next.set_speed(rate as f32);
+                            next.append(decoder);
+                            word = Some(next);
+                        }
                         AudioCommand::Pause => {
                             if let Some(sink) = &sink {
                                 sink.pause();
@@ -128,6 +154,9 @@ impl NativeAudio {
                         AudioCommand::Stop => {
                             if let Some(sink) = sink.take() {
                                 sink.stop();
+                            }
+                            if let Some(word) = word.take() {
+                                word.stop();
                             }
                             state.stop();
                         }

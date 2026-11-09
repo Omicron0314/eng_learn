@@ -74,7 +74,7 @@ pub(crate) fn store() -> Store {
         .lock()
         .unwrap()
         .execute_batch(
-            "INSERT INTO lexemes VALUES ('cat','cat','','word'),('dog','dog','','word');",
+            "INSERT INTO lexemes(id,lemma,pos,kind) VALUES ('cat','cat','','word'),('dog','dog','','word');",
         )
         .unwrap();
     store

@@ -20,6 +20,18 @@ fn state_name(state: State) -> &'static str {
         State::Relearning => "relearning",
     }
 }
+fn optional_text(row: &Row<'_>, name: &str) -> String {
+    row.get::<_, Option<String>>(name)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+fn optional_flag(row: &Row<'_>, name: &str) -> bool {
+    row.get::<_, Option<bool>>(name)
+        .ok()
+        .flatten()
+        .unwrap_or(false)
+}
 pub(super) fn read_card(row: &Row<'_>) -> rusqlite::Result<CardView> {
     let state: String = row.get("state")?;
     let state = match state.as_str() {
@@ -54,6 +66,14 @@ pub(super) fn read_card(row: &Row<'_>) -> rusqlite::Result<CardView> {
             learning_steps: row.get("learning_steps")?,
             ease_factor: row.get("ease_factor")?,
         },
+        // Raw `cards` rows (backup export) carry no joined pronunciation columns.
+        pronunciation: cijian_domain::audio::Pronunciation::checked(
+            optional_text(row, "ipa_uk"),
+            optional_text(row, "ipa_us"),
+            optional_flag(row, "audio_uk"),
+            optional_flag(row, "audio_us"),
+        )
+        .map_err(|_| rusqlite::Error::InvalidQuery)?,
     })
 }
 
@@ -93,7 +113,7 @@ impl Store {
             for (row,ids) in c.parsed.rows.iter().zip(&c.row_ids){
                 let lexeme_kind=if row.phrase{"phrase"}else{"word"};
                 let existing:Option<String>=tx.query_row("SELECT id FROM lexemes WHERE lemma=?1 AND pos='' AND kind=?2",params![row.word,lexeme_kind],|r|r.get(0)).optional().map_err(unavailable)?;
-                let lexeme=match existing{Some(id)=>id,None=>{tx.execute("INSERT INTO lexemes VALUES (?1,?2,'',?3)",params![ids.lexeme,row.word,lexeme_kind]).map_err(unavailable)?;report.words_added+=1;ids.lexeme.clone()}};
+                let lexeme=match existing{Some(id)=>id,None=>{tx.execute("INSERT INTO lexemes(id,lemma,pos,kind) VALUES (?1,?2,'',?3)",params![ids.lexeme,row.word,lexeme_kind]).map_err(unavailable)?;report.words_added+=1;ids.lexeme.clone()}};
                 let added=tx.execute("INSERT INTO book_entries VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(book_id,lexeme_id) DO NOTHING",params![ids.entry,c.profile_id,book,lexeme,row.raw,c.import_id]).map_err(unavailable)?;
                 report.entries_added+=added as u64;if added==0{report.duplicates+=1;}
                 if c.kind==BookKind::Study {
@@ -200,7 +220,7 @@ impl Store {
                 |r| r.get(0),
             )
             .map_err(unavailable)?;
-        let mut stmt=db.prepare(&format!("SELECT c.* FROM cards c WHERE {predicate} ORDER BY c.created_at,c.id LIMIT ?6 OFFSET ?7")).map_err(unavailable)?;
+        let mut stmt=db.prepare(&format!("SELECT c.* FROM card_view c WHERE {predicate} ORDER BY c.created_at,c.id LIMIT ?6 OFFSET ?7")).map_err(unavailable)?;
         let cards = stmt
             .query_map(
                 params![
@@ -237,7 +257,7 @@ impl Store {
         let new_count:u32=db.query_row("SELECT count(DISTINCT card_id) FROM review_logs WHERE profile_id=?1 AND state_before='new' AND reviewed_at>=?2 AND reviewed_at<?3",params![profile,day.start_ms,day.end_ms],|r|r.get(0)).map_err(unavailable)?;
         let review_count:u32=db.query_row("SELECT count(*) FROM review_logs WHERE profile_id=?1 AND state_before='review' AND reviewed_at>=?2 AND reviewed_at<?3",params![profile,day.start_ms,day.end_ms],|r|r.get(0)).map_err(unavailable)?;
         let cutoff = now.saturating_add(srs::LEARN_AHEAD_MS);
-        let mut statement=db.prepare("SELECT * FROM cards WHERE profile_id=?1 AND suspended=0 AND archived_at IS NULL AND due<=?2").map_err(unavailable)?;
+        let mut statement=db.prepare("SELECT * FROM card_view WHERE profile_id=?1 AND suspended=0 AND archived_at IS NULL AND due<=?2").map_err(unavailable)?;
         let cards = statement
             .query_map(params![profile, cutoff], read_card)
             .map_err(unavailable)?
@@ -281,7 +301,7 @@ impl Store {
         let expected = i64::try_from(c.expected_revision).map_err(|_| invalid("版本无效"))?;
         let request=json!({"card":c.card_id,"revision":c.expected_revision,"rating":c.rating,"duration":c.duration_ms}).to_string();
         let result=self.command(&c.profile_id,&c.operation_id,"rate_card",&request,c.now,|tx|{
-            let mut card=tx.query_row("SELECT * FROM cards WHERE profile_id=?1 AND id=?2",params![c.profile_id,c.card_id],read_card).optional().map_err(unavailable)?.ok_or(AppError::new(ErrorCode::NotFound,"词卡不存在"))?;
+            let mut card=tx.query_row("SELECT * FROM card_view WHERE profile_id=?1 AND id=?2",params![c.profile_id,c.card_id],read_card).optional().map_err(unavailable)?.ok_or(AppError::new(ErrorCode::NotFound,"词卡不存在"))?;
             if card.revision!=c.expected_revision{return Err(AppError::new(ErrorCode::StaleState,"词卡已变更，请重新加载"));}
             if card.suspended||card.archived{return Err(invalid("词卡已暂停或归档"));}
             let settings_json:String=tx.query_row("SELECT json FROM settings WHERE profile_id=?1",[&c.profile_id],|r|r.get(0)).map_err(unavailable)?;

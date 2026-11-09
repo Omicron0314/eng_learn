@@ -39,6 +39,7 @@ fn revealed_review_shows_meaning_example_and_source(cx: &mut TestAppContext) {
                             revision: 0,
                             created_at: 0,
                             srs: cijian_domain::srs::SrsState::new(0),
+                            pronunciation: Default::default(),
                         }];
                         shell
                     })
@@ -93,6 +94,7 @@ fn long_meaning_wraps_without_overlapping_the_source_or_ratings(cx: &mut TestApp
                                 revision: 0,
                                 created_at: 0,
                                 srs: cijian_domain::srs::SrsState::new(0),
+                                pronunciation: Default::default(),
                             }];
                             shell
                         })
@@ -143,6 +145,7 @@ impl CommandBus for GlossBus {
                     revision: revision + 1,
                     created_at: 0,
                     srs: cijian_domain::srs::SrsState::new(0),
+                    pronunciation: Default::default(),
                 }))
             }
             _ => Err(AppError::new(
@@ -199,6 +202,7 @@ fn missing_meaning_is_explained_once_without_blocking_rating(cx: &mut TestAppCon
                             revision: 3,
                             created_at: 0,
                             srs: cijian_domain::srs::SrsState::new(0),
+                            pronunciation: Default::default(),
                         }];
                         shell
                     })
@@ -294,6 +298,7 @@ fn clicking_the_card_reveals_it(cx: &mut TestAppContext) {
                             revision: 1,
                             created_at: 0,
                             srs: cijian_domain::srs::SrsState::new(0),
+                            pronunciation: Default::default(),
                         }];
                         shell
                     })
@@ -339,4 +344,108 @@ fn review_intervals_show_anki_defaults() {
     assert_eq!(crate::format_interval(330_000), "6分钟");
     assert_eq!(crate::format_interval(600_000), "10分钟");
     assert_eq!(crate::format_interval(4 * 86_400_000), "4天");
+}
+
+/// Records the word-audio commands the review card dispatches.
+#[derive(Default)]
+struct WordAudioBus(std::sync::Mutex<Vec<Command>>);
+impl CommandBus for WordAudioBus {
+    fn dispatch(
+        &self,
+        command: Command,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = cijian_ports::Result<Response>> + Send + '_>,
+    > {
+        self.0.lock().unwrap().push(command.clone());
+        let result = match command {
+            Command::PlayWord { accent, .. } => Ok(Response::WordAudio { accent }),
+            _ => Err(AppError::new(
+                cijian_ports::ErrorCode::InvalidInput,
+                "原创测试只播放单词发音",
+            )),
+        };
+        Box::pin(async move { result })
+    }
+}
+
+#[gpui_kit::test]
+fn pronunciation_chip_switches_accent_and_ipa_replays_the_word(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let bus = std::sync::Arc::new(WordAudioBus::default());
+    let (handle, shell) = cx
+        .update(|cx| {
+            let bus = bus.clone();
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1000.), px(900.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                move |_, cx| {
+                    cx.new(|_| {
+                        let mut shell = Shell::new();
+                        shell.navigation.navigate(Route::Review);
+                        shell.backend = Some(bus);
+                        shell.review = vec![cijian_ports::library::CardView {
+                            id: "word-card".into(),
+                            lexeme_id: "word-lexeme".into(),
+                            front: "overlook".into(),
+                            meaning: "忽略，忽视".into(),
+                            example: String::new(),
+                            text_source: "imported".into(),
+                            suspended: false,
+                            archived: false,
+                            revision: 1,
+                            created_at: 0,
+                            srs: cijian_domain::srs::SrsState::new(0),
+                            pronunciation: cijian_domain::audio::Pronunciation {
+                                ipa_uk: "/ˌəʊvəˈlʊk/".into(),
+                                ipa_us: "/ˌoʊvərˈlʊk/".into(),
+                                audio_uk: true,
+                                audio_us: true,
+                            },
+                        }];
+                        shell
+                    })
+                },
+            )
+        })
+        .unwrap();
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        assert!(window.try_find_by_label("播放单词发音").is_some());
+        window.click("review-ipa", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    // The IPA replays the currently selected accent, which defaults to American.
+    assert!(matches!(
+        bus.0.lock().unwrap().last(),
+        Some(Command::PlayWord {
+            accent: cijian_domain::audio::Accent::Us,
+            ..
+        })
+    ));
+    cx.update_window(handle, |_, window, cx| {
+        window.click("review-accent", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    let commands = bus.0.lock().unwrap();
+    assert!(matches!(
+        commands.last(),
+        Some(Command::PlayWord {
+            accent: cijian_domain::audio::Accent::Uk,
+            ..
+        })
+    ));
+    let _ = shell;
 }

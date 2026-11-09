@@ -63,6 +63,7 @@ fn card_editor_preserves_drafts_and_search_enter_works(cx: &mut TestAppContext) 
                                     revision: 1,
                                     created_at: 0,
                                     srs: cijian_domain::srs::SrsState::new(0),
+                                    pronunciation: Default::default(),
                                 }],
                             });
                             shell
@@ -440,6 +441,7 @@ fn long_meaning_stays_inside_its_library_cell(cx: &mut TestAppContext) {
                                 revision: 0,
                                 created_at: 0,
                                 srs: cijian_domain::srs::SrsState::new(0),
+                                pronunciation: Default::default(),
                             }],
                         });
                         shell

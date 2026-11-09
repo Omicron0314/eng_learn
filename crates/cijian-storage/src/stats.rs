@@ -198,7 +198,7 @@ impl Store {
             });
         }
         let learned_total:i64=db.query_row("SELECT count(DISTINCT c.lexeme_id) FROM cards c JOIN review_logs r ON r.card_id=c.id AND r.profile_id=c.profile_id WHERE c.profile_id=?1 AND r.reviewed_at<=?2",params![profile,now],|r|r.get(0)).map_err(unavailable)?;
-        let mut statement=db.prepare("SELECT c.*,l.lemma FROM cards c JOIN lexemes l ON l.id=c.lexeme_id WHERE c.profile_id=?1 AND EXISTS(SELECT 1 FROM review_logs r WHERE r.card_id=c.id AND r.profile_id=c.profile_id AND r.reviewed_at<=?2) ORDER BY l.lemma,c.id LIMIT 50 OFFSET ?3").map_err(unavailable)?;
+        let mut statement=db.prepare("SELECT c.*,l.lemma FROM card_view c JOIN lexemes l ON l.id=c.lexeme_id WHERE c.profile_id=?1 AND EXISTS(SELECT 1 FROM review_logs r WHERE r.card_id=c.id AND r.profile_id=c.profile_id AND r.reviewed_at<=?2) ORDER BY l.lemma,c.id LIMIT 50 OFFSET ?3").map_err(unavailable)?;
         let learned = statement
             .query_map(params![profile, now, i64::from(page) * 50], |r| {
                 let card = super::library::read_card(r)?;

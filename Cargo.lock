@@ -986,6 +986,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cijian-fill"
+version = "0.1.0"
+dependencies = [
+ "cijian-domain",
+ "cijian-ports",
+ "cijian-providers",
+ "cijian-storage",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "cijian-platform"
 version = "0.1.0"
 dependencies = [

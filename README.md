@@ -25,6 +25,16 @@ cargo run -p cijian-desktop
 cargo run -p cijian-desktop -- --data-dir /tmp/cijian-dev
 ```
 
+复习卡的单词发音随词书提供。导入纯词表后需要补齐英／美录音时，先关闭应用再运行维护工具（它会访问有道词典音频与条目接口，不占远程 TTS 额度）：
+
+```sh
+cargo run -p cijian-fill -- --data-dir ~/.local/share/cijian            # 补齐所有缺失词
+cargo run -p cijian-fill -- --data-dir ~/.local/share/cijian --limit 20 # 先试跑
+cargo run -p cijian-fill -- --data-dir ~/.local/share/cijian --dry-run  # 只列待补词
+```
+
+工具可中断续跑：每写一条即落库，重跑只处理仍缺口音的词。
+
 构建产物统一落在仓库根 `target/`（cargo 默认目录，见 D58），与 `cargo test/clippy`、rust-analyzer 共用同一份缓存，不需要设置 `CARGO_TARGET_DIR`。
 
 每次构建并希望启动器立即打开新版本时，使用：

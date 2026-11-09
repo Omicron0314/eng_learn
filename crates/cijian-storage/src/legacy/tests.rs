@@ -252,7 +252,7 @@ fn v3_review_upgrade_preserves_after_fields_and_append_only_guards() {
             )
             .unwrap();
         }
-        db.execute_batch("INSERT INTO profiles VALUES ('p','原创',0,0);INSERT INTO lexemes VALUES ('l','harbor','','word');INSERT INTO cards(id,profile_id,lexeme_id,front,text_source,origin,state,due,stability,difficulty,reps,lapses,last_review,elapsed_days,scheduled_days,learning_steps,scheduler_version,created_at,updated_at,revision) VALUES ('c','p','l','harbor','missing','import','learning',1,1,5,1,0,0,0,0,1,'original-v3',0,0,2);INSERT INTO review_logs(id,profile_id,card_id,operation_id,rating,state_before,state_after,due_before,due_after,scheduler_version,reviewed_at,duration_ms) VALUES ('r','p','c','op','again','new','learning',0,1,'original-v3',0,2);").unwrap();
+        db.execute_batch("INSERT INTO profiles VALUES ('p','原创',0,0);INSERT INTO lexemes(id,lemma,pos,kind) VALUES ('l','harbor','','word');INSERT INTO cards(id,profile_id,lexeme_id,front,text_source,origin,state,due,stability,difficulty,reps,lapses,last_review,elapsed_days,scheduled_days,learning_steps,scheduler_version,created_at,updated_at,revision) VALUES ('c','p','l','harbor','missing','import','learning',1,1,5,1,0,0,0,0,1,'original-v3',0,0,2);INSERT INTO review_logs(id,profile_id,card_id,operation_id,rating,state_before,state_after,due_before,due_after,scheduler_version,reviewed_at,duration_ms) VALUES ('r','p','c','op','again','new','learning',0,1,'original-v3',0,2);").unwrap();
     }
     let store = Store::open(path).unwrap();
     let db = store.connection.lock().unwrap();

@@ -73,6 +73,101 @@ impl Shell {
         })
         .detach();
     }
+    /// Word audio: the accent chip switches 英/美, the transcription itself replays.
+    /// Both live inside the review card, so their clicks must not also reveal it.
+    fn review_pronunciation(
+        &mut self,
+        card: &CardView,
+        cx: &mut Context<Self>,
+    ) -> gpui_kit::AnyElement {
+        let accent = self.review_accent;
+        let ipa = card.pronunciation.ipa(accent).to_owned();
+        let playable = card.pronunciation.playable(accent);
+        if ipa.is_empty() && playable.is_none() {
+            return div().into_any_element();
+        }
+        let speaker = if self.compact { 16. } else { 18. };
+        let mut chip = div()
+            .id("review-accent")
+            .role(gpui_kit::Role::Button)
+            .aria_label(format!("切换到{}式发音", accent.toggle().label()))
+            .cursor_pointer()
+            .h(px(30.))
+            .px(px(10.))
+            .rounded(px(15.))
+            .bg(design::c(ColorRole::SECONDARY_CONTAINER))
+            .text_color(design::c(ColorRole::ON_SECONDARY_CONTAINER))
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .when(playable.is_none(), |chip| chip.opacity(0.55))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.review_accent = this.review_accent.toggle();
+                this.play_word(this.review_accent, cx);
+            }))
+            .child(design::text(13., 18., 650.).child(accent.label()))
+            .child(design::icon_role(
+                Icon::Speaker,
+                speaker,
+                ColorRole::ON_SECONDARY_CONTAINER,
+            ));
+        if playable.is_none() {
+            chip = chip.child(design::muted_text(12., 16.).child("暂无"));
+        }
+        let chip = chip.test_support();
+        let transcription = div()
+            .id("review-ipa")
+            .role(gpui_kit::Role::Button)
+            .aria_label("播放单词发音")
+            .flex()
+            .items_center()
+            .child(
+                design::mono(
+                    if self.compact { 18. } else { 22. },
+                    if self.compact { 26. } else { 30. },
+                    400.,
+                )
+                .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
+                .child(ipa),
+            );
+        let transcription = if playable.is_some() {
+            transcription
+                .cursor_pointer()
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.play_word(accent, cx);
+                }))
+                .test_support()
+        } else {
+            transcription.test_support()
+        };
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(10.))
+            .child(chip)
+            .child(transcription)
+            .into_any_element()
+    }
+    /// Plays the current card, falling back to the accent that actually has audio.
+    fn play_word(&mut self, accent: cijian_domain::audio::Accent, cx: &mut Context<Self>) {
+        let Some((lexeme, recorded)) = self.review.first().and_then(|card| {
+            card.pronunciation
+                .playable(accent)
+                .map(|recorded| (card.lexeme_id.clone(), recorded))
+        }) else {
+            return;
+        };
+        self.request(
+            Command::PlayWord {
+                lexeme,
+                accent: recorded,
+            },
+            cx,
+        );
+    }
     /// Reveal the current card and, when its meaning is missing, request one
     /// bounded AI gloss. The request never blocks reveal or rating.
     pub(super) fn reveal_card(&mut self, cx: &mut Context<Self>) {
@@ -3518,7 +3613,8 @@ impl Shell {
             .cursor_pointer()
             .on_click(cx.listener(|this, _, _, cx| this.reveal_card(cx)))
             .child(card.front.clone()),
-        );
+        )
+        .child(self.review_pronunciation(&card, cx));
         if self.revealed {
             let pending = self.gloss_pending.as_deref() == Some(&card.id);
             let failed = self

@@ -87,13 +87,13 @@ impl Store {
         let revision = i64::try_from(c.expected_revision).map_err(|_| invalid("版本无效"))?;
         let request=json!({"card":c.card_id,"revision":c.expected_revision,"meaning":c.meaning,"example":c.example,"suspended":c.suspended}).to_string();
         let result=self.command(&c.profile_id,&c.operation_id,"edit_card",&request,c.now,|tx|{
-            let old=tx.query_row("SELECT * FROM cards WHERE profile_id=?1 AND id=?2",params![c.profile_id,c.card_id],read_card).optional().map_err(unavailable)?.ok_or(AppError::new(ErrorCode::NotFound,"词卡不存在"))?;
+            let old=tx.query_row("SELECT * FROM card_view WHERE profile_id=?1 AND id=?2",params![c.profile_id,c.card_id],read_card).optional().map_err(unavailable)?.ok_or(AppError::new(ErrorCode::NotFound,"词卡不存在"))?;
             if old.archived&&!c.suspended{return Err(invalid("归档词卡不能通过暂停开关恢复"));}
             if old.revision!=c.expected_revision{return Err(AppError::new(ErrorCode::StaleState,"词卡已变更，请重新加载"));}
             let source=if c.meaning!=old.meaning{"user"}else{&old.text_source};
             let changed=tx.execute("UPDATE cards SET meaning=?1,example=?2,suspended=?3,text_source=?4,updated_at=?5,revision=revision+1 WHERE profile_id=?6 AND id=?7 AND revision=?8",params![c.meaning,c.example,c.suspended,source,c.now,c.profile_id,c.card_id,revision]).map_err(unavailable)?;
             if changed!=1{return Err(AppError::new(ErrorCode::StaleState,"词卡已变更"));}
-            let value=tx.query_row("SELECT * FROM cards WHERE profile_id=?1 AND id=?2",params![c.profile_id,c.card_id],read_card).map_err(unavailable)?;
+            let value=tx.query_row("SELECT * FROM card_view WHERE profile_id=?1 AND id=?2",params![c.profile_id,c.card_id],read_card).map_err(unavailable)?;
             let mut fields = Vec::new();
             if c.meaning != old.meaning { fields.push("meaning"); }
             if c.example != old.example { fields.push("example"); }

@@ -235,6 +235,7 @@ impl DesktopBackend {
                 self.ensure_system_audio(&article, &voice)
             }
             Command::EnsureAudio { article, operation } => self.ensure_audio(&article, &operation),
+            Command::PlayWord { lexeme, accent } => self.play_word_audio(&lexeme, accent),
             Command::AudioPause => self.audio_command(cijian_platform::audio::AudioCommand::Pause),
             Command::AudioResume => {
                 self.audio_command(cijian_platform::audio::AudioCommand::Resume)

@@ -72,6 +72,9 @@ cargo test --workspace
 
 # 看界面与交互
 cargo run -p cijian-desktop -- --data-dir /tmp/cijian-dev
+
+# 单词发音补齐（需要网络；先关闭应用，只在维护侧执行）
+cargo run -p cijian-fill -- --data-dir /tmp/cijian-dev --limit 5 --dry-run
 ```
 
 旧 Web 工程维护用 `pnpm lint`、`pnpm typecheck`、`pnpm test`；改到 Web 运行行为才加 build／e2e。文档修改不重跑产品测试。

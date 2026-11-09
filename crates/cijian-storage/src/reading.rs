@@ -52,7 +52,7 @@ impl Store {
             let text=body(tx,c)?;let selection=reading::select(&text,range).map_err(|e|invalid(&e.to_string()))?;
             let serialized=serde_json::to_string(gloss).map_err(unavailable)?;
             cijian_domain::gloss::Gloss::parse(&serialized,&selection.lemma).map_err(|e|invalid(&e.to_string()))?;
-            tx.execute("INSERT INTO lexemes VALUES (?1,?2,'','word') ON CONFLICT(lemma,pos,kind) DO NOTHING",params![lexeme_id,selection.lemma]).map_err(unavailable)?;
+            tx.execute("INSERT INTO lexemes(id,lemma,pos,kind) VALUES (?1,?2,'','word') ON CONFLICT(lemma,pos,kind) DO NOTHING",params![lexeme_id,selection.lemma]).map_err(unavailable)?;
             let lexeme:String=tx.query_row("SELECT id FROM lexemes WHERE lemma=?1 AND pos='' AND kind='word'",[&selection.lemma],|r|r.get(0)).map_err(unavailable)?;
             tx.execute("INSERT INTO gloss_cache VALUES (?1,?2,?3,'gloss.v1',?4,?5,?6) ON CONFLICT(profile_id,lexeme_id,context_hash,prompt_version,provider_fingerprint) DO UPDATE SET gloss_json=excluded.gloss_json,created_at=excluded.created_at",params![c.profile,lexeme,hash(&selection.sentence),fingerprint,serialized,c.now]).map_err(unavailable)?;
             Ok((json!(true),vec![Event{id:c.event.clone(),kind:"lookup".into(),schema_version:1,payload:json!({"articleId":c.article,"lexemeId":lexeme,"bodyHash":c.body_hash,"range":range,"cacheHit":false,"status":"success"})}]))
@@ -184,7 +184,7 @@ impl Store {
         let db = self.connection.lock().map_err(unavailable)?;
         let card = db
             .query_row(
-                "SELECT * FROM cards WHERE profile_id=?1 AND id=?2",
+                "SELECT * FROM card_view WHERE profile_id=?1 AND id=?2",
                 params![profile, card],
                 super::library::read_card,
             )
@@ -252,7 +252,7 @@ impl Store {
             |tx| {
                 let old = tx
                     .query_row(
-                        "SELECT * FROM cards WHERE profile_id=?1 AND id=?2",
+                        "SELECT * FROM card_view WHERE profile_id=?1 AND id=?2",
                         params![c.profile_id, c.card_id],
                         super::library::read_card,
                     )
@@ -284,7 +284,7 @@ impl Store {
                 }
                 let value = tx
                     .query_row(
-                        "SELECT * FROM cards WHERE profile_id=?1 AND id=?2",
+                        "SELECT * FROM card_view WHERE profile_id=?1 AND id=?2",
                         params![c.profile_id, c.card_id],
                         super::library::read_card,
                     )
