@@ -161,7 +161,7 @@ impl Shell {
             let Some(editor) = &self.settings_editor else {
                 return;
             };
-            [ProviderKind::Llm, ProviderKind::Tts]
+            [ProviderKind::Llm]
                 .into_iter()
                 .filter(|kind| editor.provider_dirty(*kind, cx))
                 .map(|kind| {

@@ -786,46 +786,59 @@ in the morning,在早上,Phrase row.\n\
     };
     assert_eq!(total, 0);
 
-    // Remote TTS reserves once, caches the verified WAV and reuses it.
-    let Response::Audio(_) = backend
-        .execute(Command::EnsureAudio {
-            article: article_id.clone(),
-            operation: "tour-audio".into(),
-        })
-        .unwrap_or_else(|error| {
-            assert!(
-                matches!(
-                    error.code,
-                    ErrorCode::UnsupportedCapability | ErrorCode::StorageUnavailable
-                ),
-                "unexpected playback error: {error:?}"
-            );
-            Response::Audio(Default::default())
-        })
-    else {
-        panic!("audio")
-    };
+    // Speech is local. Without the installed worker the command must fail
+    // gracefully, create no asset and never reach the network stub.
+    let installed = cijian_platform::kokoro::installation()
+        .ok()
+        .is_some_and(|root| root.join("venv/bin/python").exists());
+    let audio = backend.execute(Command::EnsureAudio {
+        article: article_id.clone(),
+        operation: "tour-audio".into(),
+    });
     let assets = backend
         .store
         .article_audio_assets(&backend.profile, &article_id)
         .unwrap();
-    assert_eq!(assets.len(), 1);
-    assert!(
-        directory
-            .path()
-            .join("audio")
-            .join(&assets[0].blob_key)
-            .exists()
-    );
-    assert_eq!(stub.tts.load(Ordering::Relaxed), 1);
-    let _ = backend.execute(Command::EnsureAudio {
-        article: article_id.clone(),
-        operation: "tour-audio-cached".into(),
-    });
+    if installed {
+        assert!(
+            audio.is_ok(),
+            "installed worker should synthesize: {audio:?}"
+        );
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].voice, "af_heart", "default accent is American");
+        assert!(assets[0].model.starts_with("kokoro-v1.0-q8f16-"));
+        assert!(
+            directory
+                .path()
+                .join("audio")
+                .join(&assets[0].blob_key)
+                .exists()
+        );
+        let _ = backend.execute(Command::EnsureAudio {
+            article: article_id.clone(),
+            operation: "tour-audio-cached".into(),
+        });
+        assert_eq!(
+            backend
+                .store
+                .article_audio_assets(&backend.profile, &article_id)
+                .unwrap()
+                .len(),
+            1,
+            "a cached article is not synthesized twice"
+        );
+    } else {
+        assert_eq!(
+            audio.err().map(|error| error.code),
+            Some(ErrorCode::UnsupportedCapability),
+            "a missing local model is reported, never a fake success"
+        );
+        assert!(assets.is_empty());
+    }
     assert_eq!(
         stub.tts.load(Ordering::Relaxed),
-        1,
-        "a cached article is not synthesized twice"
+        0,
+        "local speech never calls a remote TTS endpoint"
     );
     let _ = backend.execute(Command::AudioStop);
 

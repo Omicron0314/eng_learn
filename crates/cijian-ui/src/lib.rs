@@ -382,7 +382,14 @@ impl Shell {
                 }
                 self.reading_feedback = feedback;
                 self.reader_flags.open = false;
-                self.audio_ready = !audio.is_empty();
+                self.audio_ready = audio.iter().any(|asset| {
+                    asset.model.starts_with("kokoro-v1.0-q8f16-")
+                        && asset.voice
+                            == match self.review_accent {
+                                cijian_domain::audio::Accent::Us => "af_heart",
+                                cijian_domain::audio::Accent::Uk => "bf_emma",
+                            }
+                });
                 self.last_audio_system = false;
                 self.stored_audio = audio;
                 let listening = matches!(self.navigation.current(),Route::Article{id,listening:true} if id==&article.id);

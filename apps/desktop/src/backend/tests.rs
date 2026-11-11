@@ -113,3 +113,51 @@ fn offline_startup_and_settings_survive_reopen_without_network() {
         matches!(reopened.execute(Command::LoadSettings).unwrap(),Response::Settings{value,has_session_key:false,source:cijian_ports::provider::SecretSource::Session,..} if value.daily_new_limit==7 && value.request_retention==0.91 && value.theme==cijian_domain::settings::Theme::Dark && value.playback_rate==1.25)
     );
 }
+#[test]
+fn switching_accent_stops_playback_and_persists_the_choice() {
+    let directory = tempfile::tempdir().unwrap();
+    let backend = DesktopBackend::open_for_tests(directory.path()).unwrap();
+    assert_eq!(
+        backend
+            .store
+            .device_preferences(&backend.profile, &backend.device)
+            .unwrap()
+            .0
+            .pronunciation_accent,
+        cijian_domain::audio::Accent::Us
+    );
+    let _ = backend.execute(Command::AudioStatus);
+    backend
+        .execute(Command::SetPronunciationAccent {
+            accent: cijian_domain::audio::Accent::Uk,
+        })
+        .unwrap();
+    // British audio must never reuse the American cache key: the article asset
+    // query is per accent voice, and the playback that was using the old voice
+    // is stopped instead of continuing on a stale file.
+    assert_eq!(
+        backend
+            .store
+            .device_preferences(&backend.profile, &backend.device)
+            .unwrap()
+            .0
+            .pronunciation_accent,
+        cijian_domain::audio::Accent::Uk
+    );
+    assert!(matches!(
+        backend.execute(Command::AudioStatus).unwrap(),
+        Response::Audio(state) if state.state == cijian_domain::audio::PlaybackState::Idle
+    ));
+    drop(backend);
+    let reopened = DesktopBackend::open_for_tests(directory.path()).unwrap();
+    assert_eq!(
+        reopened
+            .store
+            .device_preferences(&reopened.profile, &reopened.device)
+            .unwrap()
+            .0
+            .pronunciation_accent,
+        cijian_domain::audio::Accent::Uk,
+        "the accent is a device preference that survives reopen"
+    );
+}

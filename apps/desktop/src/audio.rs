@@ -1,12 +1,7 @@
-use crate::{
-    articles::Recorder,
-    backend::{DesktopBackend, id, now},
-};
+use crate::backend::{DesktopBackend, id, now};
 use cijian_app::commands::Response;
-use cijian_domain::provider::ProviderKind;
 use cijian_platform::audio::AudioCommand;
-use cijian_ports::{AppError, ErrorCode, Result, audio::*, provider::*};
-use cijian_providers::{NativeHttp, OpenAiCompatible};
+use cijian_ports::{AppError, ErrorCode, Result, audio::*};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 fn digest(bytes: &[u8]) -> String {
@@ -187,31 +182,13 @@ impl DesktopBackend {
             .lock()
             .map_err(|_| AppError::new(ErrorCode::StorageUnavailable, "音频任务暂不可用"))?;
         let article = self.store.article(&self.profile, article_id)?;
-        let snapshot = {
-            let _guard = self
-                .config_lock
-                .lock()
-                .map_err(|_| AppError::new(ErrorCode::StorageUnavailable, "配置暂不可用"))?;
-            let config = self
-                .store
-                .provider_config(&self.profile, ProviderKind::Tts)?
-                .ok_or(AppError::new(
-                    ErrorCode::ConfigMissing,
-                    "请先配置远程朗读服务",
-                ))?;
-            let secret =
-                futures::executor::block_on(self.secrets.read(&format!("{}/tts", self.profile)))?;
-            ProviderSnapshot { config, secret }
-        };
-        let voice = snapshot
-            .config
-            .voice
-            .clone()
-            .ok_or(AppError::new(ErrorCode::ConfigMissing, "请配置语音名称"))?;
+        let (preferences, _) = self.store.device_preferences(&self.profile, &self.device)?;
+        let accent = preferences.pronunciation_accent;
+        let voice = cijian_platform::kokoro::voice(accent).to_owned();
         let fingerprint = digest(
             format!(
-                "{}\n{}\n{}\nwav",
-                snapshot.config.endpoint, snapshot.config.model, voice
+                "{}\n{voice}\nwav-24000-pcm16",
+                cijian_platform::kokoro::MODEL
             )
             .as_bytes(),
         );
@@ -227,81 +204,47 @@ impl DesktopBackend {
                 .link_cached_audio(&self.profile, &article.id, &asset.id)?;
             asset
         } else {
-            let reservation = self.store.reserve_audio(ReserveAudio {
-                profile: self.profile.clone(),
-                operation: operation.into(),
-                event: id(),
-                reservation: id(),
-                article: article.id.clone(),
-                body_hash: article.body_hash.clone(),
-                now: now(),
+            let generated = tempfile::NamedTempFile::new_in(&cache)
+                .map_err(|_| AppError::new(ErrorCode::StorageUnavailable, "无法创建音频文件"))?;
+            cijian_platform::kokoro::synthesize(&article.body, accent, generated.path(), || {
+                self.audio_epoch.load(std::sync::atomic::Ordering::SeqCst) != ticket
             })?;
-            if !self.store.claim_audio(&self.profile, &reservation.id)? {
-                return Err(AppError::new(
-                    ErrorCode::StaleState,
-                    "该音频请求已处理，未自动再次调用服务",
-                ));
-            }
-            let outcome = (|| {
-                let provider = OpenAiCompatible {
-                    transport: NativeHttp::new()?,
-                    recorder: Recorder(self.store.clone()),
-                };
-                let bytes = self.runtime.block_on(provider.speech(
-                    &snapshot,
-                    &article.body,
-                    CallStart {
-                        profile_id: self.profile.clone(),
-                        call_id: id(),
-                        purpose: "tts".into(),
-                        model: snapshot.config.model.clone(),
-                        prompt_version: "tts.request.v1".into(),
-                        provider_fingerprint: fingerprint.clone(),
-                        now: now(),
-                    },
-                ))?;
-                let duration = cijian_platform::audio::validate_audio(bytes.clone())?;
-                let blob_key = format!("{}.wav", digest(&bytes));
-                let path = cache.join(&blob_key);
-                let mut temporary = tempfile::NamedTempFile::new_in(&cache).map_err(|_| {
-                    AppError::new(ErrorCode::StorageUnavailable, "无法写入音频缓存")
-                })?;
-                temporary.write_all(&bytes).map_err(|_| {
-                    AppError::new(ErrorCode::StorageUnavailable, "音频缓存写入失败")
-                })?;
-                temporary.as_file().sync_all().map_err(|_| {
-                    AppError::new(ErrorCode::StorageUnavailable, "音频缓存同步失败")
-                })?;
-                temporary.persist(&path).map_err(|_| {
-                    AppError::new(ErrorCode::StorageUnavailable, "无法保存音频缓存")
-                })?;
-                self.store.save_audio(SaveAudio {
-                    profile: self.profile.clone(),
-                    operation: format!("audio-save-{operation}"),
-                    event: id(),
-                    reservation: reservation.id.clone(),
-                    asset: AudioAsset {
-                        id: id(),
-                        cache_key,
-                        text_hash: article.body_hash.clone(),
-                        provider_fingerprint: fingerprint,
-                        model: snapshot.config.model.clone(),
-                        voice,
-                        format: "wav".into(),
-                        blob_key,
-                        duration,
-                        chars: reservation.chars,
-                    },
-                    now: now(),
-                })
-            })();
-            match outcome {
-                Ok(asset) => asset,
-                Err(error) => {
-                    self.store.fail_audio(&self.profile, &reservation.id)?;
-                    return Err(error);
-                }
-            }
+            let bytes = std::fs::read(generated.path())
+                .map_err(|_| AppError::new(ErrorCode::StorageUnavailable, "无法读取生成音频"))?;
+            let duration = cijian_platform::audio::validate_audio(bytes.clone())?;
+            let blob_key = format!("{}.wav", digest(&bytes));
+            let path = cache.join(&blob_key);
+            let mut temporary = tempfile::NamedTempFile::new_in(&cache)
+                .map_err(|_| AppError::new(ErrorCode::StorageUnavailable, "无法写入音频缓存"))?;
+            temporary
+                .write_all(&bytes)
+                .map_err(|_| AppError::new(ErrorCode::StorageUnavailable, "音频缓存写入失败"))?;
+            temporary
+                .as_file()
+                .sync_all()
+                .map_err(|_| AppError::new(ErrorCode::StorageUnavailable, "音频缓存同步失败"))?;
+            temporary
+                .persist(&path)
+                .map_err(|_| AppError::new(ErrorCode::StorageUnavailable, "无法保存音频缓存"))?;
+            self.store.save_local_audio(SaveLocalAudio {
+                profile: self.profile.clone(),
+                operation: format!("audio-save-{operation}"),
+                event: id(),
+                article: article.id.clone(),
+                asset: AudioAsset {
+                    id: id(),
+                    cache_key,
+                    text_hash: article.body_hash.clone(),
+                    provider_fingerprint: fingerprint,
+                    model: cijian_platform::kokoro::MODEL.into(),
+                    voice,
+                    format: "wav".into(),
+                    blob_key,
+                    duration,
+                    chars: article.body.chars().count() as u64,
+                },
+                now: now(),
+            })?
         };
         let _gate = self
             .playback_gate
@@ -322,7 +265,7 @@ impl DesktopBackend {
             session: session.clone(),
             article: article.id.clone(),
             audio: Some(asset.id),
-            source: "remote".into(),
+            source: "system".into(),
             rate: settings.playback_rate,
             now: now(),
         })?;

@@ -231,10 +231,13 @@ impl DesktopBackend {
                 preferences.system_voice = Some(voice);
                 Ok(())
             }),
-            Command::SetPronunciationAccent { accent } => self.save_preferences(|preferences| {
-                preferences.pronunciation_accent = accent;
-                Ok(())
-            }),
+            Command::SetPronunciationAccent { accent } => {
+                self.audio_command(cijian_platform::audio::AudioCommand::Stop)?;
+                self.save_preferences(|preferences| {
+                    preferences.pronunciation_accent = accent;
+                    Ok(())
+                })
+            }
             Command::SetReviewAutoPlay { value } => self.save_preferences(|preferences| {
                 preferences.review_auto_play = value;
                 Ok(())

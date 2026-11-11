@@ -538,7 +538,7 @@ fn credential_copy_never_claims_restart_persistence_for_session_memory() {
 }
 
 #[gpui_kit::test]
-fn both_provider_forms_save_together_and_keep_their_keys(cx: &mut TestAppContext) {
+fn only_the_llm_card_remains_and_local_speech_has_no_remote_fields(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
         gpui_kit_material::init(cx);
@@ -570,27 +570,30 @@ fn both_provider_forms_save_together_and_keep_their_keys(cx: &mut TestAppContext
         .unwrap();
     cx.update_window(handle, |_, window, cx| {
         window.render_frame(cx);
-        // No mode switch: both cards accept text in the same visit.
+        // Speech is local now: no endpoint, model, voice or key inputs exist,
+        // so there is nothing left to misconfigure or leak.
+        for missing in [
+            "tts-endpoint",
+            "tts-model",
+            "tts-voice",
+            "tts-key",
+            "tts-clear-key",
+            "tts-limit",
+        ] {
+            assert!(
+                window
+                    .try_find(gpui_kit::SharedString::from(missing.to_owned()))
+                    .is_none(),
+                "{missing} must not be rendered"
+            );
+        }
         input(window, "llm-endpoint", "https://llm.example.invalid/v1", cx);
         input(window, "llm-model", "llm-model", cx);
         input(window, "llm-key", "llm-test-key", cx);
-        input(window, "tts-endpoint", "https://tts.example.invalid/v1", cx);
-        input(window, "tts-model", "tts-model", cx);
-        input(window, "tts-voice", "tts-voice", cx);
-        input(window, "tts-key", "tts-test-key", cx);
-    })
-    .unwrap();
-    assert!(shell.read_with(cx, |shell, cx| {
-        let editor = shell.settings_editor.as_ref().unwrap();
-        editor.provider_dirty(ProviderKind::Llm, cx) && editor.provider_dirty(ProviderKind::Tts, cx)
-    }));
-    cx.update_window(handle, |_, window, cx| {
         button(window, "save-provider", cx);
     })
     .unwrap();
     cx.run_until_parked();
-    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
-        .unwrap();
     {
         let state = bus.0.lock().unwrap();
         let saves = state
@@ -606,59 +609,30 @@ fn both_provider_forms_save_together_and_keep_their_keys(cx: &mut TestAppContext
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_eq!(saves.len(), 2, "one command per edited provider");
+        assert_eq!(saves.len(), 1, "only the LLM provider is savable");
         assert_eq!(saves[0].0.kind, ProviderKind::Llm);
         assert_eq!(saves[0].0.endpoint, "https://llm.example.invalid/v1");
-        assert_eq!(saves[0].0.model, "llm-model");
-        assert_eq!(saves[0].0.voice, None);
         assert_eq!(saves[0].1, 0, "a first save starts from revision zero");
         assert!(matches!(saves[0].2, SecretPatch::Replace(_)));
-        assert_eq!(saves[1].0.kind, ProviderKind::Tts);
-        assert_eq!(saves[1].0.endpoint, "https://tts.example.invalid/v1");
-        assert_eq!(saves[1].0.voice.as_deref(), Some("tts-voice"));
-        assert!(matches!(saves[1].2, SecretPatch::Replace(_)));
-        assert_eq!(state.keys, [true, true]);
-        assert_eq!(
-            state.providers[1]
-                .as_ref()
-                .map(|config| config.model.as_str()),
-            Some("tts-model")
+        assert!(
+            state
+                .commands
+                .iter()
+                .all(|command| !matches!(command, Command::SaveProvider { config, .. } if config.kind == ProviderKind::Tts)),
+            "a TTS provider must never be written"
         );
     }
     assert!(shell.read_with(cx, |shell, cx| {
-        let editor = shell.settings_editor.as_ref().unwrap();
-        !editor.any_provider_dirty(cx)
-            && editor
-                .provider(ProviderKind::Llm)
-                .key
-                .read(cx)
-                .value()
-                .is_empty()
-            && editor
-                .provider(ProviderKind::Tts)
-                .key
-                .read(cx)
-                .value()
-                .is_empty()
+        !shell
+            .settings_editor
+            .as_ref()
+            .unwrap()
+            .any_provider_dirty(cx)
     }));
-    cx.update_window(handle, |_, window, cx| {
-        button(window, "tts-clear-key", cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
-    {
-        let state = bus.0.lock().unwrap();
-        assert!(matches!(
-            state.commands.last(),
-            Some(Command::SaveProvider { config, secret, .. })
-                if config.kind == ProviderKind::Tts && matches!(secret, SecretPatch::Clear)
-        ));
-        assert_eq!(state.keys, [true, false], "clearing TTS keeps the LLM key");
-    }
 }
 
 #[gpui_kit::test]
-fn an_invalid_provider_blocks_both_saves_before_anything_is_sent(cx: &mut TestAppContext) {
+fn an_invalid_provider_blocks_the_save_before_anything_is_sent(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
         gpui_kit_material::init(cx);
@@ -690,10 +664,8 @@ fn an_invalid_provider_blocks_both_saves_before_anything_is_sent(cx: &mut TestAp
         .unwrap();
     cx.update_window(handle, |_, window, cx| {
         window.render_frame(cx);
-        input(window, "llm-endpoint", "https://llm.example.invalid/v1", cx);
+        input(window, "llm-endpoint", "not-a-url", cx);
         input(window, "llm-model", "llm-model", cx);
-        input(window, "tts-endpoint", "not-a-url", cx);
-        input(window, "tts-model", "tts-model", cx);
         button(window, "save-provider", cx);
     })
     .unwrap();
@@ -705,7 +677,7 @@ fn an_invalid_provider_blocks_both_saves_before_anything_is_sent(cx: &mut TestAp
             .commands
             .iter()
             .any(|command| matches!(command, Command::SaveProvider { .. })),
-        "a bad TTS endpoint must not save the valid LLM draft first"
+        "an invalid endpoint must not save"
     );
     assert!(shell.read_with(cx, |shell, cx| {
         shell.error.is_some()

@@ -17,7 +17,7 @@ pub(super) struct Field {
     pub name: &'static str,
     pub label: &'static str,
 }
-pub(super) const FIELDS: [Field; 10] = [
+pub(super) const FIELDS: [Field; 9] = [
     Field {
         id: "daily-new",
         name: "dailyNewLimit",
@@ -57,11 +57,6 @@ pub(super) const FIELDS: [Field; 10] = [
         id: "retries",
         name: "generationMaxRetries",
         label: "覆盖率重写次数",
-    },
-    Field {
-        id: "tts-limit",
-        name: "ttsDailyCharLimit",
-        label: "每日语音字符上限",
     },
     Field {
         id: "day-start",
@@ -186,7 +181,6 @@ fn values(value: &Settings) -> BTreeMap<&'static str, String> {
         ("targets", value.target_count.to_string()),
         ("control-ratio", value.control_ratio.to_string()),
         ("retries", value.generation_max_retries.to_string()),
-        ("tts-limit", value.tts_daily_char_limit.to_string()),
         ("timezone", value.timezone.clone()),
         ("day-start", value.day_start_hour.to_string()),
     ]
@@ -322,7 +316,6 @@ impl Editor {
                 "targets" => draft.target_count = value as u32,
                 "control-ratio" => draft.control_ratio = value,
                 "retries" => draft.generation_max_retries = value as u32,
-                "tts-limit" => draft.tts_daily_char_limit = value as u32,
                 "day-start" => draft.day_start_hour = value as u32,
                 _ => unreachable!(),
             }
@@ -367,9 +360,7 @@ impl Editor {
         self.provider(kind).dirty(kind, cx)
     }
     pub(crate) fn any_provider_dirty(&self, cx: &App) -> bool {
-        [ProviderKind::Llm, ProviderKind::Tts]
-            .into_iter()
-            .any(|kind| self.provider_dirty(kind, cx))
+        self.provider_dirty(ProviderKind::Llm, cx)
     }
     pub(crate) fn baseline(&self, current: &Settings) -> Settings {
         let mut value = self.baseline.clone();
@@ -402,17 +393,6 @@ impl Editor {
         window.focus(&focus, cx);
     }
     fn format_value(rule: &cijian_domain::settings::NumericRule, value: f64) -> String {
-        if rule.field == "ttsDailyCharLimit" {
-            let raw = format!("{value:.0}");
-            let mut out = String::new();
-            for (index, ch) in raw.chars().rev().enumerate() {
-                if index > 0 && index % 3 == 0 {
-                    out.push(',');
-                }
-                out.push(ch);
-            }
-            return out.chars().rev().collect();
-        }
         if rule.integer {
             format!("{value:.0}")
         } else {

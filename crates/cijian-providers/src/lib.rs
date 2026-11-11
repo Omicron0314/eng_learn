@@ -1,5 +1,4 @@
 //! OpenAI-compatible transport. All calls are explicit, recorded and have no retry policy.
-mod speech;
 pub mod youdao;
 use cijian_domain::provider::ProviderKind;
 use cijian_ports::{AppError, ErrorCode, Result, provider::*};
@@ -268,44 +267,6 @@ mod tests {
             ErrorCode::ConfigMissing
         );
         assert_eq!(*p.transport.calls.lock().unwrap(), 0);
-    }
-    #[tokio::test]
-    async fn speech_invalid_output_and_http_errors_are_logged_without_retry() {
-        for (status, body, expected) in [
-            (
-                200,
-                b"RIFF invalid WAVE".to_vec(),
-                CallStatus::InvalidOutput,
-            ),
-            (
-                429,
-                b"test-secret-do-not-log".to_vec(),
-                CallStatus::HttpError,
-            ),
-        ] {
-            let provider = OpenAiCompatible {
-                transport: Stub {
-                    calls: Mutex::new(0),
-                    status,
-                    body,
-                },
-                recorder: Log::default(),
-            };
-            let mut config = snapshot();
-            config.config.kind = ProviderKind::Tts;
-            config.config.voice = Some("configured-voice".into());
-            let error = provider
-                .speech(&config, "An original sentence.", call())
-                .await
-                .unwrap_err();
-            assert!(!error.message.contains("test-secret-do-not-log"));
-            assert_eq!(*provider.transport.calls.lock().unwrap(), 1);
-            assert_eq!(
-                provider.recorder.finishes.lock().unwrap()[0].status,
-                expected
-            );
-            assert_eq!(provider.recorder.starts.lock().unwrap().len(), 1);
-        }
     }
     #[tokio::test]
     async fn success_and_failures_are_recorded_once_without_secret() {

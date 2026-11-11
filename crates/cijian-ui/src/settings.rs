@@ -196,33 +196,20 @@ impl Shell {
     }
 
     fn provider_summary(&self) -> gpui_kit::AnyElement {
+        let configured = self.provider_config.as_ref();
+        let (icon, title, detail, color) = (
+            Icon::Spark,
+            "LLM · 写作与释义",
+            configured
+                .map(|config| config.endpoint.clone())
+                .unwrap_or_else(|| "尚未配置".into()),
+            (
+                ColorRole::PRIMARY_CONTAINER,
+                ColorRole::ON_PRIMARY_CONTAINER,
+            ),
+        );
         let mut row = div().flex().gap(px(14.));
-        let llm = self.provider_config.as_ref();
-        let tts = self.tts_config.as_ref();
-        for (icon, title, configured, detail, color) in [
-            (
-                Icon::Spark,
-                "LLM · 写作与释义",
-                llm.is_some(),
-                llm.map(|config| config.endpoint.clone())
-                    .unwrap_or_else(|| "尚未配置".into()),
-                (
-                    ColorRole::PRIMARY_CONTAINER,
-                    ColorRole::ON_PRIMARY_CONTAINER,
-                ),
-            ),
-            (
-                Icon::Speaker,
-                "TTS · 整篇音频",
-                tts.is_some(),
-                tts.map(|config| config.endpoint.clone())
-                    .unwrap_or_else(|| "未配置 · 使用本机朗读".into()),
-                (
-                    ColorRole::SECONDARY_CONTAINER,
-                    ColorRole::ON_SECONDARY_CONTAINER,
-                ),
-            ),
-        ] {
+        {
             let mut card = design::card()
                 .flex_1()
                 .min_w_0()
@@ -255,7 +242,7 @@ impl Shell {
                             .child(design::text(16., 22., 650.).child(title))
                             .child(design::muted_text(12., 16.).text_ellipsis().child(detail)),
                     )
-                    .child(if configured {
+                    .child(if configured.is_some() {
                         design::tag(ColorRole::SUCCESS_BG, ColorRole::ON_SUCCESS)
                             .child(design::dot(ColorRole::SUCCESS, 8.))
                             .child("已配置")
@@ -267,13 +254,7 @@ impl Shell {
                         .child("未配置")
                     }),
             );
-            let model = if icon == Icon::Spark {
-                self.provider_config
-                    .as_ref()
-                    .map(|config| config.model.clone())
-            } else {
-                self.tts_config.as_ref().map(|config| config.model.clone())
-            };
+            let model = configured.map(|config| config.model.clone());
             card = card.child(
                 div()
                     .flex()
@@ -461,16 +442,17 @@ impl Shell {
             .when(self.compact, |content| content.pb(px(90.)));
         content = content.child(self.provider_summary());
         content = content.child(self.provider_form(ProviderKind::Llm, editor, cx));
-        content = content.child(self.provider_form(ProviderKind::Tts, editor, cx));
         page = page.child(content);
         page = page.child(
             div()
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .child(design::muted_text(12., 16.).flex_1().child(
-                    key_source_copy(self.key_source, self.has_session_key || self.has_tts_key).0,
-                ))
+                .child(
+                    design::muted_text(12., 16.)
+                        .flex_1()
+                        .child(key_source_copy(self.key_source, self.has_session_key).0),
+                )
                 .child(
                     div()
                         .id("reset-provider-draft")
@@ -838,19 +820,13 @@ impl Shell {
         two = two.child(limits);
         page = page.child(two);
 
-        let mut tts = design::card()
+        let tts = design::card()
             .rounded(px(28.))
             .p(px(4.))
             .px(px(22.))
             .flex()
             .flex_col();
-        for field in editor::FIELDS
-            .iter()
-            .filter(|field| matches!(field.id, "tts-limit"))
-        {
-            tts = tts.child(editor.design_field(field, &errors, self.loading, cx));
-        }
-        tts = tts.child(design::divider()).child(
+        let tts = tts.child(
             div()
                 .flex()
                 .items_center()

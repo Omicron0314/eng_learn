@@ -5,23 +5,6 @@ pub struct SystemVoice {
     pub label: String,
     pub language: String,
 }
-#[derive(Debug, Clone)]
-pub struct ReserveAudio {
-    pub profile: String,
-    pub operation: String,
-    pub event: String,
-    pub reservation: String,
-    pub article: String,
-    pub body_hash: String,
-    pub now: i64,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AudioReservation {
-    pub id: String,
-    pub article: String,
-    pub chars: u64,
-    pub outcome: String,
-}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioAsset {
     pub id: String,
@@ -36,11 +19,11 @@ pub struct AudioAsset {
     pub chars: u64,
 }
 #[derive(Debug, Clone)]
-pub struct SaveAudio {
+pub struct SaveLocalAudio {
     pub profile: String,
     pub operation: String,
     pub event: String,
-    pub reservation: String,
+    pub article: String,
     pub asset: AudioAsset,
     pub now: i64,
 }

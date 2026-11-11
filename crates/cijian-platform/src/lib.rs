@@ -2,6 +2,7 @@
 #[cfg(not(target_family = "wasm"))]
 pub mod audio;
 pub mod files;
+pub mod kokoro;
 #[cfg(not(target_family = "wasm"))]
 pub mod speech;
 use cijian_ports::{

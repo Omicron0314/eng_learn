@@ -267,6 +267,9 @@ impl Shell {
         cx.notify();
     }
     pub(super) fn play_remote_audio(&mut self, article: String, cx: &mut Context<Self>) {
+        if self.loading {
+            return;
+        }
         self.last_audio_system = false;
         self.request(
             Command::EnsureAudio {
@@ -1799,13 +1802,7 @@ impl Shell {
                             ColorRole::ON_SECONDARY_CONTAINER,
                         )),
                 )
-                .child(
-                    design::tag(
-                        ColorRole::SURFACE_CONTAINER_HIGH,
-                        ColorRole::ON_SURFACE_VARIANT,
-                    )
-                    .child("整篇音频"),
-                ),
+                .child(self.article_accent_selector(cx)),
             )
             .into_any_element()
     }
@@ -1865,6 +1862,7 @@ impl Shell {
         .flex()
         .flex_col()
         .text_color(design::c(ColorRole::ON_PRIMARY_CONTAINER))
+        .child(self.article_accent_selector(cx))
         .child(
             div()
                 .flex()
@@ -1882,10 +1880,12 @@ impl Shell {
                         ColorRole::SURFACE_CONTAINER_LOWEST,
                         ColorRole::ON_PRIMARY_CONTAINER,
                     )
-                    .child(if cached {
+                    .child(if self.loading {
+                        "正在准备全文音频…"
+                    } else if cached {
                         "整篇音频 · 已缓存"
                     } else {
-                        "整篇音频"
+                        "首次播放将生成全文并缓存"
                     }),
                 ),
         )
@@ -2030,6 +2030,43 @@ impl Shell {
         card.into_any_element()
     }
 
+    fn article_accent_selector(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+        div()
+            .flex()
+            .gap(px(8.))
+            .children(cijian_domain::audio::Accent::ALL.into_iter().map(|accent| {
+                let selected = self.review_accent == accent;
+                div()
+                    .id(gpui_kit::SharedString::from(format!(
+                        "article-accent-{}",
+                        accent.key()
+                    )))
+                    .role(gpui_kit::Role::Button)
+                    .aria_label(format!("{}式发音", accent.label()))
+                    .cursor_pointer()
+                    .px(px(16.))
+                    .py(px(8.))
+                    .rounded(px(16.))
+                    .bg(design::c(if selected {
+                        ColorRole::PRIMARY_CONTAINER
+                    } else {
+                        ColorRole::SURFACE_CONTAINER
+                    }))
+                    .when(self.loading, |cell| cell.opacity(0.38))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if this.loading || this.review_accent == accent {
+                            return;
+                        }
+                        this.review_accent = accent;
+                        this.audio_ready = false;
+                        this.playback = Default::default();
+                        this.request(Command::SetPronunciationAccent { accent }, cx);
+                    }))
+                    .child(format!("{}式发音", accent.label()))
+            }))
+            .into_any_element()
+    }
+
     fn reader_side_sources(
         &self,
         article: &cijian_ports::articles::Article,
@@ -2075,65 +2112,10 @@ impl Shell {
                             .flex_1()
                             .child(design::text(15., 20., 650.).child("整篇音频"))
                             .child(
-                                design::muted_text(12., 16.).child("服务端合成并缓存 · 可拖动进度"),
+                                design::muted_text(12., 16.).child("本地生成全文后播放 · 自动缓存"),
                             ),
                     ),
-            )
-            .child(
-                div()
-                    .id("system-audio")
-                    .role(gpui_kit::Role::Button)
-                    .aria_label("本机朗读")
-                    .cursor_pointer()
-                    .rounded(px(20.))
-                    .p(px(14.))
-                    .border_1()
-                    .border_color(design::c(ColorRole::OUTLINE_VARIANT))
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        if let Some(article) =
-                            this.article.as_ref().map(|article| article.id.clone())
-                        {
-                            this.play_system_audio(article, cx);
-                        }
-                    }))
-                    .child(design::dot(ColorRole::ON_SURFACE_VARIANT, 20.))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .child(design::text(15., 20., 650.).child("本机朗读"))
-                            .child(design::muted_text(12., 16.).child("免费 · 不支持拖动进度")),
-                    ),
             );
-        if let Some(voice) = self.system_voices.get(self.system_voice_index) {
-            pane = pane.child(
-                div()
-                    .id("system-voice")
-                    .role(gpui_kit::Role::Button)
-                    .aria_label("切换本机语音")
-                    .cursor_pointer()
-                    .text_color(design::c(ColorRole::PRIMARY))
-                    .text_size(px(13.))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.system_voice_index =
-                            (this.system_voice_index + 1) % this.system_voices.len().max(1);
-                        if let Some(voice) = this.system_voices.get(this.system_voice_index) {
-                            this.request(
-                                Command::SetSystemVoice {
-                                    voice: voice.id.clone(),
-                                },
-                                cx,
-                            );
-                        }
-                        cx.notify();
-                    }))
-                    .child(format!("本机语音：{}", voice.label)),
-            );
-        }
         let mut article_card = design::pane().flex_1().min_h_0().p(px(22.)).gap(px(14.));
         article_card = article_card
             .child(design::muted_text(14., 20.).child("这篇文章"))

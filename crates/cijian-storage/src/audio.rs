@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests;
 use super::*;
-use cijian_domain::time::study_day;
 use cijian_ports::audio::*;
 use serde_json::json;
 impl Store {
@@ -34,55 +33,40 @@ impl Store {
         .map_err(unavailable)?;
         Ok(())
     }
-    pub fn reserve_audio(&self, c: ReserveAudio) -> Result<AudioReservation> {
-        let request = json!({"article":c.article,"bodyHash":c.body_hash}).to_string();
-        let value=self.command(&c.profile,&c.operation,"reserve_audio",&request,c.now,|tx|{
-            let article:Option<(String,String)>=tx.query_row("SELECT body,body_hash FROM articles WHERE profile_id=?1 AND id=?2",params![c.profile,c.article],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(unavailable)?;
-            let (text,body_hash)=article.ok_or(AppError::new(ErrorCode::NotFound,"文章不存在"))?;
-            if c.body_hash!=body_hash{return Err(AppError::new(ErrorCode::StaleState,"正文已变化"));}
-            let chars=i64::try_from(text.chars().count()).map_err(|_|invalid("正文过长"))?;
-            let settings:String=tx.query_row("SELECT json FROM settings WHERE profile_id=?1",[&c.profile],|r|r.get(0)).map_err(unavailable)?;
-            let settings:Settings=serde_json::from_str(&settings).map_err(unavailable)?;let settings=ValidatedSettings::try_from(settings).map_err(unavailable)?;let settings=settings.get();
-            let day=study_day(c.now,settings.timezone.parse().map_err(unavailable)?,settings.day_start_hour).map_err(unavailable)?;
-            let used:i64=tx.query_row("SELECT COALESCE(sum(chars),0) FROM audio_reservations WHERE profile_id=?1 AND reserved_at>=?2 AND reserved_at<?3",params![c.profile,day.start_ms,day.end_ms],|r|r.get(0)).map_err(unavailable)?;
-            if chars<=0||used.checked_add(chars).is_none_or(|sum|sum>i64::from(settings.tts_daily_char_limit)){return Err(AppError::new(ErrorCode::QuotaExceeded,"今日远程朗读字符额度不足"));}
-            tx.execute("INSERT INTO audio_reservations VALUES (?1,?2,?3,?4,?5,?6,'reserved')",params![c.reservation,c.profile,c.operation,c.article,chars,c.now]).map_err(unavailable)?;
-            let result=AudioReservation{id:c.reservation.clone(),article:c.article.clone(),chars:chars as u64,outcome:"reserved".into()};
-            Ok((serde_json::to_value(result).map_err(unavailable)?,vec![Event{id:c.event,kind:"audio_reserve".into(),schema_version:1,payload:json!({"reservationId":c.reservation,"articleId":c.article,"chars":chars})}]))
-        })?;
-        serde_json::from_value(value).map_err(unavailable)
-    }
-    pub fn claim_audio(&self, profile: &str, reservation: &str) -> Result<bool> {
-        let db = self.connection.lock().map_err(unavailable)?;
-        Ok(db.execute("UPDATE audio_reservations SET outcome='started' WHERE profile_id=?1 AND id=?2 AND outcome='reserved'",params![profile,reservation]).map_err(unavailable)?==1)
-    }
-    /// Failure records retain the original reservation; quota is never refunded.
-    pub fn fail_audio(&self, profile: &str, reservation: &str) -> Result<()> {
-        self.connection.lock().map_err(unavailable)?.execute("UPDATE audio_reservations SET outcome='failed' WHERE profile_id=?1 AND id=?2 AND outcome IN ('reserved','started')",params![profile,reservation]).map_err(unavailable)?;
-        Ok(())
-    }
-    pub fn save_audio(&self, c: SaveAudio) -> Result<AudioAsset> {
-        if c.asset.cache_key.is_empty()
-            || c.asset.blob_key.is_empty()
-            || c.asset.model.trim().is_empty()
-            || c.asset.voice.trim().is_empty()
-            || !["mp3", "wav", "opus", "flac"].contains(&c.asset.format.as_str())
-            || c.asset.duration.is_some_and(|d| !d.is_finite() || d <= 0.)
+    /// Local synthesis has no paid reservation. Publish the complete asset and
+    /// article link together with its event, after the blob is durably written.
+    pub fn save_local_audio(&self, c: SaveLocalAudio) -> Result<AudioAsset> {
+        if c.asset.id.is_empty()
+            || c.asset.cache_key.is_empty()
+            || c.asset.model.is_empty()
+            || c.asset.voice.is_empty()
+            || c.asset.provider_fingerprint.is_empty()
+            || c.asset.format != "wav"
+            || !c.asset.duration.is_some_and(|d| d.is_finite() && d > 0.)
+            || c.asset.blob_key.len() != 68
+            || !c.asset.blob_key.ends_with(".wav")
+            || !c.asset.blob_key.as_bytes()[..64]
+                .iter()
+                .all(|b| b.is_ascii_hexdigit())
         {
-            return Err(invalid("音频元数据无效"));
+            return Err(invalid("本地音频元数据无效"));
         }
-        let request = json!({"reservation":c.reservation,"asset":c.asset}).to_string();
-        let value=self.command(&c.profile,&c.operation,"save_audio",&request,c.now,|tx|{
-            let reservation:Option<(String,i64)>=tx.query_row("SELECT article_id,chars FROM audio_reservations WHERE profile_id=?1 AND id=?2 AND outcome='started'",params![c.profile,c.reservation],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(unavailable)?;
-            let (article,chars)=reservation.ok_or(AppError::new(ErrorCode::StaleState,"音频任务已结束或未领取"))?;
-            let text_hash:String=tx.query_row("SELECT body_hash FROM articles WHERE profile_id=?1 AND id=?2",params![c.profile,article],|r|r.get(0)).map_err(unavailable)?;
-            if c.asset.chars!=chars as u64||c.asset.text_hash!=text_hash{return Err(invalid("音频与预留正文不匹配"));}
-            tx.execute("INSERT INTO audio_assets VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) ON CONFLICT(cache_key) DO UPDATE SET blob_key=excluded.blob_key,duration=excluded.duration,created_at=excluded.created_at WHERE audio_assets.profile_id=excluded.profile_id AND audio_assets.text_hash=excluded.text_hash AND audio_assets.provider_fingerprint=excluded.provider_fingerprint",params![c.asset.id,c.profile,c.asset.cache_key,c.asset.text_hash,c.asset.provider_fingerprint,c.asset.model,c.asset.voice,c.asset.format,c.asset.blob_key,c.asset.duration,chars,c.now]).map_err(unavailable)?;
-            let actual_id:String=tx.query_row("SELECT id FROM audio_assets WHERE profile_id=?1 AND cache_key=?2",params![c.profile,c.asset.cache_key],|r|r.get(0)).map_err(unavailable)?;
-            let mut asset=c.asset.clone();asset.id=actual_id;
-            tx.execute("INSERT OR IGNORE INTO article_audio_links VALUES (?1,?2,?3)",params![c.profile,article,asset.id]).map_err(unavailable)?;
-            tx.execute("UPDATE audio_reservations SET outcome='succeeded' WHERE profile_id=?1 AND id=?2",params![c.profile,c.reservation]).map_err(unavailable)?;
-            Ok((serde_json::to_value(&asset).map_err(unavailable)?,vec![Event{id:c.event,kind:"audio_generate".into(),schema_version:1,payload:json!({"reservationId":c.reservation,"articleId":article,"audioId":asset.id,"chars":chars})}]))
+        let request = json!({"article":c.article,"asset":c.asset}).to_string();
+        let value = self.command(&c.profile, &c.operation, "save_local_audio", &request, c.now, |tx| {
+            let row: Option<(String, String)> = tx.query_row(
+                "SELECT body,body_hash FROM articles WHERE profile_id=?1 AND id=?2",
+                params![c.profile,c.article], |r| Ok((r.get(0)?,r.get(1)?))
+            ).optional().map_err(unavailable)?;
+            let (body, hash) = row.ok_or(AppError::new(ErrorCode::NotFound,"文章不存在"))?;
+            if hash != c.asset.text_hash || body.chars().count() as u64 != c.asset.chars {
+                return Err(AppError::new(ErrorCode::StaleState,"正文已变化，请重新生成音频"));
+            }
+            tx.execute("INSERT INTO audio_assets VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) ON CONFLICT(cache_key) DO UPDATE SET blob_key=excluded.blob_key,duration=excluded.duration,created_at=excluded.created_at WHERE audio_assets.profile_id=excluded.profile_id AND audio_assets.text_hash=excluded.text_hash AND audio_assets.provider_fingerprint=excluded.provider_fingerprint", params![c.asset.id,c.profile,c.asset.cache_key,c.asset.text_hash,c.asset.provider_fingerprint,c.asset.model,c.asset.voice,c.asset.format,c.asset.blob_key,c.asset.duration,body.chars().count() as i64,c.now]).map_err(unavailable)?;
+            let actual_id: String = tx.query_row("SELECT id FROM audio_assets WHERE profile_id=?1 AND cache_key=?2 AND text_hash=?3 AND provider_fingerprint=?4", params![c.profile,c.asset.cache_key,c.asset.text_hash,c.asset.provider_fingerprint], |r| r.get(0)).map_err(unavailable)?;
+            let mut asset = c.asset.clone();
+            asset.id = actual_id;
+            tx.execute("INSERT OR IGNORE INTO article_audio_links VALUES (?1,?2,?3)",params![c.profile,c.article,asset.id]).map_err(unavailable)?;
+            Ok((serde_json::to_value(&asset).map_err(unavailable)?,vec![Event{id:c.event,kind:"audio_generate".into(),schema_version:1,payload:json!({"articleId":c.article,"audioId":asset.id,"source":"kokoro","chars":asset.chars})}]))
         })?;
         serde_json::from_value(value).map_err(unavailable)
     }
