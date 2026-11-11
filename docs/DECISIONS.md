@@ -46,6 +46,7 @@
 | D61 | 词包 `.cijianpack` 以“清单 + 六列词表 + 双口音音频 blob”自包含分发，导入时先全量校验 SHA-256 与容器再落盘写库 | 损坏词包整包拒绝，不留半本词书；跨词书共享相同词元音频自动去重 |
 | D64 | 整篇朗读统一改为**本地 Kokoro-82M q8f16**（`tools/install-kokoro.py` 装到 `~/.local/share/cijian/kokoro`），设置页删除远程 TTS 端点／密钥／日期字符额度；美音固定 `af_heart`、英音固定 `bf_emma`，速度只作用于播放器 | 用户要求“接入 TTS 服务”收敛为离线免费方案：正文不出本机、无额度与密钥面；`onnxruntime` 默认图优化会让该 q8f16 导出在加载时崩溃，助手固定 `ORT_DISABLE_ALL`；同口音缓存不重建，切口音先停播再取对应缓存 |
 | D65 | 播放速度改由 `cijian-platform` 的 WSOLA 时间伸缩实现（Hann 窗、50% 重叠、±8ms 对齐搜索），不再使用 `Sink::set_speed`；速度只作用于整篇音频，单词发音恒按原速 | `set_speed` 是重采样，变速必然变调；WSOLA 保持波形周期所以音高不变。变速只改变实际播放速率，UI 的进度与总时长始终是原文时间轴（按“原文时间 = 播放时间 × 速度”回报），所以换速度不会让进度条跳变或改刻度；1× 直接透传，零额外开销 |
+| D66 | 解码音频一律用 `Decoder::try_from(File)`，禁止 `BufReader<File>`；播放器对 seek/变速失败给出面向用户的中文原因 | `BufReader<File>` 会被标记为不可寻址，symphonia 对每次 seek 返回 `RandomAccessNotSupported`，导致「后退 5 秒」直接报「音频不支持定位」；`File` 转换会带上字节长度并开启寻址 |
 
 ## 界面交互关键约定
 
