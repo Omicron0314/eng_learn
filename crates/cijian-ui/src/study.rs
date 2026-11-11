@@ -1740,27 +1740,11 @@ impl Shell {
                         .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
                         .child(clock(position)),
                 )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(4.))
-                        .flex_1()
-                        .child(
-                            design::shaped([4., 2., 2., 4.], design::c(ColorRole::PRIMARY))
-                                .h(px(8.))
-                                .w(gpui_kit::relative(fraction))
-                                .when(fraction <= 0.001, |bar| bar.w(px(8.))),
-                        )
-                        .child(
-                            design::shaped(
-                                [2., 4., 4., 2.],
-                                design::c(ColorRole::SECONDARY_CONTAINER),
-                            )
-                            .h(px(8.))
-                            .flex_1(),
-                        ),
-                )
+                .child(div().flex_1().child(design::wave_progress_moving(
+                    "article-audio-wave",
+                    fraction,
+                    playing,
+                )))
                 .child(
                     design::mono(12., 16., 400.)
                         .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
@@ -3386,63 +3370,12 @@ impl Shell {
         (learning, review, new)
     }
 
-    fn review_progress(&self, width: f32) -> gpui_kit::AnyElement {
+    fn review_progress(&self) -> gpui_kit::AnyElement {
         let total = (self.review_done + self.review.len() as u32).max(1) as f32;
         let fraction = (self.review_done as f32 / total).clamp(0., 1.);
-        div()
-            .relative()
-            .w_full()
-            .h(px(12.))
-            .child(
-                gpui_kit::canvas(
-                    move |_, _, _| (),
-                    move |bounds, _, window, _| {
-                        let start = bounds.origin.x;
-                        let end = start + px(width);
-                        let mid = bounds.origin.y + px(6.);
-                        let split = start + px(width * fraction);
-                        let mut done = gpui_kit::PathBuilder::stroke(px(4.));
-                        let mut x = start + px(2.);
-                        let mut up = true;
-                        done.move_to(gpui_kit::point(x, mid));
-                        while x < split {
-                            let next = (x + px(15.)).min(split);
-                            let y = if up { mid - px(5.) } else { mid + px(5.) };
-                            done.curve_to(
-                                gpui_kit::point(next, mid),
-                                gpui_kit::point((x + next) / 2., y),
-                            );
-                            x = next;
-                            up = !up;
-                        }
-                        if let Ok(path) = done.build() {
-                            window.paint_path(path, design::c(ColorRole::PRIMARY));
-                        }
-                        if split < end {
-                            let mut rest = gpui_kit::PathBuilder::stroke(px(4.));
-                            rest.move_to(gpui_kit::point(split, mid));
-                            rest.line_to(gpui_kit::point(end, mid));
-                            if let Ok(path) = rest.build() {
-                                window.paint_path(path, design::c(ColorRole::SECONDARY_CONTAINER));
-                            }
-                            window.paint_quad(gpui_kit::quad(
-                                gpui_kit::Bounds {
-                                    origin: gpui_kit::point(end - px(2.), mid - px(2.)),
-                                    size: gpui_kit::size(px(4.), px(4.)),
-                                },
-                                gpui_kit::Corners::all(px(2.)),
-                                design::c(ColorRole::PRIMARY),
-                                gpui_kit::Edges::all(px(0.)),
-                                gpui_kit::transparent_black(),
-                                gpui_kit::BorderStyle::Solid,
-                            ));
-                        }
-                    },
-                )
-                .absolute()
-                .inset_0(),
-            )
-            .into_any_element()
+        // The wave keeps flowing while cards remain and holds still once the
+        // queue is finished, so a done session costs no frames.
+        design::wave_progress_moving("review-progress-wave", fraction, !self.review.is_empty())
     }
 
     pub(super) fn review_body(&mut self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
@@ -3512,7 +3445,7 @@ impl Shell {
                                     .child(format!("· 还剩 {remaining} 张")),
                             ),
                     )
-                    .child(self.review_progress(card_width.max(200.))),
+                    .child(self.review_progress()),
             );
         if !self.compact
             && let Some(card) = self.review.first()

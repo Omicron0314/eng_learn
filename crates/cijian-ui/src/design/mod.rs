@@ -7,12 +7,30 @@ mod icons;
 pub(crate) use icons::Icon;
 
 use gpui_kit::{
-    App, BorderStyle, BoxShadow, Corners, Edges, Font, FontFallbacks, FontWeight, Hsla,
-    SharedString, Styled, div, hsla, prelude::*, px, transparent_black,
+    AnimationExt, App, BorderStyle, BoxShadow, Corners, Edges, Font, FontFallbacks, FontWeight,
+    Hsla, SharedString, Styled, div, hsla, prelude::*, px, transparent_black,
 };
 use gpui_kit_material::{color::ColorRole, theme::color};
 
 pub(crate) const RAIL_WIDTH: f32 = 96.;
+
+/// Track height of the wave progress bar, matching the review header in the
+/// design board.
+pub(crate) const WAVE_HEIGHT: f32 = 12.;
+/// Stroke width of both the flowing wave and the remaining flat track.
+const WAVE_STROKE: f32 = 4.;
+/// Crest offset above and below the track centre.
+const WAVE_AMPLITUDE: f32 = 5.;
+/// Distance between crests. One animation cycle travels exactly this far, so
+/// the repeat loops without a jump.
+const WAVE_WAVELENGTH: f32 = 30.;
+/// Sampling step of the wave polyline; small enough to read as a curve at 4dp.
+const WAVE_SAMPLE: f32 = 3.;
+/// Cycle length of the flowing wave: slow enough to read as motion, not noise.
+const WAVE_CYCLE: std::time::Duration = std::time::Duration::from_millis(2600);
+/// Decorative motion is capped so an idle-looking screen does not ask for
+/// every frame the compositor can produce.
+const WAVE_MAX_FPS: f32 = 30.;
 pub(crate) const TITLE_BAR_HEIGHT: f32 = 48.;
 pub(crate) const PANE_RADIUS: f32 = 28.;
 pub(crate) const CARD_RADIUS: f32 = 24.;
@@ -388,6 +406,112 @@ pub(crate) fn chart(
     )
 }
 
+/// Vertical offset of the wave centreline at `x` dp from the track start.
+///
+/// The offset is zero at the start, peaks upward after a quarter wavelength
+/// and repeats every [`WAVE_WAVELENGTH`]; shifting by one wavelength is
+/// therefore indistinguishable from not shifting, which is what makes the
+/// repeating animation seamless.
+fn wave_offset(x: f32, shift: f32) -> f32 {
+    -WAVE_AMPLITUDE * ((x + shift) / WAVE_WAVELENGTH * std::f32::consts::TAU).sin()
+}
+
+/// An M3 linear-progress track whose filled part flows as a wave.
+///
+/// The filled span follows `fraction` and the remainder stays a flat 4dp line,
+/// the same shape as the review header in the design board. `shift` slides the
+/// wave along the track in dp and is decoration only: it never changes how much
+/// progress is shown or where the track ends.
+pub(crate) fn wave_progress(fraction: f32, shift: f32) -> gpui_kit::Div {
+    let fraction = fraction.clamp(0., 1.);
+    let done = c(ColorRole::PRIMARY);
+    let idle = c(ColorRole::SECONDARY_CONTAINER);
+    div().relative().w_full().h(px(WAVE_HEIGHT)).child(
+        gpui_kit::canvas(
+            move |_, _, _| (),
+            move |bounds, _, window, _| {
+                let inset = px(WAVE_STROKE / 2.);
+                let span = (bounds.size.width - px(WAVE_STROKE)).as_f32();
+                if span <= 0. {
+                    return;
+                }
+                let start = bounds.origin.x + inset;
+                let mid = bounds.origin.y + px(WAVE_HEIGHT / 2.);
+                let end = bounds.origin.x + bounds.size.width - inset;
+                // A round cap needs a full stroke of length to be visible, so
+                // the wave never collapses to nothing at zero progress.
+                let filled = (span * fraction).min(span).max(WAVE_STROKE);
+                let split = start + px(filled);
+                let wave_y = move |x: f32| mid + px(wave_offset(x, shift));
+
+                let mut path = gpui_kit::PathBuilder::stroke(px(WAVE_STROKE));
+                path.move_to(gpui_kit::point(start, wave_y(0.)));
+                let mut x = 0.;
+                while x + WAVE_SAMPLE < filled {
+                    x += WAVE_SAMPLE;
+                    path.line_to(gpui_kit::point(start + px(x), wave_y(x)));
+                }
+                path.line_to(gpui_kit::point(split, wave_y(filled)));
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, done);
+                }
+
+                if split < end {
+                    let mut path = gpui_kit::PathBuilder::stroke(px(WAVE_STROKE));
+                    path.move_to(gpui_kit::point(split, mid));
+                    path.line_to(gpui_kit::point(end, mid));
+                    if let Ok(path) = path.build() {
+                        window.paint_path(path, idle);
+                    }
+                }
+
+                window.paint_quad(gpui_kit::quad(
+                    gpui_kit::Bounds {
+                        origin: gpui_kit::point(
+                            bounds.origin.x + bounds.size.width - px(2.),
+                            mid - px(2.),
+                        ),
+                        size: gpui_kit::size(px(4.), px(4.)),
+                    },
+                    Corners::all(px(2.)),
+                    done,
+                    Edges::all(px(0.)),
+                    transparent_black(),
+                    BorderStyle::Solid,
+                ));
+            },
+        )
+        .absolute()
+        .inset_0(),
+    )
+}
+
+/// [`wave_progress`] with the wave flowing while `moving`.
+///
+/// A still track is used whenever nothing is happening (a finished review
+/// queue, paused audio) so the window stops asking for frames; reduced motion
+/// is honoured by the animation element itself, which then renders the same
+/// still frame.
+pub(crate) fn wave_progress_moving(
+    id: impl Into<gpui_kit::ElementId>,
+    fraction: f32,
+    moving: bool,
+) -> gpui_kit::AnyElement {
+    if !moving {
+        return wave_progress(fraction, 0.).into_any_element();
+    }
+    div()
+        .w_full()
+        .with_animation(
+            id,
+            gpui_kit::Animation::new(WAVE_CYCLE)
+                .repeat()
+                .with_max_fps(WAVE_MAX_FPS),
+            move |_, delta| wave_progress(fraction, delta * WAVE_WAVELENGTH),
+        )
+        .into_any_element()
+}
+
 /// A rounded ring with `fraction` filled, used by the stats cards.
 pub(crate) fn ring(fraction: f32, size: f32, fill: ColorRole) -> impl IntoElement {
     let fraction = fraction.clamp(0., 1.);
@@ -429,4 +553,25 @@ pub(crate) fn ring(fraction: f32, size: f32, fill: ColorRole) -> impl IntoElemen
         .absolute()
         .inset_0(),
     )
+}
+
+#[cfg(test)]
+mod wave_progress_tests {
+    use super::*;
+
+    #[test]
+    fn one_wavelength_shift_is_invisible() {
+        // The repeat loop is only seamless if travelling a wavelength lands on
+        // the same shape it started with.
+        for x in [0., 7.5, 15., 22.5, 30., 61.] {
+            assert!((wave_offset(x, 0.) - wave_offset(x, WAVE_WAVELENGTH)).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn wave_starts_flat_and_alternates_crests() {
+        assert!(wave_offset(0., 0.).abs() < 1e-6);
+        assert!((wave_offset(WAVE_WAVELENGTH / 4., 0.) + WAVE_AMPLITUDE).abs() < 1e-4);
+        assert!((wave_offset(WAVE_WAVELENGTH * 3. / 4., 0.) - WAVE_AMPLITUDE).abs() < 1e-4);
+    }
 }
