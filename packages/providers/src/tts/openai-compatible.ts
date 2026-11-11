@@ -43,6 +43,7 @@ export class OpenAICompatibleTTS implements TTSProvider {
   async synthesize(req: { text: string }): Promise<TTSResult> {
     try {
       const chunks: Uint8Array[] = [];
+      let mimeType = "audio/mpeg";
       for (const input of splitSpeechText(req.text)) {
         const response = await this.client.audio.speech.create({
           model: this.model,
@@ -50,6 +51,8 @@ export class OpenAICompatibleTTS implements TTSProvider {
           input,
           response_format: "mp3",
         });
+        const contentType = response.headers.get("content-type")?.split(";")[0]?.trim();
+        if (contentType === "audio/wav" || contentType === "audio/x-wav") mimeType = "audio/wav";
         chunks.push(new Uint8Array(await response.arrayBuffer()));
       }
       const audio = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
@@ -58,7 +61,7 @@ export class OpenAICompatibleTTS implements TTSProvider {
         audio.set(chunk, offset);
         offset += chunk.length;
       }
-      return { audio, mimeType: "audio/mpeg", durationS: null };
+      return { audio, mimeType, durationS: null };
     } catch {
       throw new ProviderError("TTS request failed; check provider configuration or retry later");
     }
