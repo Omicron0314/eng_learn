@@ -1,13 +1,6 @@
 {
   "task": "R04",
-  "also_relevant": [
-    "R08",
-    "R10",
-    "R12",
-    "R13",
-    "R15",
-    "R17"
-  ],
+  "also_relevant": ["R08", "R10", "R12", "R13", "R15", "R17"],
   "date": "2026-11-03",
   "design": "docs/cijian-m3.html, rendered after its script (not the obsolete initial Today source)",
   "host": "Arch Linux x86_64, Xvfb X11 1600x1000 at scale 1",

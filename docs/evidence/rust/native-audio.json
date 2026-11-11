@@ -4,7 +4,17 @@
   "command": "cargo test --locked --offline -p cijian-platform native_audio_controls_and_natural_completion -- --ignored",
   "result": "passed",
   "fixture": "Original quiet 440 Hz PCM16 mono WAV, generated inside the test",
-  "checked": ["open default device", "decode WAV", "seek", "pause", "1.25x rate", "resume", "stop without completion", "natural completion on a fresh session", "completion callback retries without UI polling and retains its first timestamp"],
+  "checked": [
+    "open default device",
+    "decode WAV",
+    "seek",
+    "pause",
+    "1.25x rate",
+    "resume",
+    "stop without completion",
+    "natural completion on a fresh session",
+    "completion callback retries without UI polling and retains its first timestamp"
+  ],
   "humanListeningVerified": false,
   "ttsCalled": false,
   "realCredentialsUsed": false

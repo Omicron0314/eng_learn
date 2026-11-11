@@ -5,7 +5,12 @@
   "command": "cargo test --locked --offline -p cijian-platform native_english_voice_generates_decodable_original_speech -- --ignored",
   "result": "passed",
   "fixture": "Original English sentence passed over stdin, synthesized into a disposable WAV",
-  "checked": ["enumerate native English voices", "synthesize without network", "decode output", "positive audio duration"],
+  "checked": [
+    "enumerate native English voices",
+    "synthesize without network",
+    "decode output",
+    "positive audio duration"
+  ],
   "humanListeningVerified": false,
   "paidCalls": 0,
   "opsLog": "~/.pi/ops-logs/2026-11-03-安装词间本机英语朗读依赖.md"

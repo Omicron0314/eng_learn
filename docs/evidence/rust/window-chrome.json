@@ -14,9 +14,7 @@
     "Linux with client-side decorations draws the three controls itself because niri advertises no minimize capability and no usable maximize control",
     "the Linux close control calls may_close/close_reader_when_saved before remove_window, reusing the system close guard"
   ],
-  "screenshots": [
-    "window-chrome/linux-light-niri-847.png"
-  ],
+  "screenshots": ["window-chrome/linux-light-niri-847.png"],
   "checks": [
     "cargo fmt --all --check",
     "cargo clippy --workspace --all-targets -- -D warnings",
