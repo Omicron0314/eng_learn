@@ -13,7 +13,11 @@
     "reading toolbar while playing differs (4111 changed pixels) and while paused is identical (0 changed pixels) in the bar region",
     "light and dark themes both render the wave through the Material role palette",
     "a finished review queue and paused audio pass moving = false, so the widget renders a still wave and schedules no frames",
-    "reduced motion is handled by AnimationExt itself: repeating animations render their start frame and stop requesting frames"
+    "reduced motion is handled by AnimationExt itself: repeating animations render their start frame and stop requesting frames",
+    "clicking the timeline at ~64% of the track moved playback to 0:13 of 0:21",
+    "pressing at the right and dragging left to ~14% moved playback to 0:02 of 0:21, so the drag keeps seeking after the pointer passes the track",
+    "a device that stored the British accent shows 英式发音 selected after restarting the app, and the cached asset voice is bf_emma, so the chip and the generated audio agree",
+    "the article history tab has no date input, 筛选 or 清除 control; 历史 is simply everything before today"
   ],
   "screenshots": [
     "wave-progress/review-dark.png",
@@ -26,6 +30,11 @@
     "wave-progress/listen-light-playing-bar-2x.png",
     "wave-progress/article-audio-dark.png",
     "wave-progress/article-audio-dark-bar-2.5x.png",
-    "wave-progress/reader-paused-bar-3x.png"
+    "wave-progress/reader-paused-bar-3x.png",
+    "wave-progress/listen-british-playing.png",
+    "wave-progress/seek-click.png",
+    "wave-progress/seek-drag.png",
+    "wave-progress/accent-after-restart-2x.png",
+    "wave-progress/history-no-date-filter.png"
   ]
 }
