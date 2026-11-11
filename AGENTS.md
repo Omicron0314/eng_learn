@@ -95,6 +95,11 @@ its outstanding platform checks remain acceptance limitations.
 - Local runs are for fast feedback; CI is the evidence. Every CI step must be
   reproducible locally with one documented command, and CI must not hold logic
   that exists only in YAML.
+- After every commit that changes desktop code, run `tools/build-desktop.sh`
+  (debug profile by default) so `~/.local/bin/cijian-desktop` and the launcher
+  entry point at the build containing that commit. A rebuild at the same path is
+  enough; rerun the script only after `cargo clean` or a target-dir change.
+  Verify with `realpath ~/.local/bin/cijian-desktop` and the binary's mtime.
 - UI completion needs behavior and light/dark/responsive evidence produced by CI
   on Linux. Windows/macOS, real IME, touch, screen readers, human listening and
   paid real-model quality are out of scope and must not be restored as ACs.

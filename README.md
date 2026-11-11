@@ -44,7 +44,7 @@ cargo run -p cijian-fill -- import-pack --data-dir ~/.local/share/cijian ~/cijia
 
 构建产物统一落在仓库根 `target/`（cargo 默认目录，见 D58），与 `cargo test/clippy`、rust-analyzer 共用同一份缓存，不需要设置 `CARGO_TARGET_DIR`。
 
-每次构建并希望启动器立即打开新版本时，使用：
+每次提交涉及桌面端代码后，都必须运行下面的脚本重新构建并关联启动器，否则点击启动器仍会打开旧版本的产物。脚本同时用于日常构建：
 
 ```sh
 tools/build-desktop.sh            # debug，默认
