@@ -53,7 +53,7 @@ R00 确认 crate 名与边界可编译后固定，不能把上图当已有模块
 | 边界校验 | Rust typed DTO＋显式约束 | serde 反序列化不代替范围／跨字段校验 |
 | 网络 | OpenAI兼容 LLM，transport 接口 | 桌面 transport 本轮实现；WASM transport 属远期 R18；超时、取消、计数统一 |
 | 异步 | GPUI task 与后台 executor 桥接 | 阻塞 SQLite／APKG 放后台，UI 线程只更新视图 |
-| 音频 | AudioPlayer port＋本地 Kokoro 工作进程 | 全文合成后内容寻址缓存、seek／rate capability；模型为可选的用户本机安装（D64） |
+| 音频 | AudioPlayer port＋本地 Kokoro 工作进程 | 全文合成后内容寻址缓存、seek／保持音高的变速（WSOLA，D65）；模型为可选的用户本机安装（D64） |
 | 凭据 | SecretStore | 桌面优先系统凭据存储；浏览器默认会话内，无假定等价安全保证 |
 | 校验工具 | cargo fmt/clippy/test＋UI harness | 命令在 workspace 存在后启用；旧TS检查继续用于旧代码 |
 

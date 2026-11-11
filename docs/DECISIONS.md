@@ -45,6 +45,7 @@
 | D60 | 维护工具 `cijian-fill` 统一通过有道接口补齐英/美发音与音标，运行期桌面应用绝不直接请求该非公开接口 | 取不到音标时留空，绝不由模型猜测或编造 IPA；调用点收敛在 `crates/cijian-providers/src/youdao.rs` |
 | D61 | 词包 `.cijianpack` 以“清单 + 六列词表 + 双口音音频 blob”自包含分发，导入时先全量校验 SHA-256 与容器再落盘写库 | 损坏词包整包拒绝，不留半本词书；跨词书共享相同词元音频自动去重 |
 | D64 | 整篇朗读统一改为**本地 Kokoro-82M q8f16**（`tools/install-kokoro.py` 装到 `~/.local/share/cijian/kokoro`），设置页删除远程 TTS 端点／密钥／日期字符额度；美音固定 `af_heart`、英音固定 `bf_emma`，速度只作用于播放器 | 用户要求“接入 TTS 服务”收敛为离线免费方案：正文不出本机、无额度与密钥面；`onnxruntime` 默认图优化会让该 q8f16 导出在加载时崩溃，助手固定 `ORT_DISABLE_ALL`；同口音缓存不重建，切口音先停播再取对应缓存 |
+| D65 | 播放速度改由 `cijian-platform` 的 WSOLA 时间伸缩实现（Hann 窗、50% 重叠、±8ms 对齐搜索），不再使用 `Sink::set_speed`；速度只作用于整篇音频，单词发音恒按原速 | `set_speed` 是重采样，变速必然变调；WSOLA 保持波形周期所以音高不变。变速按“原文时间 = 播放时间 × 速度”换算后重建 source 并 seek，播放位置连续；1× 直接透传，零额外开销 |
 
 ## 界面交互关键约定
 
