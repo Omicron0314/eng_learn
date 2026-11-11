@@ -38,3 +38,4 @@
 - `docs/evidence/rust/local-model-e2e.json`：使用 loopback stub 验证导入 → 复习 → 生成 → 阅读点词 → 反馈的完整事务与日志链路。
 - `docs/evidence/rust/native-audio.json` / `native-speech.json`：本机音频输出（暂停/定位/变速/自然结束）与 `espeak-ng` 合成验证。
 - `docs/evidence/rust/ui-redesign.json` / `ui-fix-tour.json` / `window-chrome.json` / `r17-desktop.json`：M3 界面重做、全功能交互巡检与窗口标题栏截图记录。
+- `docs/evidence/rust/wave-progress.json`：复习头部与文章音频时间轴共用的波浪进度条（流动/静止、浅/深色、两帧差分证明摆动）。

@@ -50,7 +50,7 @@
 | 语境／编辑面板 | MaterialSideSheet、MaterialBottomSheet |
 | 导入／删除／反馈 | MaterialDialog、MaterialCheckbox |
 | 播放器 | Toolbar floating＋应用 AudioPlayer 状态 |
-| 信息／进度 | Badge、Snackbar、LoadingIndicator、LinearProgress |
+| 信息／进度 | Badge、Snackbar、LoadingIndicator、LinearProgress；复习头部与音频时间轴用波浪进度条（`design::wave_progress`） |
 | 页面卡片／列表 | MaterialCard、ListItem；大列表接 Kit 虚拟化 |
 | 热力图／覆盖率／波形 | 应用专用绘制；复用色彩、文本、焦点和可访问语义 |
 
@@ -59,6 +59,8 @@
 ## 动效与可访问性
 
 使用 Expressive motion 表达展开、选中和状态切换；减少动态效果时关闭波形摆动、形变与装饰性循环，保留清晰状态。没有变化的窗口不持续请求帧；等待网络的进度动画限可见区域。
+
+复习头部与文章音频时间轴共用一条波浪进度条（`design::wave_progress`）：已完成的区间画成流动的正弦波，未完成区间保持 4dp 直线，尾端圆点标示轨道终点。波浪只表示**进度**，不表示音频采样，因此不与“波形不作播放定位”冲突。波浪摆动是装饰：队列做满、音频暂停或停止时传入 `moving = false` 直接画静态帧，不再请求帧；摆动上限 30fps；系统要求减少动态效果时由 `AnimationExt` 渲染起始帧并不排帧。
 
 焦点边框至少与背景可辨；正文对比度目标 4.5:1，大文字与非文本控件 3:1。支持 100–200% 文本缩放、Tab／Shift+Tab／Escape，图标有中文可访问名称，图表提供可读数值摘要。中文 IME 与读屏不在本轮 AC（[D54](DECISIONS.md)）；可访问名称与焦点行为仍需自动化验证。
 

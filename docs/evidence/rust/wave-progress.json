@@ -1,0 +1,24 @@
+{
+  "task": "wave progress bars (review header and article audio timeline)",
+  "date": "2026-11-11",
+  "host": "Arch Linux x86_64; Xvfb X11 1440x900 at scale 1; niri session not used for this pass",
+  "binary": "debug build of cijian-desktop via tools/build-desktop.sh",
+  "data": "isolated /tmp/cijian-wave created by the ignored test backend::tour_tests::seed_acceptance_fixture from original CSV rows; loopback OpenAI-compatible stub on 127.0.0.1:18080; local Kokoro assets only; no private learning database, user audio, real model calls or real credentials",
+  "verified": [
+    "review header draws the filled part as a wave and the remaining part as a flat 4dp line, matching screen-review in docs/cijian-m3.html",
+    "two frames 0.45s apart differ only inside the bar region (4279 changed pixels), so the wave flows while cards remain",
+    "article audio toolbar uses the same widget: wave over the elapsed span, flat remainder, track terminator dot, times unchanged",
+    "two audio frames 0.5s apart differ inside the bar region (3409 changed pixels) while playing",
+    "light and dark themes both render the wave through the Material role palette (PRIMARY over SECONDARY_CONTAINER)",
+    "a finished review queue and paused audio pass moving = false, so the widget renders a still wave and schedules no frames",
+    "reduced motion is handled by AnimationExt itself: repeating animations render their start frame and stop requesting frames"
+  ],
+  "screenshots": [
+    "wave-progress/review-dark.png",
+    "wave-progress/review-dark-bar-2x.png",
+    "wave-progress/review-light.png",
+    "wave-progress/review-light-bar-2x.png",
+    "wave-progress/article-audio-dark.png",
+    "wave-progress/article-audio-dark-bar-2.5x.png"
+  ]
+}
