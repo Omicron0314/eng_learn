@@ -23,10 +23,7 @@ use cijian_ports::{
     AppError,
     library::{CardPage, CardView, ImportReport},
 };
-use gpui_kit::base::input::InputState;
-use gpui_kit::{
-    App, Context, Entity, TestSupportExt as _, Window, WindowOptions, div, prelude::*, px,
-};
+use gpui_kit::{App, Context, TestSupportExt as _, Window, WindowOptions, div, prelude::*, px};
 use gpui_kit_material::{
     color::ColorRole,
     components::{ButtonVariant, material_button, title_bar_window_options},
@@ -114,9 +111,6 @@ struct Shell {
     articles: Vec<cijian_ports::articles::Article>,
     articles_history: bool,
     articles_page: u32,
-    articles_date: Option<chrono::NaiveDate>,
-    articles_date_error: Option<String>,
-    articles_date_input: Option<Entity<InputState>>,
     today_article_count: u64,
     article: Option<cijian_ports::articles::Article>,
     reading_session: Option<cijian_ports::reading::ReadingSession>,
@@ -207,9 +201,6 @@ impl Shell {
             articles: Vec::new(),
             articles_history: false,
             articles_page: 0,
-            articles_date: None,
-            articles_date_error: None,
-            articles_date_input: None,
             today_article_count: 0,
             article: None,
             reading_session: None,
@@ -312,6 +303,7 @@ impl Shell {
                 self.settings.playback_rate = value.playback_rate;
                 self.review_accent = value.pronunciation_accent;
                 self.review_auto_play = value.review_auto_play;
+                self.dark = matches!(self.settings.theme, cijian_domain::settings::Theme::Dark);
                 let _ = self.playback.set_rate(value.playback_rate);
                 self.poll_audio(cx);
                 if let Some(voice) = value.system_voice {
@@ -666,9 +658,6 @@ impl Shell {
         if route == Route::Articles && entering {
             self.articles_history = false;
             self.articles_page = 0;
-            self.articles_date = None;
-            self.articles_date_error = None;
-            self.articles_date_input = None;
         }
         if self.navigation.current() != &route
             && self.guard_settings_exit(
@@ -841,7 +830,10 @@ pub fn run(application: gpui_kit::Application, backend: Result<Arc<dyn CommandBu
                         }
                         shell
                     });
-                    view.update(cx, |shell, cx| shell.request(Command::LoadSettings, cx));
+                    view.update(cx, |shell, cx| {
+                        shell.request(Command::LoadSettings, cx);
+                        shell.request(Command::LoadPreferences, cx);
+                    });
                     view
                 },
             )

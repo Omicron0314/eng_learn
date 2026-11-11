@@ -160,4 +160,14 @@ fn switching_accent_stops_playback_and_persists_the_choice() {
         cijian_domain::audio::Accent::Uk,
         "the accent is a device preference that survives reopen"
     );
+    // A fresh window asks for the preferences, so the accent chips show the
+    // voice the backend will actually generate instead of the built-in default.
+    assert!(
+        matches!(
+            reopened.execute(Command::LoadPreferences).unwrap(),
+            Response::Preferences(value)
+                if value.pronunciation_accent == cijian_domain::audio::Accent::Uk
+        ),
+        "loading preferences reports the stored accent"
+    );
 }

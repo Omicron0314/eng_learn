@@ -24,6 +24,9 @@ const WAVE_AMPLITUDE: f32 = 5.;
 /// Distance between crests. One animation cycle travels exactly this far, so
 /// the repeat loops without a jump.
 const WAVE_WAVELENGTH: f32 = 30.;
+/// Height of the interactive seek area around a wave bar. A 12dp track is too
+/// thin to hit, so the pointer target grows vertically without moving the bar.
+pub(crate) const WAVE_HIT_HEIGHT: f32 = 32.;
 /// Sampling step of the wave polyline; small enough to read as a curve at 4dp.
 const WAVE_SAMPLE: f32 = 3.;
 /// Cycle length of the flowing wave: slow enough to read as motion, not noise.

@@ -398,6 +398,10 @@ impl DesktopBackend {
                 })?,
             )),
             Command::LoadSettings => self.settings_response(),
+            Command::LoadPreferences => {
+                let (value, _) = self.store.device_preferences(&self.profile, &self.device)?;
+                Ok(Response::Preferences(value))
+            }
             Command::SaveSettings {
                 value,
                 revision,

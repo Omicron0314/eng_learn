@@ -836,7 +836,6 @@ impl Shell {
             self.rendered_dark = gpui_kit_material::theme::is_dark();
         }
         self.prepare_library_inputs(window, cx);
-        self.prepare_articles(window, cx);
         if self.key_intercept.is_none() {
             let weak = cx.entity().downgrade();
             self.key_intercept = Some(cx.intercept_keystrokes(move |event, _, cx| {

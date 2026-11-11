@@ -9,7 +9,18 @@ use cijian_ports::{
     articles::{GenerationJob, JobStatus},
     inbox::{InboxAction, MarkAction},
 };
-use gpui_kit_material::components::{MaterialBottomSheet, TextField};
+use gpui_kit_material::components::MaterialBottomSheet;
+/// Payload for dragging an article timeline; the id keeps a drag bound to the
+/// bar it started on.
+#[derive(Clone)]
+struct SeekDrag(&'static str);
+
+impl gpui_kit::Render for SeekDrag {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        gpui_kit::Empty
+    }
+}
+
 impl Shell {
     pub(super) fn operation(&self, purpose: &str) -> String {
         format!(
@@ -25,8 +36,6 @@ impl Shell {
         if result.is_some() {
             self.articles_history = false;
             self.articles_page = 0;
-            self.articles_date = None;
-            self.articles_date_error = None;
         }
         if let Some(article) = result
             && self.navigation.current() == &Route::Articles
@@ -341,19 +350,6 @@ impl Shell {
             .unwrap_or(chrono_tz::Tz::UTC);
         let now = chrono::Utc::now().timestamp_millis();
         let today = cijian_domain::time::study_day(now, zone, self.settings.day_start_hour).ok();
-        if let Some(date) = self.articles_date {
-            let noon = date.and_hms_opt(12, 0, 0).expect("valid noon");
-            let Some(local) = chrono::TimeZone::from_local_datetime(&zone, &noon).single() else {
-                return (None, None);
-            };
-            return cijian_domain::time::study_day(
-                local.timestamp_millis(),
-                zone,
-                self.settings.day_start_hour,
-            )
-            .map(|day| (Some(day.start_ms), Some(day.end_ms)))
-            .unwrap_or((None, None));
-        }
         if self.articles_history {
             (None, today.map(|day| day.start_ms))
         } else {
@@ -367,60 +363,11 @@ impl Shell {
         let (from, until) = self.article_range();
         self.request(Command::LoadArticles { from, until, page }, cx);
     }
-    pub(super) fn prepare_articles(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.articles_history || self.articles_date_input.is_some() {
-            return;
-        }
-        let input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("YYYY-MM-DD")
-                .default_value(
-                    self.articles_date
-                        .map(|date| date.format("%Y-%m-%d").to_string())
-                        .unwrap_or_default(),
-                )
-        });
-        cx.subscribe(&input, |this, _, event, cx| {
-            if matches!(event, gpui_kit::base::input::InputEvent::PressEnter { .. }) {
-                this.apply_article_date(cx);
-            }
-        })
-        .detach();
-        self.articles_date_input = Some(input);
-    }
     fn set_articles_history(&mut self, history: bool, cx: &mut Context<Self>) {
         if self.articles_history == history {
             return;
         }
         self.articles_history = history;
-        self.articles_date = None;
-        self.articles_date_error = None;
-        self.articles_date_input = None;
-        self.load_articles(0, cx);
-    }
-    fn apply_article_date(&mut self, cx: &mut Context<Self>) {
-        let Some(input) = &self.articles_date_input else {
-            return;
-        };
-        let value = input.read(cx).value().trim().to_owned();
-        match chrono::NaiveDate::parse_from_str(&value, "%Y-%m-%d") {
-            Ok(date) => {
-                self.articles_date = Some(date);
-                self.articles_date_error = None;
-                self.load_articles(0, cx);
-            }
-            Err(_) => {
-                self.articles_date_error = Some("日期格式须为 YYYY-MM-DD".into());
-                cx.notify();
-            }
-        }
-    }
-    fn clear_article_date(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.articles_date = None;
-        self.articles_date_error = None;
-        if let Some(input) = &self.articles_date_input {
-            input.update(cx, |input, cx| input.set_value("", window, cx));
-        }
         self.load_articles(0, cx);
     }
     fn article_tab(
@@ -807,72 +754,18 @@ impl Shell {
             .min_w_0()
             .gap(px(12.))
             .when(self.compact, |list| list.flex_none());
-        let mut tabs = div()
+        let tabs = div()
             .flex()
             .items_center()
             .gap(px(8.))
             .flex_wrap()
             .child(self.article_tab(false, "今天", cx))
             .child(self.article_tab(true, "历史", cx));
-        if self.articles_history {
-            if let Some(input) = &self.articles_date_input {
-                tabs = tabs.child(
-                    div()
-                        .w(px(190.))
-                        .child(TextField::new("articles-date", input)),
-                );
-            }
-            tabs = tabs.child(
-                div()
-                    .id("articles-date-apply")
-                    .test_support()
-                    .role(gpui_kit::Role::Button)
-                    .aria_label("筛选日期")
-                    .cursor_pointer()
-                    .h(px(32.))
-                    .px(px(12.))
-                    .rounded(px(16.))
-                    .bg(design::c(ColorRole::SECONDARY_CONTAINER))
-                    .text_color(design::c(ColorRole::ON_SECONDARY_CONTAINER))
-                    .flex()
-                    .items_center()
-                    .text_size(px(13.))
-                    .on_click(cx.listener(|this, _, _, cx| this.apply_article_date(cx)))
-                    .child("筛选"),
-            );
-            if self.articles_date.is_some() {
-                tabs = tabs.child(
-                    div()
-                        .id("articles-date-clear")
-                        .role(gpui_kit::Role::Button)
-                        .aria_label("清除日期筛选")
-                        .cursor_pointer()
-                        .h(px(32.))
-                        .px(px(12.))
-                        .rounded(px(16.))
-                        .text_color(design::c(ColorRole::PRIMARY))
-                        .flex()
-                        .items_center()
-                        .text_size(px(13.))
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.clear_article_date(window, cx)),
-                        )
-                        .child("清除"),
-                );
-            }
-            if let Some(error) = &self.articles_date_error {
-                tabs = tabs.child(
-                    design::muted_text(12., 16.)
-                        .text_color(design::c(ColorRole::ERROR))
-                        .child(error.clone()),
-                );
-            }
-        }
         list = list.child(tabs);
-        let title = match self.articles_date {
-            Some(date) => format!("{} 的文章", date.format("%Y-%m-%d")),
-            None if self.articles_history => "历史文章".to_owned(),
-            None => "今天的文章".to_owned(),
+        let title = if self.articles_history {
+            "历史文章".to_owned()
+        } else {
+            "今天的文章".to_owned()
         };
         list = list.child(
             div()
@@ -919,9 +812,7 @@ impl Shell {
         );
         if self.articles.is_empty() {
             list = list.child(
-                design::empty_state(if self.articles_date.is_some() {
-                    "所选日期没有文章"
-                } else if self.articles_history {
+                design::empty_state(if self.articles_history {
                     "还没有更早的文章"
                 } else {
                     "下一篇会出现在这里 · 每篇都会尽量复用新的目标词"
@@ -1646,6 +1537,96 @@ impl Shell {
         row.into_any_element()
     }
 
+    /// The article timeline: the shared wave, plus click and drag seeking.
+    ///
+    /// The painted bar is 12dp, so the pointer target is a taller transparent
+    /// strip around it; the fraction comes from the painted track bounds, and a
+    /// drag keeps seeking while the payload is over the strip.
+    fn article_timeline(
+        &self,
+        id: &'static str,
+        fraction: f32,
+        moving: bool,
+        colors: design::WaveColors,
+        duration: f64,
+        cx: &mut Context<Self>,
+    ) -> gpui_kit::AnyElement {
+        let track = std::rc::Rc::new(std::cell::Cell::new(
+            gpui_kit::Bounds::<gpui_kit::Pixels>::default(),
+        ));
+        let seconds_at = {
+            let track = track.clone();
+            move |position: gpui_kit::Point<gpui_kit::Pixels>| -> Option<f64> {
+                let bounds = track.get();
+                let width = bounds.size.width.as_f32();
+                if width <= 1. || duration <= 0. {
+                    return None;
+                }
+                let offset = position.x.as_f32() - bounds.origin.x.as_f32();
+                Some((offset / width).clamp(0., 1.) as f64 * duration)
+            }
+        };
+        let press = {
+            let seconds_at = seconds_at.clone();
+            cx.listener(
+                move |this: &mut Self, event: &gpui_kit::MouseDownEvent, _, cx| {
+                    if let Some(seconds) = seconds_at(event.position) {
+                        this.seek_audio(seconds, cx);
+                    }
+                },
+            )
+        };
+        let drag_move = {
+            let seconds_at = seconds_at.clone();
+            cx.listener(
+                move |this: &mut Self, event: &gpui_kit::DragMoveEvent<SeekDrag>, _, cx| {
+                    if event.drag(cx).0 != id {
+                        return;
+                    }
+                    if let Some(seconds) = seconds_at(event.event.position) {
+                        this.seek_audio(seconds, cx);
+                    }
+                },
+            )
+        };
+        let sink = track;
+        div()
+            .w_full()
+            .h(px(design::WAVE_HIT_HEIGHT))
+            .flex()
+            .items_center()
+            .on_children_prepainted(move |children, _, _| {
+                if let Some(bounds) = children.first() {
+                    sink.set(*bounds);
+                }
+            })
+            .id(id)
+            .test_support()
+            .role(gpui_kit::Role::Button)
+            .aria_label("音频进度，可点击或拖动定位")
+            .cursor_pointer()
+            .on_mouse_down(gpui_kit::MouseButton::Left, press)
+            .on_drag(SeekDrag(id), |drag, _, _, cx| {
+                cx.stop_propagation();
+                cx.new(|_| drag.clone())
+            })
+            .on_drag_move(drag_move)
+            .child(design::wave_progress_moving(id, fraction, moving, colors))
+            .into_any_element()
+    }
+
+    /// Seeks the article player, updating the bar before the round trip.
+    fn seek_audio(&mut self, seconds: f64, cx: &mut Context<Self>) {
+        let duration = self.playback.duration.unwrap_or(0.);
+        if self.playback.session.is_none() || duration <= 0. {
+            return;
+        }
+        let seconds = seconds.clamp(0., duration);
+        self.playback.position = seconds;
+        self.request(Command::AudioSeek { position: seconds }, cx);
+        cx.notify();
+    }
+
     fn audio_toolbar(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         let playing = matches!(
             self.playback.state,
@@ -1740,11 +1721,13 @@ impl Shell {
                         .text_color(design::c(ColorRole::ON_SURFACE_VARIANT))
                         .child(clock(position)),
                 )
-                .child(div().flex_1().child(design::wave_progress_moving(
+                .child(div().flex_1().child(self.article_timeline(
                     "article-audio-wave",
                     fraction,
                     playing,
                     design::WaveColors::roles(),
+                    duration,
+                    cx,
                 )))
                 .child(
                     design::mono(12., 16., 400.)
@@ -1889,11 +1872,13 @@ impl Shell {
                         .flex_1()
                         .gap(px(8.))
                         .child(div().w_full().h(px(56.)).flex().items_center().child(
-                            design::wave_progress_moving(
+                            self.article_timeline(
                                 "listening-wave",
                                 fraction,
                                 playing,
                                 design::WaveColors::on_primary_container(),
+                                duration,
+                                cx,
                             ),
                         ))
                         .child(design::mono(12., 16., 400.).child(format!(

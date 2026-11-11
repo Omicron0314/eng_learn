@@ -131,6 +131,9 @@ pub enum Command {
         operation: String,
     },
     LoadSettings,
+    /// Reads the device-local preferences, so a fresh window shows the accent,
+    /// rate and theme that the backend will actually use.
+    LoadPreferences,
     SaveSettings {
         value: cijian_domain::settings::Settings,
         revision: u64,
@@ -220,7 +223,8 @@ impl Command {
         self.is_background_poll()
             || matches!(
                 self,
-                Self::PlayWord { .. }
+                Self::LoadPreferences
+                    | Self::PlayWord { .. }
                     | Self::PlayStoredAudio { .. }
                     | Self::AudioPause
                     | Self::AudioResume

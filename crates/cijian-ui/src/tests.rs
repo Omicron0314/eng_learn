@@ -661,7 +661,7 @@ fn quiet_window(
     cx: &mut TestAppContext,
     route: Route,
     bus: Arc<dyn CommandBus>,
-) -> (gpui_kit::AnyWindowHandle, Entity<Shell>) {
+) -> (gpui_kit::AnyWindowHandle, gpui_kit::Entity<Shell>) {
     cx.update(|cx| {
         gpui_kit::init(cx);
         gpui_kit_material::init(cx);
@@ -736,6 +736,140 @@ fn a_generation_poll_never_flashes_the_busy_window(cx: &mut TestAppContext) {
         notice.as_deref(),
         Some("已记录本次阅读完成"),
         "a poll must not replace the visible notice"
+    );
+}
+
+#[gpui_kit::test]
+fn stored_preferences_replace_the_accent_default(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let (_handle, shell) = quiet_window(cx, Route::Articles, Arc::new(QuietBus::default()));
+    // The default is American; a device that stored British must show British,
+    // otherwise the chip says 美式 while the backend synthesises 英式.
+    assert_eq!(
+        shell.read_with(cx, |shell, _| shell.review_accent),
+        cijian_domain::audio::Accent::Us
+    );
+    shell.update(cx, |shell, cx| {
+        shell.apply_response(
+            Ok(Response::Preferences(
+                cijian_domain::settings::DevicePreferences {
+                    pronunciation_accent: cijian_domain::audio::Accent::Uk,
+                    ..Default::default()
+                },
+            )),
+            false,
+            true,
+            cx,
+        );
+    });
+    assert_eq!(
+        shell.read_with(cx, |shell, _| shell.review_accent),
+        cijian_domain::audio::Accent::Uk
+    );
+}
+
+#[gpui_kit::test]
+fn clicking_the_listening_timeline_seeks_there(cx: &mut TestAppContext) {
+    let bus = Arc::new(QuietBus::default());
+    let body = "A short original passage for the listening timeline.".to_owned();
+    let article = cijian_ports::articles::Article {
+        id: "original-article".into(),
+        title: "Original listening".into(),
+        body_hash: "original-listening-hash".into(),
+        analysis: cijian_domain::analysis::analyze(
+            &body,
+            &Default::default(),
+            &Default::default(),
+            &Default::default(),
+            &Default::default(),
+        ),
+        body,
+        genre: cijian_domain::settings::Genre::Story,
+        tier: cijian_domain::settings::Tier::Easy,
+        diagnostics: Vec::new(),
+        created_at: 0,
+        read_at: None,
+    };
+    let (handle, shell) = cx
+        .update(|cx| {
+            gpui_kit::init(cx);
+            gpui_kit_material::init(cx);
+            init_component_theme(theme::scheme(false), 1., cx);
+            cx.set_reduce_motion(true);
+            let bus_for_window = bus.clone();
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1000.), px(900.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                move |_, cx| {
+                    let bus = bus_for_window.clone();
+                    let article = article.clone();
+                    cx.new(move |_| {
+                        let mut shell = Shell::new();
+                        shell.backend = Some(bus);
+                        shell.navigation.navigate(Route::Article {
+                            id: article.id.clone(),
+                            listening: true,
+                        });
+                        shell.reading_session = Some(cijian_ports::reading::ReadingSession {
+                            id: "original-session".into(),
+                            article_id: article.id.clone(),
+                            position: 0,
+                            opened_at: 0,
+                            completed_at: None,
+                        });
+                        shell.article = Some(article);
+                        let _ = shell.playback.start(
+                            "original-session".into(),
+                            "original-article".into(),
+                            Some(200.),
+                        );
+                        shell
+                    })
+                },
+            )
+        })
+        .unwrap();
+    cx.run_until_parked();
+    for _ in 0..3 {
+        cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+            .unwrap();
+    }
+    cx.update_window(handle, |_, window, cx| {
+        window.click("listening-wave", cx);
+        window.render_frame(cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    let seeks = bus
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|command| match command {
+            Command::AudioSeek { position } => Some(*position),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(seeks.len(), 1, "one click seeks once");
+    assert!(
+        (seeks[0] - 100.).abs() < 25.,
+        "the middle of the track seeks near half of 200s, got {}",
+        seeks[0]
+    );
+    assert!(
+        (shell.read_with(cx, |shell, _| shell.playback.position) - seeks[0]).abs() < 0.001,
+        "the bar follows the pointer before the backend answers"
     );
 }
 
