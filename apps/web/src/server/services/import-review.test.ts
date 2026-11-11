@@ -421,7 +421,9 @@ describe("T1.2/T1.4 review", () => {
   it("T1.4 AC7: scored cards, paired logs/events and queue counters survive file reopen", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "review-reopen-"));
     const env = {
-      LLM_PROVIDER: "fake",
+      LLM_BASE_URL: "http://127.0.0.1:9/v1",
+      LLM_API_KEY: "test",
+      LLM_MODEL: "test-model",
       TTS_PROVIDER: "none",
       DATABASE_PATH: path.join(dir, "app.sqlite"),
     };
@@ -557,7 +559,7 @@ describe("T1.3 cards; T1.5 settings", () => {
     expect(llm.calls).toBe(1);
     expect(deps.repos.events.count(deps.userId, "card_edit")).toBe(1);
     expect(deps.repos.cards.get(id)?.back).toMatchObject({
-      meaning: "演示释义",
+      meaning: "测试释义",
       meaningSource: "ai",
     });
   });

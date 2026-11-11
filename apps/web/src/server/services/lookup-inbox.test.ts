@@ -80,7 +80,7 @@ describe("T4.2 marks", () => {
     const result = markUnknown(deps, input);
     expect(deps.repos.cards.get(required(result.cardId))).toMatchObject({
       origin: "autoAdd",
-      back: { meaning: "语境释义（演示）", meaningSource: "ai" },
+      back: { meaning: "语境释义（测试）", meaningSource: "ai" },
     });
     expect(deps.repos.events.count(deps.userId, "mark_unknown")).toBe(1);
     expect(deps.repos.events.count(deps.userId, "add_to_review")).toBe(1);

@@ -15,7 +15,6 @@ const windowDays = z.coerce
   .parse(values.window ?? 7);
 const deps = createAppDeps({
   ...process.env,
-  LLM_PROVIDER: "fake",
   TTS_PROVIDER: "none",
   DATABASE_PATH: values.db ?? process.env.DATABASE_PATH,
 });

@@ -10,7 +10,6 @@ type ProviderFormProps = { data: View; onSaved: (patch: Partial<View>) => void }
 
 function ProviderForm({ data, onSaved }: ProviderFormProps) {
   const stored = data.providerConfig;
-  const [llmProvider, setLlmProvider] = useState(stored.llm?.provider ?? "openai-compatible");
   const [ttsProvider, setTtsProvider] = useState(stored.tts?.provider ?? "none");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -27,31 +26,22 @@ function ProviderForm({ data, onSaved }: ProviderFormProps) {
     setMessage("");
     try {
       const payload: { llm?: unknown; tts?: unknown } = {};
-      payload.llm =
-        llmProvider === "fake"
-          ? { provider: "fake", model: keyValue(form.get("llmModel")) }
-          : {
-              provider: "openai-compatible",
-              baseURL: String(form.get("llmBaseURL") ?? "").trim(),
-              model: String(form.get("llmModel") ?? "").trim(),
-              apiKey: keyValue(form.get("llmApiKey")),
-            };
+      payload.llm = {
+        provider: "openai-compatible",
+        baseURL: String(form.get("llmBaseURL") ?? "").trim(),
+        model: String(form.get("llmModel") ?? "").trim(),
+        apiKey: keyValue(form.get("llmApiKey")),
+      };
       payload.tts =
         ttsProvider === "none"
           ? { provider: "none" }
-          : ttsProvider === "fake"
-            ? {
-                provider: "fake",
-                model: keyValue(form.get("ttsModel")),
-                voice: keyValue(form.get("ttsVoice")),
-              }
-            : {
-                provider: "openai-compatible",
-                baseURL: String(form.get("ttsBaseURL") ?? "").trim(),
-                model: String(form.get("ttsModel") ?? "").trim(),
-                voice: String(form.get("ttsVoice") ?? "").trim(),
-                apiKey: keyValue(form.get("ttsApiKey")),
-              };
+          : {
+              provider: "openai-compatible",
+              baseURL: String(form.get("ttsBaseURL") ?? "").trim(),
+              model: String(form.get("ttsModel") ?? "").trim(),
+              voice: String(form.get("ttsVoice") ?? "").trim(),
+              apiKey: keyValue(form.get("ttsApiKey")),
+            };
       const saved = await api<Pick<View, "providers" | "providerConfig">>(
         "settings/providers",
         payload,
@@ -64,7 +54,6 @@ function ProviderForm({ data, onSaved }: ProviderFormProps) {
       setBusy(false);
     }
   }
-  const llmStored = stored.llm?.provider === "openai-compatible" ? stored.llm : null;
   const ttsStored = stored.tts?.provider === "openai-compatible" ? stored.tts : null;
   return (
     <form action={save} className="card section">
@@ -75,51 +64,27 @@ function ProviderForm({ data, onSaved }: ProviderFormProps) {
       </p>
       <div className="fields three">
         <label>
-          LLM 类型
-          <select
-            name="llmProvider"
-            value={llmProvider}
-            onChange={(e) => setLlmProvider(e.target.value as typeof llmProvider)}
-          >
-            <option value="openai-compatible">OpenAI 兼容接口</option>
-            <option value="fake">演示模式（假服务）</option>
-          </select>
+          LLM 端点（Base URL）
+          <input
+            required
+            name="llmBaseURL"
+            placeholder="https://…"
+            defaultValue={stored.llm?.baseURL ?? ""}
+          />
         </label>
-        {llmProvider === "openai-compatible" && (
-          <>
-            <label>
-              LLM 端点（Base URL）
-              <input
-                required
-                name="llmBaseURL"
-                placeholder="https://…"
-                defaultValue={llmStored?.baseURL ?? ""}
-              />
-            </label>
-            <label>
-              LLM 模型
-              <input required name="llmModel" defaultValue={llmStored?.model ?? ""} />
-            </label>
-            <label>
-              LLM API 密钥
-              <input
-                type="password"
-                name="llmApiKey"
-                autoComplete="off"
-                placeholder={keyPlaceholder(llmStored?.hasApiKey ?? false)}
-              />
-            </label>
-          </>
-        )}
-        {llmProvider === "fake" && (
-          <label>
-            LLM 模型名（可选）
-            <input
-              name="llmModel"
-              defaultValue={stored.llm?.provider === "fake" ? stored.llm.model : ""}
-            />
-          </label>
-        )}
+        <label>
+          LLM 模型
+          <input required name="llmModel" defaultValue={stored.llm?.model ?? ""} />
+        </label>
+        <label>
+          LLM API 密钥
+          <input
+            type="password"
+            name="llmApiKey"
+            autoComplete="off"
+            placeholder={keyPlaceholder(stored.llm?.hasApiKey ?? false)}
+          />
+        </label>
       </div>
       <div className="fields three">
         <label>
@@ -131,7 +96,6 @@ function ProviderForm({ data, onSaved }: ProviderFormProps) {
           >
             <option value="none">不配置（用浏览器朗读）</option>
             <option value="openai-compatible">OpenAI 兼容接口</option>
-            <option value="fake">演示模式（假服务）</option>
           </select>
         </label>
         {ttsProvider === "openai-compatible" && (
@@ -160,24 +124,6 @@ function ProviderForm({ data, onSaved }: ProviderFormProps) {
                 name="ttsApiKey"
                 autoComplete="off"
                 placeholder={keyPlaceholder(ttsStored?.hasApiKey ?? false)}
-              />
-            </label>
-          </>
-        )}
-        {ttsProvider === "fake" && (
-          <>
-            <label>
-              TTS 模型名（可选）
-              <input
-                name="ttsModel"
-                defaultValue={stored.tts?.provider === "fake" ? stored.tts.model : ""}
-              />
-            </label>
-            <label>
-              TTS 声音（可选）
-              <input
-                name="ttsVoice"
-                defaultValue={stored.tts?.provider === "fake" ? stored.tts.voice : ""}
               />
             </label>
           </>
@@ -258,12 +204,7 @@ export function Settings() {
             <div>
               <h2>服务状态</h2>
               <p>
-                LLM ·{" "}
-                {!data.providers.llm.configured
-                  ? "未配置"
-                  : data.providers.llm.provider === "fake"
-                    ? "演示模式（假服务，不代表真实生成质量）"
-                    : data.providers.llm.provider}
+                LLM · {!data.providers.llm.configured ? "未配置" : data.providers.llm.provider}
                 {" · "}
                 {data.providers.llm.source === "settings"
                   ? "来自设置页"

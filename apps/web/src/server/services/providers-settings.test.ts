@@ -1,4 +1,4 @@
-import { FakeLLM, FakeTTS, MemoryBlob } from "@eng-learn/providers";
+import { MemoryBlob } from "@eng-learn/providers";
 import { describe, expect, it } from "vitest";
 import { createAppDeps } from "../deps";
 import { getSettingsView, updateProviderConfig } from "./settings";
@@ -117,12 +117,20 @@ describe("lazy provider resolution", () => {
       expect(deps.providerStatus().llm).toMatchObject({ configured: false, source: null });
       expect(() => deps.llmProvider()).toThrow(/设置页/);
       expect(deps.ttsProvider()).toBeNull();
-      updateProviderConfig(deps, { llm: { provider: "fake", model: "demo-model" } });
+      updateProviderConfig(deps, llmPatch);
       const llm = deps.llmProvider();
-      expect(llm).toBeInstanceOf(FakeLLM);
-      expect(llm.model).toBe("demo-model");
-      updateProviderConfig(deps, { tts: { provider: "fake" } });
-      expect(deps.ttsProvider()).toBeInstanceOf(FakeTTS);
+      expect(llm.provider).toBe("openai-compatible");
+      expect(llm.model).toBe("test-model");
+      updateProviderConfig(deps, {
+        tts: {
+          provider: "openai-compatible",
+          baseURL: "https://tts.example.com",
+          model: "m",
+          voice: "v",
+          apiKey: "sk-tts",
+        },
+      });
+      expect(deps.ttsProvider()?.provider).toBe("openai-compatible");
       updateProviderConfig(deps, { tts: { provider: "none" } });
       expect(deps.ttsProvider()).toBeNull();
     } finally {
@@ -131,13 +139,17 @@ describe("lazy provider resolution", () => {
   });
 
   it("env config is used as a fallback when the settings page has none", () => {
-    const deps = setupDeps({ LLM_PROVIDER: "fake", LLM_MODEL: "env-fake" });
+    const deps = setupDeps({
+      LLM_BASE_URL: "https://env.example.com/v1",
+      LLM_API_KEY: "sk-env",
+      LLM_MODEL: "env-model",
+    });
     try {
-      expect(deps.llmProvider().model).toBe("env-fake");
+      expect(deps.llmProvider().model).toBe("env-model");
       expect(deps.providerStatus().llm).toMatchObject({ configured: true, source: "env" });
       // A settings-page value wins over the environment.
-      updateProviderConfig(deps, { llm: { provider: "fake", model: "settings-fake" } });
-      expect(deps.llmProvider().model).toBe("settings-fake");
+      updateProviderConfig(deps, llmPatch);
+      expect(deps.llmProvider().model).toBe("test-model");
     } finally {
       deps.close();
     }

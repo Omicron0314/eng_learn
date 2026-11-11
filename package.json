@@ -12,8 +12,7 @@
     "typecheck": "pnpm -r --parallel typecheck && tsc -p tools/tsconfig.json --noEmit",
     "e2e": "pnpm --filter @eng-learn/web e2e",
     "eval:generation": "tsx tools/eval/generation.ts",
-    "report:experiment": "tsx tools/report/experiment.ts",
-    "dev:demo": "tsx tools/demo.ts"
+    "report:experiment": "tsx tools/report/experiment.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

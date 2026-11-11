@@ -1,4 +1,4 @@
-import { FakeLLM } from "@eng-learn/providers";
+import { FakeLLM } from "@eng-learn/providers/testing";
 import { expect, it } from "vitest";
 import { costGuard } from "./budget";
 

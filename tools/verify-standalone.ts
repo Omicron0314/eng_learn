@@ -36,7 +36,6 @@ async function verify(publicOrigin?: string) {
         NODE_ENV: "production",
         HOSTNAME: "0.0.0.0",
         PORT: String(port),
-        LLM_PROVIDER: "fake",
         TTS_PROVIDER: "none",
         APP_PASSWORD: "test-password",
         APP_ORIGIN: publicOrigin ?? "",
@@ -102,7 +101,7 @@ async function verify(publicOrigin?: string) {
     });
     assert.equal(upload.status, 400, await upload.text()); // Invalid ZIP, not a size rejection.
     console.log(
-      `PASS HOSTNAME=0.0.0.0 ${publicOrigin ? "HTTPS APP_ORIGIN + Secure cookie" : "direct browser Origin"}: login/write=200, cross-site=403, >20 MiB apkg reaches format validation`,
+      `PASS HOSTNAME=0.0.0.0 ${publicOrigin ? "HTTPS APP_ORIGIN + Secure cookie" : "direct browser Origin"}: login/write=200, cross-site=403, large apkg reaches format validation`,
     );
   } finally {
     if (child.exitCode === null && child.signalCode === null) {

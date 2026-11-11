@@ -15,13 +15,9 @@ import { validate } from "./shared";
 
 /** Sanitized provider config for API clients; never includes API keys. */
 export type ProviderConfigView = {
-  llm:
-    | { provider: "openai-compatible"; baseURL: string; model: string; hasApiKey: boolean }
-    | { provider: "fake"; model: string }
-    | null;
+  llm: { provider: "openai-compatible"; baseURL: string; model: string; hasApiKey: boolean } | null;
   tts:
     | { provider: "none" }
-    | { provider: "fake"; model: string; voice: string }
     | {
         provider: "openai-compatible";
         baseURL: string;
@@ -34,19 +30,16 @@ export type ProviderConfigView = {
 
 function providerConfigView(stored: StoredProviderConfig): ProviderConfigView {
   return {
-    llm:
-      stored.llm?.provider === "openai-compatible"
-        ? {
-            provider: "openai-compatible",
-            baseURL: stored.llm.baseURL,
-            model: stored.llm.model,
-            hasApiKey: true,
-          }
-        : stored.llm
-          ? { provider: "fake", model: stored.llm.model }
-          : null,
-    tts:
-      stored.tts?.provider === "openai-compatible"
+    llm: stored.llm
+      ? {
+          provider: "openai-compatible",
+          baseURL: stored.llm.baseURL,
+          model: stored.llm.model,
+          hasApiKey: true,
+        }
+      : null,
+    tts: stored.tts
+      ? stored.tts.provider === "openai-compatible"
         ? {
             provider: "openai-compatible",
             baseURL: stored.tts.baseURL,
@@ -54,11 +47,8 @@ function providerConfigView(stored: StoredProviderConfig): ProviderConfigView {
             voice: stored.tts.voice,
             hasApiKey: true,
           }
-        : stored.tts?.provider === "fake"
-          ? { provider: "fake", model: stored.tts.model, voice: stored.tts.voice }
-          : stored.tts
-            ? { provider: "none" }
-            : null,
+        : { provider: "none" }
+      : null,
   };
 }
 
@@ -102,27 +92,16 @@ const optionalSecret = z
   .max(300)
   .optional()
   .transform((v) => (v ? v : undefined));
-const optionalName = z
-  .string()
-  .trim()
-  .max(200)
-  .optional()
-  .transform((v) => (v ? v : undefined));
-
-const llmInputSchema = z.discriminatedUnion("provider", [
-  z
-    .object({
-      provider: z.literal("openai-compatible"),
-      baseURL: httpUrl,
-      model: z.string().trim().min(1).max(200),
-      apiKey: optionalSecret,
-    })
-    .strict(),
-  z.object({ provider: z.literal("fake"), model: optionalName }).strict(),
-]);
+const llmInputSchema = z
+  .object({
+    provider: z.literal("openai-compatible"),
+    baseURL: httpUrl,
+    model: z.string().trim().min(1).max(200),
+    apiKey: optionalSecret,
+  })
+  .strict();
 const ttsInputSchema = z.discriminatedUnion("provider", [
   z.object({ provider: z.literal("none") }).strict(),
-  z.object({ provider: z.literal("fake"), model: optionalName, voice: optionalName }).strict(),
   z
     .object({
       provider: z.literal("openai-compatible"),
@@ -143,11 +122,6 @@ function mergeLlm(
   input: z.infer<typeof llmInputSchema>,
   before?: StoredLLMConfig,
 ): StoredLLMConfig {
-  if (input.provider === "fake")
-    return StoredLLMConfigSchema.parse({
-      provider: "fake",
-      ...(input.model ? { model: input.model } : {}),
-    });
   const apiKey =
     input.apiKey ?? (before?.provider === "openai-compatible" ? before.apiKey : undefined);
   if (!apiKey) throw new AppError("VALIDATION_FAILED", "请先填写 LLM API 密钥", 400);
@@ -163,12 +137,6 @@ function mergeTts(
   before?: StoredTTSConfig,
 ): StoredTTSConfig {
   if (input.provider === "none") return { provider: "none" };
-  if (input.provider === "fake")
-    return StoredTTSConfigSchema.parse({
-      provider: "fake",
-      ...(input.model ? { model: input.model } : {}),
-      ...(input.voice ? { voice: input.voice } : {}),
-    });
   const apiKey =
     input.apiKey ?? (before?.provider === "openai-compatible" ? before.apiKey : undefined);
   if (!apiKey) throw new AppError("VALIDATION_FAILED", "请先填写 TTS API 密钥", 400);

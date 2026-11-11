@@ -26,20 +26,11 @@ describe("runnable tool scripts", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
-  it("S3 AC2: fake evaluation completes 30 groups and prints all metrics", () => {
-    const result = run("tools/eval/generation.ts", ["--fake"], {
-      EVAL_BASELINE_PATH: "fixtures/wordlist/baseline-sample.txt",
-      EVAL_MAX_COST_USD: "1",
-    });
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain("30/30 groups");
-    expect(result.stdout).toContain("firstJsonValidRate");
-    expect(result.stdout).toContain("targetTwiceRate");
-    expect(result.stdout).toContain("actualCostUsd");
-  });
   it("S3 AC3: real evaluation without prices refuses before any network call", () => {
     const result = run("tools/eval/generation.ts", ["--allow-paid"], {
-      LLM_PROVIDER: "fake",
+      LLM_BASE_URL: "https://llm.example.com/v1",
+      LLM_API_KEY: "test-key",
+      LLM_MODEL: "test-model",
       LLM_PRICE_INPUT_PER_MTOK: "",
       LLM_PRICE_OUTPUT_PER_MTOK: "",
     });
@@ -51,7 +42,13 @@ describe("runnable tool scripts", () => {
     const database = path.join(dir, "seed.sqlite");
     const now = new Date("2026-10-01T00:00:00Z");
     const deps = createAppDeps(
-      { LLM_PROVIDER: "fake", TTS_PROVIDER: "none", DATABASE_PATH: database },
+      {
+        LLM_BASE_URL: "https://llm.example.com/v1",
+        LLM_API_KEY: "test-key",
+        LLM_MODEL: "test-model",
+        TTS_PROVIDER: "none",
+        DATABASE_PATH: database,
+      },
       { clock: () => now },
     );
     try {

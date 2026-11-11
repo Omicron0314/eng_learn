@@ -9,23 +9,15 @@ const httpUrl = z.url({ protocol: /^https?$/ });
 const secret = z.string().trim().min(1).max(300);
 const name = z.string().trim().min(1).max(200);
 
-export const StoredLLMConfigSchema = z.discriminatedUnion("provider", [
-  z.object({
-    provider: z.literal("openai-compatible"),
-    baseURL: httpUrl,
-    apiKey: secret,
-    model: name,
-  }),
-  z.object({ provider: z.literal("fake"), model: name.default("fake-llm") }),
-]);
+export const StoredLLMConfigSchema = z.object({
+  provider: z.literal("openai-compatible"),
+  baseURL: httpUrl,
+  apiKey: secret,
+  model: name,
+});
 
 export const StoredTTSConfigSchema = z.discriminatedUnion("provider", [
   z.object({ provider: z.literal("none") }),
-  z.object({
-    provider: z.literal("fake"),
-    model: name.default("fake-tts"),
-    voice: name.default("fake-voice"),
-  }),
   z.object({
     provider: z.literal("openai-compatible"),
     baseURL: httpUrl,

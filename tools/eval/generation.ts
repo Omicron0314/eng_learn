@@ -11,8 +11,6 @@ import {
 import {
   completeJson,
   createLLM,
-  demoResponder,
-  FakeLLM,
   type LLMCallRecord,
   loadLLMConfig,
   loadPrompt,
@@ -23,21 +21,15 @@ import { createAppDeps } from "../../apps/web/src/server/deps";
 import { costGuard } from "./budget";
 
 const { values } = parseArgs({
-  options: { fake: { type: "boolean" }, "allow-paid": { type: "boolean" } },
+  options: { "allow-paid": { type: "boolean" } },
   strict: true,
 });
-if (!values.fake && !values["allow-paid"])
+if (!values["allow-paid"])
   throw new Error(
-    "Manual paid evaluation only: pass --allow-paid after reviewing prices and EVAL_MAX_COST_USD. Use --fake for offline validation.",
+    "Manual paid evaluation only: pass --allow-paid after reviewing prices and EVAL_MAX_COST_USD.",
   );
-const config = loadLLMConfig(values.fake ? { LLM_PROVIDER: "fake" } : process.env);
-if (
-  !values.fake &&
-  (config.provider === "fake" ||
-    !config.price ||
-    config.price.inputPerMTok <= 0 ||
-    config.price.outputPerMTok <= 0)
-)
+const config = loadLLMConfig(process.env);
+if (!config.price || config.price.inputPerMTok <= 0 || config.price.outputPerMTok <= 0)
   throw new Error(
     "Real evaluation requires a real provider and positive LLM_PRICE_INPUT_PER_MTOK / LLM_PRICE_OUTPUT_PER_MTOK.",
   );
@@ -46,9 +38,7 @@ const maxCost = z.coerce
   .positive()
   .max(1)
   .parse(process.env.EVAL_MAX_COST_USD ?? 1);
-const provider = values.fake
-  ? new FakeLLM({ responder: (req) => demoResponder({ ...req, purpose: "article" }) })
-  : createLLM(config);
+const provider = createLLM(config);
 const guard = costGuard(provider, config.price ?? { inputPerMTok: 0, outputPerMTok: 0 }, maxCost);
 const samples = z
   .array(
@@ -74,9 +64,7 @@ const schema = z.object({
   names: z.array(z.string()),
 });
 const deps = createAppDeps(
-  values.fake
-    ? { LLM_PROVIDER: "fake", TTS_PROVIDER: "none", DATABASE_PATH: ":memory:" }
-    : { ...process.env, TTS_PROVIDER: "none" },
+  { ...process.env, TTS_PROVIDER: "none", DATABASE_PATH: ":memory:" },
   { llm: guard.provider, tts: null, blobs: new MemoryBlob() },
 );
 const records: LLMCallRecord[] = [];
@@ -162,7 +150,7 @@ try {
     .flatMap((r) => (r.coverage === null ? [] : [r.coverage]))
     .sort((a, b) => a - b);
   const result = {
-    mode: values.fake ? "fake — not real quality evidence" : "real",
+    mode: "real",
     model: provider.model,
     promptVersion: "article.v1",
     baselineSource: baselinePath,

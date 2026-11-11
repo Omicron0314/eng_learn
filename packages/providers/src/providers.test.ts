@@ -19,11 +19,12 @@ import {
   ProviderError,
 } from "./errors";
 import { createTTS } from "./factory";
-import { FakeLLM } from "./llm/fake";
 import { OpenAICompatibleLLM } from "./llm/openai-compatible";
 import { completeJson } from "./llm/structured";
 import type { LLMCallRecord, LLMProvider } from "./llm/types";
-import { FakeTTS, wavDuration } from "./tts/fake";
+import { FakeLLM } from "./testing/fake-llm";
+import { FakeTTS, wavDuration } from "./testing/fake-tts";
+import { OpenAICompatibleTTS } from "./tts/openai-compatible";
 
 const schema = z.object({ title: z.string().min(1) });
 const req = { purpose: "article" as const, messages: [{ role: "user" as const, content: "hi" }] };
@@ -48,12 +49,22 @@ describe("config", () => {
       expect((e as ConfigError).missing).toEqual(["LLM_API_KEY", "LLM_MODEL"]);
       expect((e as Error).message).toContain("LLM_API_KEY, LLM_MODEL");
     }
-    expect(loadLLMConfig({ LLM_PROVIDER: "fake" }).provider).toBe("fake");
+    expect(() => loadLLMConfig({ LLM_PROVIDER: "nope" })).toThrow(ConfigError);
   });
 
   it("AC12: TTS provider selection", () => {
     expect(createTTS(loadTTSConfig({}))).toBeNull();
-    expect(createTTS(loadTTSConfig({ TTS_PROVIDER: "fake" }))).toBeInstanceOf(FakeTTS);
+    expect(
+      createTTS(
+        loadTTSConfig({
+          TTS_PROVIDER: "openai-compatible",
+          TTS_BASE_URL: "https://tts.example.com",
+          TTS_API_KEY: "k",
+          TTS_MODEL: "m",
+          TTS_VOICE: "v",
+        }),
+      ),
+    ).toBeInstanceOf(OpenAICompatibleTTS);
     expect(() => loadTTSConfig({ TTS_PROVIDER: "nope" })).toThrow(ConfigError);
   });
 
@@ -68,7 +79,11 @@ describe("config", () => {
       LLM_BASE_URL: "https://env.example.com",
       LLM_API_KEY: "sk-env",
       LLM_MODEL: "env-model",
-      TTS_PROVIDER: "fake",
+      TTS_PROVIDER: "openai-compatible",
+      TTS_BASE_URL: "https://tts.example.com",
+      TTS_API_KEY: "k",
+      TTS_MODEL: "m",
+      TTS_VOICE: "v",
     };
     expect(resolveLLMConfig(env, stored)).toMatchObject({
       baseURL: "https://stored.example.com/v1",
@@ -79,7 +94,7 @@ describe("config", () => {
     expect(llmStatus(env)).toMatchObject({ configured: true, source: "env", model: "env-model" });
     expect(llmStatus({})).toMatchObject({ configured: false, source: null });
     expect(resolveTTSConfig(env, { provider: "none" })).toEqual({ provider: "none" });
-    expect(resolveTTSConfig(env)).toMatchObject({ provider: "fake" });
+    expect(resolveTTSConfig(env)).toMatchObject({ provider: "openai-compatible" });
     expect(
       ttsStatus(
         {},
@@ -212,7 +227,7 @@ describe("blob and tts", () => {
     }
   });
 
-  it("AC11: fake TTS is deterministic with parseable duration", async () => {
+  it("AC11: test-double TTS is deterministic with parseable duration", async () => {
     const tts = new FakeTTS();
     const a = await tts.synthesize({ text: "hello world" });
     const b = await tts.synthesize({ text: "hello world" });

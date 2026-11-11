@@ -15,7 +15,6 @@ const links = [
 export function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [pending, setPending] = useState(0);
-  const [demo, setDemo] = useState(false);
   useEffect(() => {
     if (pathname === "/login") return;
     const refresh = () => {
@@ -24,11 +23,6 @@ export function Shell({ children }: { children: ReactNode }) {
         .catch(() => {});
     };
     refresh();
-    api<{ providers: { llm: { configured: boolean; provider: string } } }>("settings")
-      .then((view) =>
-        setDemo(view.providers.llm.configured && view.providers.llm.provider === "fake"),
-      )
-      .catch(() => {});
     window.addEventListener("inbox-changed", refresh);
     return () => window.removeEventListener("inbox-changed", refresh);
   }, [pathname]);
@@ -66,14 +60,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <span>一点复习，一段故事。</span>
           <span className="local-tag">SELF-USE / MVP</span>
         </div>
-        <main id="main">
-          {demo && (
-            <div className="demo-banner">
-              演示模式 · 假服务，无付费调用；文章与释义不代表真实质量。
-            </div>
-          )}
-          {children}
-        </main>
+        <main id="main">{children}</main>
         <footer>词间 · 由你自己的词汇，构成每一天</footer>
       </div>
     </div>

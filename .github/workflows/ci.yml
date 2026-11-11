@@ -25,5 +25,4 @@ jobs:
           path: apps/web/test-results/
           retention-days: 7
           if-no-files-found: ignore
-      - run: pnpm eval:generation --fake
       - run: docker build -t eng-learn-ci .

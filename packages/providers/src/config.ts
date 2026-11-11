@@ -9,13 +9,16 @@ function validateEndpoint(value: string | undefined, key: string) {
 
 export type Price = { inputPerMTok: number; outputPerMTok: number };
 
-export type LLMConfig =
-  | { provider: "openai-compatible"; baseURL: string; apiKey: string; model: string; price?: Price }
-  | { provider: "fake"; model: string; price?: Price };
+export type LLMConfig = {
+  provider: "openai-compatible";
+  baseURL: string;
+  apiKey: string;
+  model: string;
+  price?: Price;
+};
 
 export type TTSConfig =
   | { provider: "none" }
-  | { provider: "fake"; voice: string; model: string }
   | {
       provider: "openai-compatible";
       baseURL: string;
@@ -52,13 +55,6 @@ function readPriceInternal(env: Env): Price | undefined {
 export function loadLLMConfig(env: Env): LLMConfig {
   const provider = env.LLM_PROVIDER?.trim() || "openai-compatible";
   const price = readPriceInternal(env);
-  if (provider === "fake") {
-    return {
-      provider: "fake",
-      model: env.LLM_MODEL?.trim() || "fake-llm",
-      ...(price ? { price } : {}),
-    };
-  }
   if (provider !== "openai-compatible") {
     throw new ConfigError(`Unknown LLM_PROVIDER: ${provider}`);
   }
@@ -80,13 +76,6 @@ export function loadLLMConfig(env: Env): LLMConfig {
 export function loadTTSConfig(env: Env): TTSConfig {
   const provider = env.TTS_PROVIDER?.trim() || "none";
   if (provider === "none") return { provider: "none" };
-  if (provider === "fake") {
-    return {
-      provider: "fake",
-      voice: env.TTS_VOICE?.trim() || "fake-voice",
-      model: env.TTS_MODEL?.trim() || "fake-tts",
-    };
-  }
   if (provider === "openai-compatible") {
     const required = ["TTS_BASE_URL", "TTS_API_KEY", "TTS_MODEL", "TTS_VOICE"] as const;
     const missing = required.filter((k) => !env[k]?.trim());
@@ -118,10 +107,9 @@ export function llmConfigStatus(env: Env): {
   } catch {
     host = null;
   }
-  const missing =
-    provider === "fake"
-      ? []
-      : (["LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL"] as const).filter((k) => !env[k]?.trim());
+  const missing = (["LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL"] as const).filter(
+    (k) => !env[k]?.trim(),
+  );
   return { provider, host, model: env.LLM_MODEL?.trim() || null, missing: [...missing] };
 }
 
@@ -161,9 +149,6 @@ export function readPrice(env: Env): Price | undefined {
 }
 
 function llmConfigFromStored(stored: StoredLLMConfig, price?: Price): LLMConfig {
-  if (stored.provider === "fake") {
-    return { provider: "fake", model: stored.model, ...(price ? { price } : {}) };
-  }
   return {
     provider: "openai-compatible",
     baseURL: stored.baseURL,
@@ -175,8 +160,6 @@ function llmConfigFromStored(stored: StoredLLMConfig, price?: Price): LLMConfig 
 
 function ttsConfigFromStored(stored: StoredTTSConfig): TTSConfig {
   if (stored.provider === "none") return { provider: "none" };
-  if (stored.provider === "fake")
-    return { provider: "fake", model: stored.model, voice: stored.voice };
   return {
     provider: "openai-compatible",
     baseURL: stored.baseURL,
@@ -217,7 +200,7 @@ export function llmStatus(env: Env, stored?: StoredLLMConfig): LLMStatus {
       configured: true,
       source: "settings",
       provider: stored.provider,
-      host: stored.provider === "openai-compatible" ? hostOf(stored.baseURL) : null,
+      host: hostOf(stored.baseURL),
       model: stored.model,
       missing: [],
     };
@@ -234,7 +217,7 @@ export function llmStatus(env: Env, stored?: StoredLLMConfig): LLMStatus {
   }
   const s = llmConfigStatus(env);
   return {
-    configured: s.missing.length === 0 && (s.provider === "fake" || s.host !== null),
+    configured: s.missing.length === 0 && s.host !== null,
     source: "env",
     provider: s.provider,
     host: s.host,

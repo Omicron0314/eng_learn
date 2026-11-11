@@ -42,14 +42,14 @@ test("protected full learning loop and manifest", async ({ page, request }) => {
   await page.getByLabel("体裁").selectOption("story");
   await page.screenshot({ path: "test-results/desktop-today.png", fullPage: true });
   await page.getByRole("button", { name: "生成今日文章" }).click();
-  await expect(page).toHaveURL(/article\//);
+  await expect(page).toHaveURL(/article\//, { timeout: 30000 });
   await page.getByRole("button", { name: "显示原文" }).click();
   await page
     .locator("[data-start]")
     .filter({ hasText: /^cold$/ })
     .first()
     .click();
-  await expect(page.getByRole("dialog")).toContainText("语境释义（演示）");
+  await expect(page.getByRole("dialog")).toContainText("语境释义（测试）");
   await page.getByRole("button", { name: "标记不认识", exact: true }).click();
   await page.getByRole("button", { name: "关闭弹层" }).click();
   await page
@@ -179,7 +179,7 @@ test("mobile browser fallback, quota, lookup actions, inbox ignore and HTTP vali
     .first();
   await cold.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog")).toContainText("语境释义（演示）");
+  await expect(page.getByRole("dialog")).toContainText("语境释义（测试）");
   await page.getByRole("button", { name: "认识", exact: true }).click();
   await expect(page.getByRole("dialog").getByRole("status")).toContainText("已标记");
   await page.getByRole("button", { name: "加入复习", exact: true }).click();

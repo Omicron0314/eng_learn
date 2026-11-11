@@ -1,4 +1,4 @@
-import type { TTSProvider, TTSResult } from "./types";
+import type { TTSProvider, TTSResult } from "../tts/types";
 
 const SAMPLE_RATE = 8000;
 

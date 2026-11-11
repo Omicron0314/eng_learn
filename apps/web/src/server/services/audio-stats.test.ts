@@ -1,5 +1,6 @@
 import { DAY_MS, dayRange } from "@eng-learn/core";
-import { FakeTTS, OpenAICompatibleTTS } from "@eng-learn/providers";
+import { OpenAICompatibleTTS } from "@eng-learn/providers";
+import { FakeTTS } from "@eng-learn/providers/testing";
 import { describe, expect, it, vi } from "vitest";
 import { recordArticleEvent } from "./article";
 import { checkTtsBudget, ensureAudio, getTtsUsage, readAudio } from "./audio";

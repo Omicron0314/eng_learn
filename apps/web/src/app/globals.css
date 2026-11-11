@@ -1023,14 +1023,3 @@ progress {
     transition: none;
   }
 }
-
-.demo-banner {
-  border: 1px solid #e6d8b5;
-  color: #8b7543;
-  background: #faf5e7;
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-size: 11px;
-  margin-bottom: 25px;
-  line-height: 1.6;
-}

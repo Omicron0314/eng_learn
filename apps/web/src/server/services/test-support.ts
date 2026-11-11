@@ -1,5 +1,6 @@
 import { analyzeText, defaultLemmatizer, newSrsCard, seededRng } from "@eng-learn/core";
-import { demoResponder, FakeLLM, FakeTTS, MemoryBlob } from "@eng-learn/providers";
+import { MemoryBlob } from "@eng-learn/providers";
+import { FakeLLM, FakeTTS, testResponder } from "@eng-learn/providers/testing";
 import { afterEach } from "vitest";
 import { type AppDeps, createAppDeps } from "../deps";
 
@@ -9,11 +10,18 @@ afterEach(() => {
 });
 export function setup(script?: NonNullable<ConstructorParameters<typeof FakeLLM>[0]>["script"]) {
   let time = new Date("2026-10-12T02:00:00Z");
-  const llm = new FakeLLM({ ...(script ? { script } : { responder: demoResponder }) });
+  const llm = new FakeLLM({ ...(script ? { script } : { responder: testResponder }) });
   const tts = new FakeTTS();
   const blobs = new MemoryBlob();
   const deps = createAppDeps(
-    { LLM_PROVIDER: "fake", TTS_PROVIDER: "fake", DATABASE_PATH: ":memory:" },
+    {
+      LLM_PROVIDER: "openai-compatible",
+      LLM_BASE_URL: "http://127.0.0.1:9/v1",
+      LLM_API_KEY: "test",
+      LLM_MODEL: "test-model",
+      TTS_PROVIDER: "none",
+      DATABASE_PATH: ":memory:",
+    },
     { llm, tts, blobs, clock: () => time, rng: seededRng(7) },
   );
   opened.push(deps);
