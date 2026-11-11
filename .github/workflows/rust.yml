@@ -45,7 +45,6 @@ jobs:
             libwayland-dev libfontconfig-dev \
             libxcb-xkb-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libssl-dev \
-            # libdbus-1-dev: keyring -> dbus-secret-service needs dbus-1.pc.
             libdbus-1-dev \
             xvfb xauth
 
@@ -91,7 +90,6 @@ jobs:
             libwayland-dev libfontconfig-dev \
             libxcb-xkb-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libssl-dev \
-            # libdbus-1-dev: keyring -> dbus-secret-service needs dbus-1.pc.
             libdbus-1-dev \
             xvfb xauth mesa-vulkan-drivers libvulkan1
 
