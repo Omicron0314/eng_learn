@@ -7,7 +7,16 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!**/next-env.d.ts", "!**/*.md", "!fixtures", "!tools/eval/results"]
+    "includes": [
+      "**",
+      "!**/next-env.d.ts",
+      "!**/*.md",
+      "!fixtures",
+      "!tools/eval/results",
+      "!spikes",
+      "!docs/cijian-m3.html",
+      "!docs/neko.html"
+    ]
   },
   "formatter": {
     "enabled": true,
