@@ -123,9 +123,7 @@ impl Shell {
                         .items_center()
                         .px(px(2.))
                         .when(auto, |track| {
-                            track
-                                .bg(design::c(ColorRole::PRIMARY))
-                                .justify_end()
+                            track.bg(design::c(ColorRole::PRIMARY)).justify_end()
                         })
                         .when(!auto, |track| {
                             track
@@ -145,17 +143,16 @@ impl Shell {
                         .flex()
                         .flex_col()
                         .flex_1()
-                        .child(
-                            design::text(15., 20., 650.)
-                                .child(if auto { "自动发音：开" } else { "自动发音：关" }),
-                        )
-                        .child(design::text(12., 16., 400.).opacity(0.85).child(
-                            if auto {
-                                "每张新词卡出现时读一遍"
-                            } else {
-                                "只在点音标或口音按钮时朗读"
-                            },
-                        )),
+                        .child(design::text(15., 20., 650.).child(if auto {
+                            "自动发音：开"
+                        } else {
+                            "自动发音：关"
+                        }))
+                        .child(design::text(12., 16., 400.).opacity(0.85).child(if auto {
+                            "每张新词卡出现时读一遍"
+                        } else {
+                            "只在点音标或口音按钮时朗读"
+                        })),
                 ),
         );
         card.into_any_element()
