@@ -13,15 +13,17 @@ test("protected full learning loop and manifest", async ({ page, request }) => {
   await page.getByRole("button", { name: "解锁学习空间" }).click();
   await expect(page).toHaveURL(/today/);
   await page.goto("/library");
-  await page.getByLabel("导入文件").setInputFiles({
+  const firstChooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "开始导入" }).click();
+  await (await firstChooser).setFiles({
     name: "words.csv",
     mimeType: "text/csv",
     buffer: Buffer.from(
       "word,meaning,example\nlearn,学习,I learn every day.\nwalk,走路,I walk home.\nhelp,帮助,I help a friend.\nread,阅读,I read a book.\ntry,尝试,I try again.\nplan,计划,I have a plan.",
     ),
   });
-  await page.getByRole("button", { name: "开始导入" }).click();
   await expect(page.getByRole("status")).toContainText("新增 6");
+  await expect(page.getByRole("status")).toContainText("词书「words」");
   await page.getByLabel("搜索词卡").fill("learn");
   await page.getByRole("button", { name: "筛选", exact: true }).click();
   await expect(page.getByRole("button", { name: "编辑", exact: true })).toHaveCount(1);
@@ -219,16 +221,16 @@ test("mobile browser fallback, quota, lookup actions, inbox ignore and HTTP vali
     (
       await page.request.post("/api/import/cards", {
         multipart: {
-          deck: "oversize",
+          deck: "large",
           file: {
-            name: "too-big.csv",
-            mimeType: "text/csv",
-            buffer: Buffer.alloc(20 * 1024 * 1024 + 1),
+            name: "large.apkg",
+            mimeType: "application/octet-stream",
+            buffer: Buffer.alloc(21 * 1024 * 1024),
           },
         },
       })
     ).status(),
-  ).toBe(413);
+  ).toBe(400);
   await page.goto("/today");
   await expect(page.locator(".generation-panel")).toBeVisible();
   await page.screenshot({ path: "test-results/mobile-today.png", fullPage: true });
@@ -255,12 +257,13 @@ test("100-word import, twenty new-card keyboard reviews and daily-limit completi
     .slice(0, 100);
   expect(words).toHaveLength(100);
   await page.goto("/library");
-  await page.getByLabel("导入文件").setInputFiles({
+  const hundredChooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "开始导入" }).click();
+  await (await hundredChooser).setFiles({
     name: "hundred.csv",
     mimeType: "text/csv",
     buffer: Buffer.from(`word,meaning\n${words.map((word) => `${word},合成测试释义`).join("\n")}`),
   });
-  await page.getByRole("button", { name: "开始导入" }).click();
   await expect(page.getByRole("status")).toContainText("新增 100");
   await page.goto("/review");
   for (let i = 0; i < 20; i++) {
@@ -286,25 +289,23 @@ test("baseline import and merge show word/card counts; autoAdd mode warns and re
   await page.getByRole("button", { name: "解锁学习空间" }).click();
   await expect(page).toHaveURL(/today/);
   await page.goto("/library");
-  await expect(page.getByText(/CSV\/TXT 最大 20 MiB；.apkg 最大 64 MiB/)).toBeVisible();
   await page.getByLabel("导入类型").selectOption("wordlist");
-  await page.getByLabel("词表名称").fill("e2e baseline");
-  await page.getByLabel("导入文件").setInputFiles({
+  const baselineChooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "开始导入" }).click();
+  await (await baselineChooser).setFiles({
     name: "baseline.txt",
     mimeType: "text/plain",
     buffer: Buffer.from("acorn\nhazel"),
   });
-  await page.getByRole("button", { name: "开始导入" }).click();
   await expect(page.getByRole("status")).toContainText("新增词条 2 · 新增卡片 0");
-  // React form actions reset uncontrolled fields after a successful import.
-  await page.getByLabel("词表名称").fill("e2e baseline");
-  await page.getByLabel("合并同名词表").check();
-  await page.getByLabel("导入文件").setInputFiles({
+  // The file name is the list name, and importing the same name merges without extra input.
+  const mergeChooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "开始导入" }).click();
+  await (await mergeChooser).setFiles({
     name: "baseline.txt",
     mimeType: "text/plain",
     buffer: Buffer.from("hazel\nspruce"),
   });
-  await page.getByRole("button", { name: "开始导入" }).click();
   await expect(page.getByRole("status")).toContainText("新增词条 1 · 新增卡片 0");
   await expect(page.getByRole("status")).toContainText("重复 1");
   const baselineCards = await (await page.request.get("/api/cards?q=acorn")).json();

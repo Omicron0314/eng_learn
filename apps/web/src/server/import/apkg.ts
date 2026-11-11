@@ -1,7 +1,6 @@
 import { readAnkiNoteFields } from "@eng-learn/db";
 import { AppError } from "@eng-learn/providers";
 import { unzipSync } from "fflate";
-import { APKG_IMPORT_MAX_BYTES } from "../../import-limits";
 
 export function detectApkgFormat(entries: string[]) {
   // New exports contain a misleading compatibility stub; never import it.
@@ -32,9 +31,27 @@ export function stripAnkiHtml(field: string): string {
     .trim();
 }
 
+export const APKG_FRONT_FIELDS = ["front", "正面"];
+// Anki decks name their meaning field differently: Front/Back, but Chinese decks
+// often use 释义 / 中文释义. Matching is by exact field name, never by value.
+export const APKG_MEANING_FIELDS = ["back", "释义", "中文释义", "meaning", "definition", "翻译"];
+
+/** First non-empty value among the fields whose names match, in priority order. */
+export function pickApkgField(
+  fields: string[],
+  fieldNames: string[],
+  candidates: string[],
+): string | undefined {
+  const names = fieldNames.map((name) => name.trim().toLowerCase());
+  for (const candidate of candidates) {
+    const index = names.indexOf(candidate);
+    const value = index >= 0 ? fields[index]?.trim() : undefined;
+    if (value) return value;
+  }
+  return undefined;
+}
+
 export async function readApkgNotes(bytes: Uint8Array) {
-  if (bytes.length > APKG_IMPORT_MAX_BYTES)
-    throw new AppError("PAYLOAD_TOO_LARGE", "apkg 文件超过 64 MiB", 413);
   const entries: string[] = [];
   let files: Record<string, Uint8Array>;
   try {

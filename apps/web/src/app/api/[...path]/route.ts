@@ -2,20 +2,13 @@ import { SettingsSchema } from "@eng-learn/core";
 import { AppError } from "@eng-learn/providers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { importFileMaxBytes, MULTIPART_IMPORT_MAX_BYTES } from "../../../import-limits";
 import {
   passwordMatches,
   requestAuthenticated,
   SESSION_COOKIE,
   sessionToken,
 } from "../../../server/auth";
-import {
-  boundedRequest,
-  checkWriteOrigin,
-  errorResponse,
-  jsonInput,
-  requestOrigin,
-} from "../../../server/http";
+import { checkWriteOrigin, errorResponse, jsonInput, requestOrigin } from "../../../server/http";
 import { getDeps } from "../../../server/runtime";
 import * as services from "../../../server/services";
 
@@ -94,6 +87,7 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
       if (key === "today") result = services.getTodayView(deps);
       else if (key === "review/queue") result = services.getQueue(deps);
       else if (key === "cards") result = services.listCards(deps, querySchema.parse(params));
+      else if (key === "decks") result = services.listDecks(deps);
       else if (key === "inbox") result = services.listInbox(deps);
       else if (key === "settings") result = services.getSettingsView(deps);
       else if (key === "stats")
@@ -127,21 +121,14 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
       } else throw new AppError("NOT_FOUND", "接口不存在", 404);
     } else if (method === "POST" || method === "PATCH") {
       if (key === "import/cards" || key === "import/wordlist") {
-        const bounded = await boundedRequest(request, MULTIPART_IMPORT_MAX_BYTES);
         let form: FormData;
         try {
-          form = await bounded.formData();
+          form = await request.formData();
         } catch {
           throw new AppError("VALIDATION_FAILED", "上传格式无效", 400);
         }
         const file = form.get("file");
         if (!(file instanceof File)) throw new AppError("VALIDATION_FAILED", "请选择文件", 400);
-        if (file.size > importFileMaxBytes(file.name))
-          throw new AppError(
-            "PAYLOAD_TOO_LARGE",
-            `文件不能超过 ${importFileMaxBytes(file.name) / (1024 * 1024)} MiB`,
-            413,
-          );
         const base = {
           fileName: z.string().min(1).max(1000).parse(file.name),
           bytes: new Uint8Array(await file.arrayBuffer()),

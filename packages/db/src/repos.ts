@@ -322,9 +322,16 @@ export function createRepos(db: Conn) {
         .map((r) => toCardRow(r.card, r.lemma));
       return { rows, total };
     },
-    decks(userId: string): { deck: string; n: number }[] {
+    decks(userId: string): { deck: string; n: number; suspended: number }[] {
       return db
-        .select({ deck: t.cards.deck, n: count() })
+        .select({
+          deck: t.cards.deck,
+          n: count(),
+          suspended:
+            sql<number>`coalesce(sum(case when ${t.cards.suspended} then 1 else 0 end), 0)`.mapWith(
+              Number,
+            ),
+        })
         .from(t.cards)
         .where(eq(t.cards.userId, userId))
         .groupBy(t.cards.deck)

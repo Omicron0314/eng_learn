@@ -6,8 +6,15 @@ import { closeDb, createRepos, migrate, openDb, withTx } from "@eng-learn/db";
 import { zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { createAppDeps } from "../deps";
-import { readApkgNotes, stripAnkiHtml } from "../import/apkg";
-import { deleteDeck, ensureMeaning, listCards, setSuspended, updateCardText } from "./card";
+import { pickApkgField, readApkgNotes, stripAnkiHtml } from "../import/apkg";
+import {
+  deleteDeck,
+  ensureMeaning,
+  listCards,
+  listDecks,
+  setSuspended,
+  updateCardText,
+} from "./card";
 import { importCards, importWordList } from "./import";
 import { getKnownSet } from "./knowledge";
 import { markKnown, markUnknown } from "./mark";
@@ -17,28 +24,24 @@ import { bytes, required, seedCard, setup } from "./test-support";
 
 const words = Array.from({ length: 100 }, (_, i) => `word${i}`);
 describe("T1.1 imports", () => {
-  it("service enforces per-format compressed upload limits before parsing", async () => {
+  it("service parses uploads past the old size caps instead of rejecting them", async () => {
     const { deps } = setup();
-    for (const size of [20 * 1024 * 1024 + 1, 64 * 1024 * 1024])
-      await expect(
-        importCards(deps, { fileName: "large.apkg", bytes: new Uint8Array(size), deck: "d" }),
-      ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
     await expect(
       importCards(deps, {
-        fileName: "oversized.apkg",
-        bytes: new Uint8Array(64 * 1024 * 1024 + 1),
+        fileName: "large.apkg",
+        bytes: new Uint8Array(21 * 1024 * 1024),
         deck: "d",
       }),
-    ).rejects.toMatchObject({ code: "PAYLOAD_TOO_LARGE" });
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
     await expect(
       importWordList(deps, {
         fileName: "large.txt",
-        bytes: new Uint8Array(20 * 1024 * 1024 + 1),
+        bytes: new TextEncoder().encode(" ".repeat(20 * 1024 * 1024 + 1)),
         name: "base",
         kind: "baseline",
       }),
-    ).rejects.toMatchObject({ code: "PAYLOAD_TOO_LARGE" });
-    expect(deps.repos.events.count(deps.userId)).toBe(0);
+    ).resolves.toMatchObject({ wordsAdded: 0, cardsAdded: 0 });
+    expect(deps.repos.events.count(deps.userId)).toBe(1);
   });
   it("AC1/AC2/AC10: imports 100 new cards atomically and preserves them on repeat", async () => {
     const { deps } = setup();
@@ -82,18 +85,11 @@ describe("T1.1 imports", () => {
     expect(cards[0]?.back).toMatchObject({ meaning: "a, fruit", example: 'line\n"two"' });
     expect(cards[1]?.back.meaning).toBeUndefined();
   });
-  it("AC7/AC10: rejects invalid UTF-8 and oversized files without writes", async () => {
+  it("AC7/AC10: rejects invalid UTF-8 without writes", async () => {
     const { deps } = setup();
     await expect(
       importCards(deps, { fileName: "bad.csv", bytes: new Uint8Array([255]), deck: "d" }),
     ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
-    await expect(
-      importCards(deps, {
-        fileName: "large.csv",
-        bytes: new Uint8Array(20 * 1024 * 1024 + 1),
-        deck: "d",
-      }),
-    ).rejects.toMatchObject({ code: "PAYLOAD_TOO_LARGE" });
     expect(deps.repos.events.count(deps.userId)).toBe(0);
     expect(deps.repos.cards.count(deps.userId)).toBe(0);
   });
@@ -142,6 +138,36 @@ describe("T1.1 imports", () => {
     expect(card?.back.meaning).toBe("adj. 反常的，异常的");
     expect(card?.back.meaning).not.toContain("private note");
   });
+  it("AC8c: Chinese Anki fields 正面/释义 supply the card face and meaning", async () => {
+    const db = openDb(":memory:");
+    db.$client.exec(`
+      CREATE TABLE col(id INTEGER PRIMARY KEY, models TEXT);
+      INSERT INTO col VALUES(1, '{"1":{"flds":[{"name":"正面"},{"name":"我的笔记"},{"name":"US"},{"name":"UK"},{"name":"释义"},{"name":"中文释义"},{"name":"word"}]}}');
+      CREATE TABLE notes(id INTEGER PRIMARY KEY, mid INTEGER, flds TEXT, tags TEXT);
+      INSERT INTO notes VALUES(1, 1,
+        'according' || char(31)
+        || '' || char(31)
+        || '/əˈkɔːrdɪŋ/' || char(31)
+        || '/əˈkɔːdɪŋ/' || char(31)
+        || 'n.调和；和谐 v.使一致' || char(31)
+        || 'long dictionary text' || char(31)
+        || 'according', '');
+    `);
+    const archive = zipSync({ "collection.anki2": db.$client.serialize() });
+    closeDb(db);
+    const { deps } = setup();
+    expect(
+      await importCards(deps, { fileName: "chinese.apkg", bytes: archive, deck: "四级" }),
+    ).toMatchObject({ added: 1 });
+    const card = deps.repos.cards.listAll(deps.userId)[0];
+    expect(card).toMatchObject({ front: "according", back: { meaning: "n.调和；和谐 v.使一致" } });
+    expect(card?.back.meaningSource).toBe("import");
+    // Field-name matching is exact: 我的笔记 is never used as the meaning.
+    expect(
+      pickApkgField(["", "note", "释义值"], ["正面", "我的笔记", "释义"], ["释义", "中文释义"]),
+    ).toBe("释义值");
+    expect(pickApkgField(["", "note"], ["正面", "我的笔记"], ["back", "释义"])).toBeUndefined();
+  });
   it("deleteDeck: removes cards without history, suspends logged cards, writes event", () => {
     const { deps } = setup();
     const apple = seedCard(deps, "apple");
@@ -162,6 +188,16 @@ describe("T1.1 imports", () => {
       deleted: 2,
       keptWithHistory: 1,
     });
+  });
+  it("listDecks: aggregates per-deck totals and suspended cards", () => {
+    const { deps } = setup();
+    const apple = seedCard(deps, "apple");
+    const banana = seedCard(deps, "banana");
+    seedCard(deps, "cherry");
+    setSuspended(deps, { cardId: apple, suspended: true });
+    setSuspended(deps, { cardId: banana, suspended: true });
+    expect(listDecks(deps)).toEqual([{ deck: "test", n: 3, suspended: 2 }]);
+    expect(listDecks(deps)).toHaveLength(1);
   });
   it("AC9: new-format marker wins over legacy stub", async () => {
     const archive = zipSync({

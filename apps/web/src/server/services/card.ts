@@ -104,6 +104,11 @@ export function listCards(
   );
   return deps.repos.cards.search(deps.userId, filter);
 }
+export function listDecks(deps: AppDeps): { deck: string; n: number; suspended: number }[] {
+  return deps.repos.cards
+    .decks(deps.userId)
+    .sort((a, b) => b.n - a.n || a.deck.localeCompare(b.deck, "zh-CN"));
+}
 export function deleteDeck(
   deps: AppDeps,
   input: { deck: string },
@@ -135,5 +140,6 @@ export const cardService = {
   updateCardText,
   setSuspended,
   deleteDeck,
+  listDecks,
   listCards,
 };

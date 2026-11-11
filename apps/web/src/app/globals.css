@@ -572,6 +572,30 @@ td .actions {
   margin: 0;
   gap: 0;
 }
+.deck-list {
+  padding: 0;
+}
+.deck-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 24px;
+}
+.deck-row + .deck-row {
+  border-top: 1px solid var(--line);
+}
+.deck-row .actions {
+  margin: 0;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.deck-row strong {
+  font-size: 15px;
+}
+button.text-button.danger {
+  color: #a04e35;
+}
 .pagination {
   display: flex;
   align-items: center;

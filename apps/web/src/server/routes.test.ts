@@ -48,26 +48,13 @@ describe("API routes against memory SQLite and fakes", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("set-cookie")).toContain("Secure");
   });
-  it("enforces .apkg 64 MiB and CSV/TXT 20 MiB file limits at multipart boundary", async () => {
+  it("no longer rejects imports by file size", async () => {
     initialize();
-    for (const fileName of ["large.csv", "large.txt", "large.apkg"]) {
-      const form = new FormData();
-      form.set("deck", "test");
-      form.set("name", "baseline");
-      form.set("kind", "baseline");
-      const limit = fileName.endsWith(".apkg") ? 64 : 20;
-      form.set("file", new File([new Uint8Array(limit * 1024 * 1024 + 1)], fileName));
-      const response = await call(
-        fileName.endsWith(".txt") ? "import/wordlist" : "import/cards",
-        form,
-      );
-      expect(response.status, fileName).toBe(413);
-    }
     const form = new FormData();
-    form.set("deck", "test");
-    form.set("file", new File([new Uint8Array(21 * 1024 * 1024)], "allowed-size.apkg"));
+    form.set("deck", "large");
+    form.set("file", new File([new Uint8Array(21 * 1024 * 1024)], "large.apkg"));
     const response = await call("import/cards", form);
-    // Not a ZIP, but >20 MiB must reach format validation rather than a size rejection.
+    // Not a ZIP: the payload reaches format validation instead of a 413 size rejection.
     expect(response.status).toBe(400);
   });
   it("protects pages' transport including audio, rejects cross-origin writes and issues httpOnly cookies", async () => {
@@ -95,6 +82,7 @@ describe("API routes against memory SQLite and fakes", () => {
     form.set("file", new File(["word,meaning\nlearn,学习\nwalk,走路\nhelp,帮助"], "words.csv"));
     const imported = await call("import/cards", form);
     expect(await imported.json()).toMatchObject({ added: 3 });
+    expect(await (await call("decks")).json()).toEqual([{ deck: "test", n: 3, suspended: 0 }]);
     const queue = await (await call("review/queue")).json();
     const cardId = queue.new[0];
     expect((await call("review/rate", { cardId, rating: "invalid", durationMs: 0 })).status).toBe(
@@ -158,6 +146,6 @@ describe("API routes against memory SQLite and fakes", () => {
       });
     expect(deps.repos.events.listByType(deps.userId, "article_complete")).toHaveLength(1);
     const invalid = await call("import/cards", {}, { "content-length": String(65 * 1024 * 1024) });
-    expect(invalid.status).toBe(413);
+    expect(invalid.status).toBe(400);
   });
 });

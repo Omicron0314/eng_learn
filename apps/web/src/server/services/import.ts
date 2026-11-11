@@ -11,14 +11,16 @@ import {
 import type { CardBack, Repos } from "@eng-learn/db";
 import { AppError } from "@eng-learn/providers";
 import { z } from "zod";
-import { importFileMaxBytes, TEXT_IMPORT_MAX_BYTES } from "../../import-limits";
 import type { AppDeps } from "../deps";
-import { readApkgNotes } from "../import/apkg";
+import {
+  APKG_FRONT_FIELDS,
+  APKG_MEANING_FIELDS,
+  pickApkgField,
+  readApkgNotes,
+} from "../import/apkg";
 import { nonempty, validate } from "./shared";
 
 export function decodeImport(bytes: Uint8Array): string {
-  if (bytes.length > TEXT_IMPORT_MAX_BYTES)
-    throw new AppError("PAYLOAD_TOO_LARGE", "文件超过 20 MiB", 413);
   try {
     return decodeUtf8(bytes);
   } catch {
@@ -59,12 +61,6 @@ export async function importCards(
     z.object({ fileName: nonempty, bytes: z.instanceof(Uint8Array), deck: nonempty }),
     input,
   );
-  if (input.bytes.length > importFileMaxBytes(input.fileName))
-    throw new AppError(
-      "PAYLOAD_TOO_LARGE",
-      `文件超过 ${importFileMaxBytes(input.fileName) / (1024 * 1024)} MiB`,
-      413,
-    );
   const source = input.fileName.toLowerCase().endsWith(".apkg") ? "apkg" : "csv";
   if (source === "csv" && !/\.csv$/i.test(input.fileName))
     throw new AppError("VALIDATION_FAILED", "请选择 CSV 或 apkg 文件", 400);
@@ -88,14 +84,14 @@ export async function importCards(
         return;
       }
       seen.add(key);
-      // Fixed field mapping (作者决定): cards use the model's Front/Back fields by
-      // name; decks without field names fall back to the first/second field.
-      const names = note.fieldNames.map((n) => n.trim().toLowerCase());
-      const frontIdx = names.indexOf("front");
-      const backIdx = names.indexOf("back");
-      const front =
-        frontIdx >= 1 && note.fields[frontIdx]?.trim() ? note.fields[frontIdx] : undefined;
-      const meaning = (backIdx >= 0 ? note.fields[backIdx] : note.fields[1]) ?? "";
+      // Field mapping (作者决定): cards use the model's Front/Back fields by name;
+      // Chinese decks map 正面 / 释义 / 中文释义. Decks without field names fall
+      // back to the first/second field.
+      const front = pickApkgField(note.fields, note.fieldNames, APKG_FRONT_FIELDS);
+      const meaning =
+        pickApkgField(note.fields, note.fieldNames, APKG_MEANING_FIELDS) ??
+        note.fields[1]?.trim() ??
+        "";
       rows.push({ word, ...(front ? { front } : {}), meaning, line: i + 1 });
     });
     parsed = { rows, errors, duplicates };

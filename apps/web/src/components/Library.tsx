@@ -1,7 +1,7 @@
 "use client";
-import { useState } from "react";
-import { importFileMaxBytes } from "../import-limits";
-import type { listCards } from "../server/services";
+import { useRef, useState } from "react";
+import { deckNameFromFile } from "../deck-name";
+import type { listCards, listDecks } from "../server/services";
 import { Modal } from "./Modal";
 import {
   api,
@@ -16,6 +16,7 @@ import {
 } from "./ui";
 
 type Cards = ReturnType<typeof listCards>;
+type DeckRow = ReturnType<typeof listDecks>[number];
 export function Library() {
   const [query, setQuery] = useState("");
   const [deck, setDeck] = useState("");
@@ -24,17 +25,19 @@ export function Library() {
   const [offset, setOffset] = useState(0);
   const [filter, setFilter] = useState("");
   const { data, error, reload } = useLoad<Cards>(`cards?limit=50&offset=${offset}${filter}`);
-  const [type, setType] = useState("cards");
+  const decks = useLoad<DeckRow[]>("decks");
+  const [type, setType] = useState<"cards" | "wordlist">("cards");
+  const [kind, setKind] = useState<"baseline" | "study">("baseline");
+  const [target, setTarget] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [actionError, setError] = useState("");
   const [editing, setEditing] = useState<Cards["rows"][number]>();
-  async function removeDeck() {
-    const name = deck.trim();
-    if (!name) return;
+  async function removeDeck(name: string) {
     if (
       !window.confirm(
-        `确定删除牌组「${name}」中的全部词卡？已有复习记录的卡片将改为永久暂停，复习历史保留。`,
+        `确定删除词书「${name}」中的全部词卡？已有复习记录的卡片将改为永久暂停，复习历史保留。`,
       )
     )
       return;
@@ -50,20 +53,37 @@ export function Library() {
           (result.keptWithHistory ? `，${result.keptWithHistory} 张有复习记录，已改为暂停` : ""),
       );
       reload();
+      decks.reload();
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setBusy(false);
     }
   }
-  async function upload(form: FormData) {
+  function filterCards(nextDeck = deck) {
+    setOffset(0);
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    if (nextDeck) params.set("deck", nextDeck);
+    if (state) params.set("state", state);
+    if (suspended) params.set("suspended", suspended);
+    setFilter(`&${params}`);
+  }
+  async function upload(file: File) {
+    // Deck name defaults to the file name; picking an existing deck merges into it.
+    const name = target.trim() || deckNameFromFile(file.name);
+    const form = new FormData();
+    form.set("file", file);
+    if (type === "cards") form.set("deck", name);
+    else {
+      form.set("name", name);
+      form.set("kind", kind);
+      form.set("mergeIfExists", "true");
+    }
     setBusy(true);
     setError("");
     setMessage("");
     try {
-      const file = form.get("file");
-      if (file instanceof File && file.size > importFileMaxBytes(file.name))
-        throw new Error(`文件不能超过 ${importFileMaxBytes(file.name) / (1024 * 1024)} MiB`);
       const result = await api<{
         added?: number;
         skipped?: number;
@@ -76,9 +96,11 @@ export function Library() {
         phrases?: number;
       }>(type === "cards" ? "import/cards" : "import/wordlist", form);
       setMessage(
-        `导入完成 · ${type === "cards" ? `新增 ${result.added ?? 0} 张卡片` : `新增词条 ${result.wordsAdded ?? 0} · 新增卡片 ${result.cardsAdded ?? 0}`} · 解析 ${result.parsed ?? (result.added ?? 0) + (result.skipped ?? 0)} · 跳过 ${result.skipped ?? result.skippedLines?.length ?? 0} · 重复 ${result.duplicates}${result.phrases ? ` · 短语 ${result.phrases}` : ""}${result.errors?.length ? ` · 错误行：${result.errors.map((e) => `${e.line} (${e.reason})`).join("，")}` : ""}${result.skippedLines?.length ? ` · 跳过行：${result.skippedLines.map((e) => `${e.line} (${e.raw})`).join("，")}` : ""}`,
+        `导入完成 · 词书「${name}」 · ${type === "cards" ? `新增 ${result.added ?? 0} 张卡片` : `新增词条 ${result.wordsAdded ?? 0} · 新增卡片 ${result.cardsAdded ?? 0}`} · 解析 ${result.parsed ?? (result.added ?? 0) + (result.skipped ?? 0)} · 跳过 ${result.skipped ?? result.skippedLines?.length ?? 0} · 重复 ${result.duplicates}${result.phrases ? ` · 短语 ${result.phrases}` : ""}${result.errors?.length ? ` · 错误行：${result.errors.map((e) => `${e.line} (${e.reason})`).join("，")}` : ""}${result.skippedLines?.length ? ` · 跳过行：${result.skippedLines.map((e) => `${e.line} (${e.raw})`).join("，")}` : ""}`,
       );
+      setTarget("");
       reload();
+      decks.reload();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -119,58 +141,115 @@ export function Library() {
       </Heading>
       <section className="card">
         <h2>导入词表</h2>
-        <form action={upload}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!busy) fileInput.current?.click();
+          }}
+        >
           <div className="fields three">
             <label>
               导入类型
-              <select value={type} onChange={(e) => setType(e.target.value)}>
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value === "wordlist" ? "wordlist" : "cards")}
+              >
                 <option value="cards">词卡 · CSV / 兼容 .apkg</option>
                 <option value="wordlist">词表 · TXT / CSV</option>
               </select>
             </label>
-            <label>
-              {type === "cards" ? "牌组名称" : "词表名称"}
-              <input
-                name={type === "cards" ? "deck" : "name"}
-                required
-                maxLength={1000}
-                defaultValue="我的词书"
-              />
-            </label>
-            <label>
-              导入文件
-              <input
-                type="file"
-                name="file"
-                accept={type === "cards" ? ".csv,.apkg" : ".txt,.csv"}
-                required
-              />
-            </label>
             {type === "wordlist" && (
-              <>
-                <label>
-                  词表用途
-                  <select name="kind">
-                    <option value="baseline">基线（已知，不建卡）</option>
-                    <option value="study">学习词书（建卡）</option>
-                  </select>
-                </label>
-                <label className="check">
-                  <input type="checkbox" name="mergeIfExists" value="true" />
-                  合并同名词表
-                </label>
-              </>
+              <label>
+                词表用途
+                <select
+                  value={kind}
+                  onChange={(e) => setKind(e.target.value === "study" ? "study" : "baseline")}
+                >
+                  <option value="baseline">基线（已知，不建卡）</option>
+                  <option value="study">学习词书（建卡）</option>
+                </select>
+              </label>
             )}
+            <label>
+              导入到
+              <select value={target} onChange={(e) => setTarget(e.target.value)}>
+                <option value="">用文件名新建词书</option>
+                {decks.data?.map((row) => (
+                  <option key={row.deck} value={row.deck}>
+                    合并到「{row.deck}」
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
+          <input
+            ref={fileInput}
+            type="file"
+            hidden
+            accept={type === "cards" ? ".csv,.apkg" : ".txt,.csv"}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void upload(file);
+            }}
+          />
           <p className="muted">
-            仅本地导入，文本使用 UTF-8。CSV/TXT 最大 20 MiB；.apkg 最大 64 MiB。CSV
+            仅本地导入，文本使用 UTF-8。词书名默认取文件名，选择已有词书会合并进去。CSV
             列：word,meaning,example；新版 Anki 请用兼容旧版导出。
           </p>
           <button type="submit" disabled={busy}>
-            开始导入
+            {busy ? "导入中…" : "开始导入"}
           </button>
         </form>
         <Notice error={actionError} message={message} />
+      </section>
+      <section className="section">
+        <div className="section-title">
+          <h2>已有词书</h2>
+          <span className="muted">
+            {decks.data?.length ? `${decks.data.length} 个词书` : "按牌组汇总"}
+          </span>
+        </div>
+        <Notice error={decks.error} />
+        {!decks.data ? (
+          <p className="muted">正在载入词书…</p>
+        ) : decks.data.length ? (
+          <div className="card deck-list">
+            {decks.data.map((row) => (
+              <article className="deck-row" key={row.deck}>
+                <div>
+                  <strong>{row.deck}</strong>
+                  <p className="muted">
+                    {row.n} 张词卡
+                    {row.suspended ? ` · ${row.suspended} 张已暂停` : ""}
+                  </p>
+                </div>
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => {
+                      setDeck(row.deck);
+                      filterCards(row.deck);
+                    }}
+                  >
+                    查看词卡
+                  </button>
+                  <button
+                    type="button"
+                    className="text-button danger"
+                    disabled={busy}
+                    onClick={() => removeDeck(row.deck)}
+                  >
+                    删除词书
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <Empty>还没有词书。导入一份词表或 .apkg，就会出现在这里。</Empty>
+        )}
       </section>
       <section className="section">
         <div className="section-title">
@@ -181,13 +260,7 @@ export function Library() {
           className="filters"
           onSubmit={(e) => {
             e.preventDefault();
-            setOffset(0);
-            const params = new URLSearchParams();
-            if (query) params.set("q", query);
-            if (deck) params.set("deck", deck);
-            if (state) params.set("state", state);
-            if (suspended) params.set("suspended", suspended);
-            setFilter(`&${params}`);
+            filterCards();
           }}
         >
           <label>
@@ -224,11 +297,6 @@ export function Library() {
           <button type="submit" className="secondary">
             筛选
           </button>
-          {deck.trim() && (
-            <button type="button" className="text-button" disabled={busy} onClick={removeDeck}>
-              删除牌组「{deck.trim()}」
-            </button>
-          )}
         </form>
         <Notice error={error} />
         {!data ? (
