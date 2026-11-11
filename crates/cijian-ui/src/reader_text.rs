@@ -12,6 +12,20 @@ use gpui_kit::{
 use gpui_kit_material::color::ColorRole as cijian_ui_color;
 const READER_LINE_HEIGHT: f32 = 34.;
 
+/// Underline-style marker for the looked-up word. `range_to_bounds` reports
+/// window coordinates and `paint_quad` paints in the same space, so this must
+/// stay in window space: subtracting any container origin would move the
+/// marker away from the word and look like a stray box.
+fn lookup_marker(
+    origin: gpui_kit::Point<gpui_kit::Pixels>,
+    size: gpui_kit::Size<gpui_kit::Pixels>,
+) -> gpui_kit::Bounds<gpui_kit::Pixels> {
+    gpui_kit::Bounds {
+        origin: gpui_kit::point(origin.x, origin.y + size.height - px(3.)),
+        size: gpui_kit::size(size.width, px(3.)),
+    }
+}
+
 pub(super) struct ReaderText {
     key: (String, String),
     pub(super) input: Entity<TextareaState>,
@@ -275,24 +289,17 @@ impl Shell {
             .text_size(px(reader_size))
             .line_height(px(reader_line));
         if let Some((origin, size)) = highlight {
+            // `range_to_bounds` already reports window coordinates, and paint_quad
+            // paints there too, so this must not subtract the canvas origin:
+            // doing that shifted the marker away from the word by the whole text
+            // block offset, which showed up as a stray box.
             text = text.child(
                 gpui_kit::canvas(
                     |_, _, _| (),
-                    move |canvas_bounds, _, window, _| {
-                        let rect = gpui_kit::Bounds {
-                            origin: gpui_kit::point(
-                                origin.x - canvas_bounds.origin.x - px(3.),
-                                origin.y - canvas_bounds.origin.y - px(1.),
-                            ),
-                            size: gpui_kit::size(size.width + px(6.), size.height + px(2.)),
-                        };
-                        window.paint_quad(gpui_kit::quad(
-                            rect,
-                            gpui_kit::Corners::all(px(6.)),
-                            crate::design::c(cijian_ui_color::PRIMARY_CONTAINER),
-                            gpui_kit::Edges::all(px(2.)),
+                    move |_, _, window, _| {
+                        window.paint_quad(gpui_kit::fill(
+                            lookup_marker(origin, size),
                             crate::design::c(cijian_ui_color::PRIMARY),
-                            gpui_kit::BorderStyle::Solid,
                         ));
                     },
                 )

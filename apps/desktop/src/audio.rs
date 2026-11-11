@@ -146,11 +146,9 @@ impl DesktopBackend {
             .word_audio(&self.profile, lexeme, accent)?
             .ok_or(AppError::new(ErrorCode::NotFound, "该词暂无这个口音的发音"))?;
         let path = self.verified_blob_path(&asset.blob_key)?;
-        let (preferences, _) = self.store.device_preferences(&self.profile, &self.device)?;
-        self.audio.command(AudioCommand::PlayWord {
-            path,
-            rate: preferences.playback_rate,
-        })?;
+        // Word recordings always play at their recorded speed: the article rate
+        // belongs to whole-article listening, not to a single pronunciation.
+        self.audio.command(AudioCommand::PlayWord { path })?;
         Ok(Response::WordAudio {
             accent: asset.accent,
         })

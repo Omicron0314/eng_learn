@@ -5,6 +5,7 @@ pub mod files;
 pub mod kokoro;
 #[cfg(not(target_family = "wasm"))]
 pub mod speech;
+pub mod timestretch;
 use cijian_ports::{
     AppError, ErrorCode, Result,
     provider::{Secret, SecretPatch, SecretSource, SecretStore},

@@ -2067,56 +2067,16 @@ impl Shell {
             .into_any_element()
     }
 
-    fn reader_side_sources(
-        &self,
-        article: &cijian_ports::articles::Article,
-        cx: &mut Context<Self>,
-    ) -> gpui_kit::AnyElement {
+    /// Article facts beside the text. There is no audio-source picker any more:
+    /// whole-article speech is always the local model, chosen above the text.
+    fn reader_side_facts(&self, article: &cijian_ports::articles::Article) -> gpui_kit::AnyElement {
         let coverage = article.analysis.coverage.unwrap_or(0.);
-        let article_id = article.id.clone();
-        let mut pane = design::pane()
+        let mut article_card = design::pane()
             .w(px(384.))
             .flex_shrink_0()
             .h_full()
-            .p(px(20.))
-            .px(px(22.))
-            .pb(px(22.))
+            .p(px(22.))
             .gap(px(14.));
-        pane = pane
-            .child(
-                design::muted_text(14., 20.)
-                    .font_weight(gpui_kit::FontWeight(650.))
-                    .child("音频来源"),
-            )
-            .child(
-                div()
-                    .id("remote-audio")
-                    .role(gpui_kit::Role::Button)
-                    .aria_label("整篇音频")
-                    .cursor_pointer()
-                    .rounded(px(20.))
-                    .p(px(14.))
-                    .border_2()
-                    .border_color(design::c(ColorRole::PRIMARY))
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.play_remote_audio(article_id.clone(), cx);
-                    }))
-                    .child(design::dot(ColorRole::PRIMARY, 20.))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .child(design::text(15., 20., 650.).child("整篇音频"))
-                            .child(
-                                design::muted_text(12., 16.).child("本地生成全文后播放 · 自动缓存"),
-                            ),
-                    ),
-            );
-        let mut article_card = design::pane().flex_1().min_h_0().p(px(22.)).gap(px(14.));
         article_card = article_card
             .child(design::muted_text(14., 20.).child("这篇文章"))
             .child(
@@ -2192,8 +2152,7 @@ impl Shell {
                     ),
             );
         }
-        pane = pane.child(article_card);
-        pane.into_any_element()
+        article_card.into_any_element()
     }
 
     fn reader_lookup_panel(&self, cx: &mut Context<Self>) -> Option<gpui_kit::AnyElement> {
@@ -2512,7 +2471,7 @@ impl Shell {
         } else if self.lookup.is_some() && !listening {
             self.reader_lookup_panel(cx)
         } else if listening {
-            Some(self.reader_side_sources(&article, cx))
+            Some(self.reader_side_facts(&article))
         } else {
             None
         };

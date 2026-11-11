@@ -312,3 +312,10 @@ fn reader_preserves_source_selection_and_returns_focus_after_lookup(cx: &mut Tes
             .unwrap();
     }
 }
+
+#[test]
+fn lookup_marker_sits_on_the_word_in_window_space() {
+    let marker = lookup_marker(point(px(120.), px(600.)), size(px(48.), px(34.)));
+    assert_eq!(marker.origin, point(px(120.), px(631.)));
+    assert_eq!(marker.size, size(px(48.), px(3.)));
+}

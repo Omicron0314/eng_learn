@@ -1,6 +1,7 @@
 //! Owns the output stream and the only active sink on one dedicated thread.
 #[cfg(test)]
 mod tests;
+use crate::timestretch::stretch;
 use cijian_domain::audio::{Playback, PlaybackState};
 use cijian_ports::{AppError, ErrorCode, Result};
 use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source};
@@ -14,9 +15,9 @@ pub enum AudioCommand {
         rate: f64,
     },
     /// Plays one short word recording on its own sink so article state is untouched.
+    /// Words play at their recorded speed; only whole articles follow the rate.
     PlayWord {
         path: PathBuf,
-        rate: f64,
     },
     Pause,
     Resume,
@@ -37,6 +38,17 @@ pub struct NativeAudio {
     sender: Option<mpsc::Sender<(AudioCommand, mpsc::SyncSender<Result<Playback>>)>>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
+/// Decodes one file and wraps it so `rate` changes speed without moving the pitch.
+fn open_stretched(
+    path: &std::path::Path,
+    rate: f64,
+) -> Result<(impl Source<Item = f32> + use<>, Option<f64>)> {
+    let file = std::fs::File::open(path).map_err(|_| failure("音频缓存文件不可用"))?;
+    let decoder =
+        Decoder::try_from(BufReader::new(file)).map_err(|_| failure("音频格式无法解码"))?;
+    let total = decoder.total_duration().map(|total| total.as_secs_f64());
+    Ok((stretch(decoder, rate), total))
+}
 fn failure(message: &str) -> AppError {
     AppError::new(ErrorCode::UnsupportedCapability, message)
 }
@@ -54,13 +66,18 @@ impl NativeAudio {
             let mut sink: Option<Sink> = None;
             let mut word: Option<Sink> = None;
             let mut state = Playback::default();
+            // Path and original (unscaled) duration of the article in the sink.
+            let mut current: Option<(PathBuf, Option<f64>)> = None;
+            // Offset of the current sink start in the played timeline, so a
+            // rebuilt sink still reports the real position.
+            let mut position_base = 0.;
             let mut completions = std::collections::VecDeque::new();
             let mut completion_error = None;
             loop {
                 if let Some(sink) = &sink
                     && state.state == PlaybackState::Playing
                 {
-                    state.position = sink.get_pos().as_secs_f64();
+                    state.position = position_base + sink.get_pos().as_secs_f64();
                     if sink.empty()
                         && let Some(session) = state.session.clone()
                     {
@@ -104,22 +121,20 @@ impl NativeAudio {
                                         .map_err(|_| failure("没有可用的音频输出设备"))?,
                                 );
                             }
-                            let file = std::fs::File::open(path)
-                                .map_err(|_| failure("音频缓存文件不可用"))?;
-                            let decoder = Decoder::try_from(BufReader::new(file))
-                                .map_err(|_| failure("音频格式无法解码"))?;
-                            let duration = decoder.total_duration().map(|d| d.as_secs_f64());
+                            let (source, original) = open_stretched(&path, rate)?;
                             let next =
                                 Sink::connect_new(stream.as_ref().expect("opened output").mixer());
                             state.set_rate(rate).map_err(|e| failure(&e.to_string()))?;
-                            next.set_speed(rate as f32);
-                            next.append(decoder);
+                            let duration = original.map(|total| total / rate);
+                            position_base = 0.;
+                            current = Some((path, original));
+                            next.append(source);
                             state
                                 .start(session, article, duration)
                                 .map_err(|e| failure(&e.to_string()))?;
                             sink = Some(next);
                         }
-                        AudioCommand::PlayWord { path, rate } => {
+                        AudioCommand::PlayWord { path } => {
                             if let Some(old) = word.take() {
                                 old.stop();
                             }
@@ -135,7 +150,6 @@ impl NativeAudio {
                                 .map_err(|_| failure("单词发音无法解码"))?;
                             let next =
                                 Sink::connect_new(stream.as_ref().expect("opened output").mixer());
-                            next.set_speed(rate as f32);
                             next.append(decoder);
                             word = Some(next);
                         }
@@ -152,6 +166,8 @@ impl NativeAudio {
                             }
                         }
                         AudioCommand::Stop => {
+                            current = None;
+                            position_base = 0.;
                             if let Some(sink) = sink.take() {
                                 sink.stop();
                             }
@@ -173,12 +189,36 @@ impl NativeAudio {
                                     .map_err(|_| failure("音频位置超出范围"))?,
                             )
                             .map_err(|_| failure("当前音频不支持定位"))?;
+                            position_base = 0.;
                             state = next;
                         }
                         AudioCommand::Rate(rate) => {
+                            // Resampling would move the pitch, so rebuild the stretched
+                            // source at the new rate and keep the same place in the file.
+                            let previous = state.rate;
                             state.set_rate(rate).map_err(|e| failure(&e.to_string()))?;
-                            if let Some(sink) = &sink {
-                                sink.set_speed(rate as f32);
+                            if let Some((path, original)) = current.clone() {
+                                let played = state.position * previous / rate;
+                                let (mut source, _) = open_stretched(&path, rate)?;
+                                if played > 0. {
+                                    source
+                                        .try_seek(Duration::from_secs_f64(played))
+                                        .map_err(|_| failure("当前音频不支持定位"))?;
+                                }
+                                if let Some(old) = sink.take() {
+                                    old.stop();
+                                }
+                                let next = Sink::connect_new(
+                                    stream.as_ref().expect("opened output").mixer(),
+                                );
+                                next.append(source);
+                                if state.state == PlaybackState::Paused {
+                                    next.pause();
+                                }
+                                position_base = played;
+                                state.position = played;
+                                state.duration = original.map(|total| total / rate);
+                                sink = Some(next);
                             }
                         }
                         AudioCommand::Status => {
