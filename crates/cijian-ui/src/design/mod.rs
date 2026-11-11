@@ -422,10 +422,39 @@ fn wave_offset(x: f32, shift: f32) -> f32 {
 /// the same shape as the review header in the design board. `shift` slides the
 /// wave along the track in dp and is decoration only: it never changes how much
 /// progress is shown or where the track ends.
-pub(crate) fn wave_progress(fraction: f32, shift: f32) -> gpui_kit::Div {
+/// Colours of a wave progress track. The default pair is the plain surface
+/// role pair; surfaces that already sit on a container colour pass their own so
+/// the track keeps contrast on that background.
+#[derive(Clone, Copy)]
+pub(crate) struct WaveColors {
+    done: Hsla,
+    idle: Hsla,
+}
+
+impl WaveColors {
+    /// Primary fill over the secondary container track.
+    pub(crate) fn roles() -> Self {
+        Self {
+            done: c(ColorRole::PRIMARY),
+            idle: c(ColorRole::SECONDARY_CONTAINER),
+        }
+    }
+
+    /// The listening card sits on `PRIMARY_CONTAINER`, where a secondary
+    /// container track would disappear, so the idle span is the on-container
+    /// colour at low opacity.
+    pub(crate) fn on_primary_container() -> Self {
+        Self {
+            done: c(ColorRole::PRIMARY),
+            idle: alpha(c(ColorRole::ON_PRIMARY_CONTAINER), 0.28),
+        }
+    }
+}
+
+pub(crate) fn wave_progress(fraction: f32, shift: f32, colors: WaveColors) -> gpui_kit::Div {
     let fraction = fraction.clamp(0., 1.);
-    let done = c(ColorRole::PRIMARY);
-    let idle = c(ColorRole::SECONDARY_CONTAINER);
+    let done = colors.done;
+    let idle = colors.idle;
     div().relative().w_full().h(px(WAVE_HEIGHT)).child(
         gpui_kit::canvas(
             move |_, _, _| (),
@@ -496,9 +525,10 @@ pub(crate) fn wave_progress_moving(
     id: impl Into<gpui_kit::ElementId>,
     fraction: f32,
     moving: bool,
+    colors: WaveColors,
 ) -> gpui_kit::AnyElement {
     if !moving {
-        return wave_progress(fraction, 0.).into_any_element();
+        return wave_progress(fraction, 0., colors).into_any_element();
     }
     div()
         .w_full()
@@ -507,7 +537,7 @@ pub(crate) fn wave_progress_moving(
             gpui_kit::Animation::new(WAVE_CYCLE)
                 .repeat()
                 .with_max_fps(WAVE_MAX_FPS),
-            move |_, delta| wave_progress(fraction, delta * WAVE_WAVELENGTH),
+            move |_, delta| wave_progress(fraction, delta * WAVE_WAVELENGTH, colors),
         )
         .into_any_element()
 }

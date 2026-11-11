@@ -1744,6 +1744,7 @@ impl Shell {
                     "article-audio-wave",
                     fraction,
                     playing,
+                    design::WaveColors::roles(),
                 )))
                 .child(
                     design::mono(12., 16., 400.)
@@ -1800,42 +1801,15 @@ impl Shell {
         let cached = self.audio_ready || self.playback.session.is_some();
         let position = self.playback.position;
         let duration = self.playback.duration.unwrap_or(0.);
-        let mut wave = div().flex().items_center().gap(px(2.)).h(px(56.)).flex_1();
-        for index in 0..56 {
-            let height = 8. + ((index * 37 + 13) % 40) as f32;
-            wave = wave.child(
-                div()
-                    .w(px(5.))
-                    .h(px(height))
-                    .rounded(px(2.5))
-                    .bg(design::c(
-                        if (index as f64 / 56.)
-                            < if duration > 0. {
-                                position / duration
-                            } else {
-                                0.
-                            }
-                        {
-                            ColorRole::PRIMARY
-                        } else {
-                            ColorRole::ON_PRIMARY_CONTAINER
-                        },
-                    ))
-                    .opacity(
-                        if (index as f64 / 56.)
-                            < if duration > 0. {
-                                position / duration
-                            } else {
-                                0.
-                            }
-                        {
-                            1.
-                        } else {
-                            0.28
-                        },
-                    ),
-            );
-        }
+        let fraction = if duration > 0. {
+            (position / duration).clamp(0., 1.) as f32
+        } else {
+            0.
+        };
+        let playing = matches!(
+            self.playback.state,
+            cijian_domain::audio::PlaybackState::Playing
+        );
         let mut card = design::shaped(
             [36., 36., 36., 36.],
             design::c(ColorRole::PRIMARY_CONTAINER),
@@ -1914,7 +1888,14 @@ impl Shell {
                         .flex_col()
                         .flex_1()
                         .gap(px(8.))
-                        .child(wave)
+                        .child(div().w_full().h(px(56.)).flex().items_center().child(
+                            design::wave_progress_moving(
+                                "listening-wave",
+                                fraction,
+                                playing,
+                                design::WaveColors::on_primary_container(),
+                            ),
+                        ))
                         .child(design::mono(12., 16., 400.).child(format!(
                             "{} / {}",
                             {
@@ -3375,7 +3356,12 @@ impl Shell {
         let fraction = (self.review_done as f32 / total).clamp(0., 1.);
         // The wave keeps flowing while cards remain and holds still once the
         // queue is finished, so a done session costs no frames.
-        design::wave_progress_moving("review-progress-wave", fraction, !self.review.is_empty())
+        design::wave_progress_moving(
+            "review-progress-wave",
+            fraction,
+            !self.review.is_empty(),
+            design::WaveColors::roles(),
+        )
     }
 
     pub(super) fn review_body(&mut self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
