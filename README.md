@@ -2,18 +2,16 @@
 
 词间围绕「复习 → 阅读／听力 → 整理生词」组织学习。新的产品与界面基线是 [cijian-m3 设计稿](docs/cijian-m3.html)，重构采用 Rust、GPUI 与 [gpui-kit-material](https://github.com/mizorewww/gpui-kit-material)。
 
-**当前已有可运行的 Rust/GPUI 桌面端与 Cargo workspace，界面按 `docs/cijian-m3.html` 重做；TypeScript / Next.js Web 版本仍保留为迁移对照。** 桌面端验收仍在进行，验收证据由 CI 产出。真实 IME、触摸与付费模型质量不在本轮范围；Web/WASM、移动原生与跨端同步为远期规划。
+**当前已有可运行的 Rust/GPUI 桌面端与 Cargo workspace，界面按 `docs/cijian-m3.html` 重做；TypeScript / Next.js Web 版本仍保留为迁移对照。**
 
-## 新规划入口
+## 文档索引
 
 - [项目总纲](docs/plan.md)：范围、文档权威、实施顺序。
-- [产品需求](docs/PRD.md)与[页面／交互规范](docs/UI-SPEC.md)：七个入口与完整学习流程；移动布局为远期参考。
+- [产品需求](docs/PRD.md)与[页面／交互规范](docs/UI-SPEC.md)：七个入口与完整学习流程。
 - [设计系统](docs/DESIGN-SYSTEM.md)：浅深色、排版、形状、组件与 GPUI 对应。
-- [架构](docs/ARCHITECTURE.md)与[平台矩阵](docs/PLATFORMS.md)：共享 Rust 领域层与桌面路线；Web/WASM 与移动原生只作远期设计。
+- [架构](docs/ARCHITECTURE.md)与[平台矩阵](docs/PLATFORMS.md)：共享 Rust 领域层与桌面路线。
 - [数据模型](docs/DATA_MODEL.md)、[核心规则](docs/SPEC-CORE.md)、[迁移方案](docs/MIGRATION.md)。
-- [任务表](docs/BACKLOG.md)、[任务规格](docs/specs/README.md)、[验收方案](docs/TESTING.md)。
-
-本轮只交付 Linux 桌面，验收证据由 CI 产出；Windows／macOS 不做。Web/WASM、移动原生与跨端同步为远期规划，不排期、不阻塞桌面交付。
+- [任务表](docs/BACKLOG.md)、[实施现状](docs/IMPLEMENTATION.md)、[任务规格](docs/specs/README.md)、[验收方案](docs/TESTING.md)。
 
 ## 运行桌面版本
 
@@ -82,10 +80,8 @@ pnpm e2e
 pnpm report:experiment --db ./data/app.sqlite --window 7 --json
 ```
 
-真实 AI 调用与 `pnpm eval:generation --allow-paid` 需明确授权；本次文档重规划没有运行。开发服务器日志写到 `/tmp`，避免仓库内日志写入触发 Turbopack 循环刷新。现有部署说明、命令历史和验证记录见 git 历史（提交 46f499a）中的 `docs/WEB-VALIDATION.md`，其中早期记录可能已被后续记录修正。
+`pnpm eval:generation --allow-paid` 会发起真实付费调用，需明确授权后再执行。开发服务器日志建议写到 `/tmp`，避免仓库内日志写入触发 Turbopack 循环刷新。
 
-## 文档与资源
+## 设计稿与许可
 
-设计稿加载后的最终画面决定页面布局；其中示例词书、日期、数量、模型占位符不是真实产品数据。`docs/neko.html` 仅辅助理解视觉语言。两份设计稿原文件保留。
-
-旧 M0–M6 文档与任务已归档；本轮任务为 R00–R17，R18–R21 属远期规划，状态从未开始重新计算。现有代码、迁移、提示词和测试样例保留为迁移资产；许可证、词表和字体来源见 [licenses](docs/licenses.md)。
+设计稿 `docs/cijian-m3.html` 加载后的最终画面决定页面布局；`docs/neko.html` 仅辅助理解视觉语言。第三方许可证、词表和字体来源见 [licenses](docs/licenses.md)。

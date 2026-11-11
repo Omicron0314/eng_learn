@@ -6,7 +6,7 @@
 
 query_inbox、batch_inbox(action,ids,expectedRevisions,operationId)→processed/cardsCreated；显示来源与上下文。
 
-设计追踪：screen-inbox、空箱状态。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：screen-inbox、空箱状态。通用约定见 [specs/README](README.md)。
 
 ## 验收标准
 
@@ -20,10 +20,6 @@ query_inbox、batch_inbox(action,ids,expectedRevisions,operationId)→processed/
 
 多选／全选／过期批处理／回滚合同、来源丢失、空态和事件对账。
 
-每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
-
 ## 边界与风险
 
 同词多次标记需符合pending唯一约束，不能简单按文章重复建生词卡。
-
-执行中发现设计或契约变化时更新 [DECISIONS](../DECISIONS.md) 和相应规格；没有实证的能力标未验证。

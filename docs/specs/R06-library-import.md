@@ -6,7 +6,7 @@
 
 import_words(file, kind, target, operationId)→ImportReport；query_cards(filter,page)、edit_card、suspend_card、delete_book(previewRevision)。
 
-设计追踪：screen-library、screen-import、screen-import-result、删除确认。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：screen-library、screen-import、screen-import-result、删除确认。通用约定见 [specs/README](README.md)。
 
 ## 验收标准
 
@@ -21,10 +21,6 @@ import_words(file, kind, target, operationId)→ImportReport；query_cards(filte
 
 原创CSV/APKG种子、字段回归、事务故障、1万词列表、导入与编辑UI链路。
 
-每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
-
 ## 边界与风险
 
 不含完整Anki调度／媒体导入，不分发用户词书；虚拟化不能导致编辑错行。
-
-执行中发现设计或契约变化时更新 [DECISIONS](../DECISIONS.md) 和相应规格；没有实证的能力标未验证。

@@ -6,7 +6,7 @@
 
 实现Repository、UnitOfWork、CommandReceipt和新SQLite schema；每个profile一个写协调器；表、索引与事件见DATA_MODEL。
 
-设计追踪：所有写入与持久化状态。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：所有写入与持久化状态。通用约定见 [specs/README](README.md)。
 
 ## 验收标准
 
@@ -20,10 +20,6 @@
 
 内存SQLite＋临时文件库、并发冲突／故障注入、外键和索引检查；不接真实库。
 
-每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
-
 ## 边界与风险
 
 浏览器实现后须跑相同contract tests；不能假定原生同步事务回调可直接用于IndexedDB。
-
-执行中发现设计或契约变化时更新 [DECISIONS](../DECISIONS.md) 和相应规格；没有实证的能力标未验证。

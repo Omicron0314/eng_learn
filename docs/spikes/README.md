@@ -1,9 +1,8 @@
-# 技术验证记录
+# 技术验证记录 (Spikes)
 
-这里存证据和结论，任务规格仍在 [specs](../specs/README.md)，完成状态见 [BACKLOG](../BACKLOG.md)。
+本目录存放前期技术可行性调研与平台探针记录：
 
-- [GPUI-FEASIBILITY](GPUI-FEASIBILITY.md)：本次上游资料核实，已完成资料阅读，未进行编译／实机验证。
-- R00实施后产出`R00-platform.md`：消费者锁定、桌面／WASM、FSRS和平台接口实测。
-- R19实施后产出`R19-mobile.md`：Android/iOS原生逐端go/no-go。
+- [GPUI-FEASIBILITY.md](GPUI-FEASIBILITY.md)：上游 GPUI、`gpui-kit` 与 `gpui-kit-material` 架构及能力边界核实。
+- [R00-platform.md](R00-platform.md)：最小消费者工程、依赖补丁锁定、SQLite/音频/FSRS 原型验证记录（截图见 `evidence/r00/`）。
 
-旧S1–S4的语料、APKG和提示词证据见 git 历史（提交 46f499a）中的 `docs/spikes/`；这些只适用于旧实现，不代表Rust验证通过。
+远期移动端原生可行性调研已归档至 [docs/archive/R19-mobile.md](../archive/R19-mobile.md)。

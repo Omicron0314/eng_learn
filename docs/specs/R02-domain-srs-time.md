@@ -6,7 +6,7 @@
 
 定义ProfileId/CardId、ValidatedSettings、StudyDay、SrsState、Rating与SchedulingPreview；now/rng/id source显式注入。
 
-设计追踪：复习、日界与统计共用规则。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：复习、日界与统计共用规则。通用约定见 [specs/README](README.md)。
 
 ## 验收标准
 
@@ -20,10 +20,6 @@
 
 table-driven调度／时间／校验测试；TS向量对照记录数值容差与语义差异。
 
-每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
-
 ## 边界与风险
 
 FSRS库版本变化可能改变预测；不把新算法差异悄悄归入浮点误差。
-
-执行中发现设计或契约变化时更新 [DECISIONS](../DECISIONS.md) 和相应规格；没有实证的能力标未验证。

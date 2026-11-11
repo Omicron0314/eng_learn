@@ -6,7 +6,7 @@
 
 建立ARCHITECTURE中的workspace与cijian-desktop空壳；入口装配ports，domain无平台依赖。输出可构建的模块骨架、Cargo.lock、CI与准确开发命令。
 
-设计追踪：通用工程基础。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：通用工程基础。通用约定见 [specs/README](README.md)。
 
 ## 验收标准
 
@@ -19,10 +19,6 @@
 
 干净检出构建、cargo metadata依赖检查、最小边界测试；CI 未实际运行时标待验。作业清单见 [TESTING](../TESTING.md)。
 
-每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
-
 ## 边界与风险
 
 不要以脚手架通过代替业务或平台验收；不在本任务迁移旧数据。
-
-执行中发现设计或契约变化时更新 [DECISIONS](../DECISIONS.md) 和相应规格；没有实证的能力标未验证。

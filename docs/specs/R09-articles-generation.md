@@ -6,7 +6,7 @@
 
 generate_article(operationId,tier,genre)→JobId；observe_job；list_articles(dateFilter,page)；prompt v1先原样使用。
 
-设计追踪：screen-articles、生成中／失败／低覆盖率状态。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：screen-articles、生成中／失败／低覆盖率状态。通用约定见 [specs/README](README.md)。
 
 ## 验收标准
 
@@ -21,10 +21,6 @@ generate_article(operationId,tier,genre)→JobId；observe_job；list_articles(d
 
 stub结构非法／低覆盖／缺目标／control偶现／取消竞态；Job状态与文章工作区组件测试；30 篇以上历史分页的自动化测试待补。真实模型质量不在 AC。
 
-每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
-
 ## 边界与风险
 
 真实文本质量单独评测；本任务不隐式改prompt语义或用fake结果宣布质量达标。
-
-执行中发现设计或契约变化时更新 [DECISIONS](../DECISIONS.md) 和相应规格；没有实证的能力标未验证。

@@ -6,7 +6,7 @@
 
 逐系统建立最小GPUI/Material原型或记录无法建立的具体原因；结论写docs/spikes/R19-mobile.md。
 
-设计追踪：screen-mobile以及平台生命周期。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：screen-mobile以及平台生命周期。通用约定见 [specs/README](../specs/README.md)；未列出的后续功能不在本任务扩展。
 
 ## 验收标准
 

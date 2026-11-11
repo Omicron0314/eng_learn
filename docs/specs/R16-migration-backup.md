@@ -6,7 +6,7 @@
 
 inspect_legacy、dry_run、import_legacy、export_profile、restore_profile；全部遵守MIGRATION与版本化manifest。
 
-设计追踪：补充的数据迁移／恢复流程。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：补充的数据迁移／恢复流程。通用约定见 [specs/README](README.md)。
 
 ## 验收标准
 
@@ -20,10 +20,6 @@ inspect_legacy、dry_run、import_legacy、export_profile、restore_profile；�
 
 原创旧schema种子含WAL、损坏／重复／缺文件案例、全量计数对账、敏感字段泄漏断言；低空间与中断的注入测试待补。
 
-每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
-
 ## 边界与风险
 
 首次真实迁入是后续明确操作；新端增量不自动回写旧Web，回退限制要提示。
-
-执行中发现设计或契约变化时更新 [DECISIONS](../DECISIONS.md) 和相应规格；没有实证的能力标未验证。

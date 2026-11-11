@@ -6,7 +6,7 @@
 
 仅对R19通过的平台建立原生入口和适配器，共用domain/app/ui与备份格式。
 
-设计追踪：screen-mobile与其余功能的紧凑适配。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：screen-mobile与其余功能的紧凑适配。通用约定见 [specs/README](../specs/README.md)；未列出的后续功能不在本任务扩展。
 
 ## 验收标准
 

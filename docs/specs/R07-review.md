@@ -6,7 +6,7 @@
 
 query_queue、preview_card、reveal_card、rate_card(operationId,expectedRevision,rating,duration)；UI正面／背面／提交／等待／完成状态。
 
-设计追踪：screen-review、screen-mobile复习、完成态。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：screen-review、screen-mobile复习、完成态。通用约定见 [specs/README](README.md)。
 
 ## 验收标准
 
@@ -20,10 +20,6 @@ query_queue、preview_card、reveal_card、rate_card(operationId,expectedRevisio
 
 队列合同、双提交、缺释义失败、100词/20新词闭环、键盘组件测试；Xvfb 巡检截图由 CI 产出。
 
-每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
-
 ## 边界与风险
 
 画板间隔是例子；学习步骤采用 Anki 默认 1m/10m、relearn 10m、毕业 1d/4d（见 D53），复习卡间隔来自 Anki ease（见 D57），不硬编码分钟／天数。
-
-执行中发现设计或契约变化时更新 [DECISIONS](../DECISIONS.md) 和相应规格；没有实证的能力标未验证。

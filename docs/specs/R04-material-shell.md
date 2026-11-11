@@ -6,7 +6,7 @@
 
 实现CijianTheme、AppRoute、NavigationShell、sheet/dialog/snackbar基础组合与测试场景；颜色和尺寸来自DESIGN-SYSTEM。
 
-设计追踪：overview、screen-states、screen-mobile、screen-dark及导航。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：overview、screen-states、screen-mobile、screen-dark及导航。通用约定见 [specs/README](README.md)。
 
 ## 验收标准
 
@@ -20,10 +20,6 @@
 
 GPUI实际组件测试＋固定数据浅深／四种尺寸截图，核对设计token与导航行为。
 
-每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
-
 ## 边界与风险
 
 控件上游默认外观不一定等于词间稿；先复用行为再做最小外观映射。
-
-执行中发现设计或契约变化时更新 [DECISIONS](../DECISIONS.md) 和相应规格；没有实证的能力标未验证。

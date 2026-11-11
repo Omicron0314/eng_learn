@@ -6,7 +6,7 @@
 
 tokenize_with_ranges、analyze_text(body,known,targets)、build_known_set(now)、select_targets(seed)；输出UTF-8区间、分析版本与诊断。
 
-设计追踪：文章难度、覆盖率与目标词来源。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：文章难度、覆盖率与目标词来源。通用约定见 [specs/README](README.md)。
 
 ## 验收标准
 
@@ -19,10 +19,6 @@ tokenize_with_ranges、analyze_text(body,known,targets)、build_known_set(now)�
 
 复用原创lemma/wordlist/analyzer fixtures，增加Unicode／时间边界向量；记录词形准确性缺口。
 
-每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
-
 ## 边界与风险
 
 词形启发式与专名识别有误差；覆盖率是辅助指标，不冒充完整语言能力测量。
-
-执行中发现设计或契约变化时更新 [DECISIONS](../DECISIONS.md) 和相应规格；没有实证的能力标未验证。

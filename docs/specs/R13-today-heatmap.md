@@ -6,7 +6,7 @@
 
 query_today(now)→queue、metrics、books、inboxPreview、weeklyActivity、heatmap；使用统一统计规则。
 
-设计追踪：screen-today、screen-dark、screen-mobile首页。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：screen-today、screen-dark、screen-mobile首页。通用约定见 [specs/README](README.md)。
 
 ## 验收标准
 
@@ -20,10 +20,6 @@ query_today(now)→queue、metrics、books、inboxPreview、weeklyActivity、hea
 
 固定日界／DST／未来格数据、跨视图对账、浅深1440与412截图、空库流。
 
-每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
-
 ## 边界与风险
 
 audio_play不代表听完；旧数据没有completion时应少计而不编造。
-
-执行中发现设计或契约变化时更新 [DECISIONS](../DECISIONS.md) 和相应规格；没有实证的能力标未验证。

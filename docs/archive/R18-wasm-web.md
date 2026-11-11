@@ -6,7 +6,7 @@
 
 cijian-wasm入口、BrowserRepository/BlobStore/Transport/SecretStore/Audio适配、URL/history与离线资源。
 
-设计追踪：全部功能的响应式布局、screen-mobile。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：全部功能的响应式布局、screen-mobile。通用约定见 [specs/README](../specs/README.md)；未列出的后续功能不在本任务扩展。
 
 ## 验收标准
 

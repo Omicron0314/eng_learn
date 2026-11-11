@@ -1,64 +1,44 @@
 # 词间重构总纲
 
-版本：GPUI 实施 v1 · 2026-11-02（2026-11-05 范围修订：Web／移动端／同步降为远期规划）。用户已在规划后授权实际重构；当前进入 Rust 实现与验证阶段，不操作真实用户学习数据。实施证据见 [IMPLEMENTATION](IMPLEMENTATION.md)。
+当前基线为 Rust + GPUI + `gpui-kit-material` 桌面端实现，界面与交互以 [cijian-m3.html](cijian-m3.html) 执行末尾脚本后的画板为准（[neko.html](neko.html) 仅作视觉参考）。当前实施进度与待收口项见 [IMPLEMENTATION](IMPLEMENTATION.md)。
 
-## 1. 权威与阅读方式
+## 1. 文档导航与职责
 
-本文件是当前规划入口。**用户最新要求 > `cijian-m3.html` 执行脚本后的设计 > 当前有效规格 > 历史实现与归档**。旧文件中的“已定 Web/PWA 优先”“原生端暂不做”等决定已被本次要求覆盖；2026-11-05 起 Web／移动端／同步又降为远期，见第 6 节与 [D47](DECISIONS.md)。
+**权威优先级**：用户最新要求 > `cijian-m3.html` 执行脚本后的设计 > 当前规格文档 > 旧版 Web 实现与历史归档。
 
-设计稿：[cijian-m3.html](cijian-m3.html)。辅助视觉参考：[neko.html](neko.html)。设计稿是静态示例，目录、缩放器、示例数据和画板跳转不是产品功能。必须执行末尾脚本后理解页面：首页的生成器／故事列表被移入独立文章页，阅读详情导航也改归文章。
-
-| 文档 | 负责的事实 |
+| 文档 | 负责内容 |
 | --- | --- |
-| [PRD](PRD.md) | 用户、目标、范围与产品边界 |
-| [UI-SPEC](UI-SPEC.md) | 页面、交互、状态、设计稿映射 |
-| [DESIGN-SYSTEM](DESIGN-SYSTEM.md) | 视觉 token、排版、组件、无障碍 |
-| [SPEC-CORE](SPEC-CORE.md) | 学习算法、默认值、计数与业务语义 |
-| [ARCHITECTURE](ARCHITECTURE.md) | Rust 模块、接口、依赖方向 |
-| [PLATFORMS](PLATFORMS.md) | 平台能力、降级和验证门槛 |
-| [DATA_MODEL](DATA_MODEL.md) | 持久化、事件、关系与约束 |
-| [MIGRATION](MIGRATION.md) | 旧资产复用、数据升级、回退 |
-| [BACKLOG](BACKLOG.md) / [specs](specs/README.md) | 任务顺序、验收与完成状态 |
-| [TESTING](TESTING.md) | 测试分层、视觉及平台验收 |
-| [ROADMAP](ROADMAP.md) | 里程碑、交付边界与后续方向 |
-| [DECISIONS](DECISIONS.md) | 新旧冲突与默认方案的理由 |
-| [licenses](licenses.md) | 数据、字体、图标与依赖来源 |
-| [DOCS-VALIDATION](DOCS-VALIDATION.md) | 本次文档重规划的实际检查与未执行范围 |
+| [PRD](PRD.md) | 产品目标、核心学习体验与功能边界 |
+| [UI-SPEC](UI-SPEC.md) | 页面布局、交互状态与设计画板映射 |
+| [DESIGN-SYSTEM](DESIGN-SYSTEM.md) | 色彩角色、排版尺寸、组件映射与可访问性 |
+| [SPEC-CORE](SPEC-CORE.md) | 默认配置、Anki/FSRS 调度、选词生成与统计口径（唯一维护处） |
+| [ARCHITECTURE](ARCHITECTURE.md) | Rust Workspace 分层、模块职责与应用接口 |
+| [DATA_MODEL](DATA_MODEL.md) | SQLite 表结构、事件目录与事务边界 |
+| [PLATFORMS](PLATFORMS.md) | 平台支持范围、能力接口与降级策略 |
+| [MIGRATION](MIGRATION.md) | 旧版 Web 数据迁入、逻辑备份与恢复方案 |
+| [BACKLOG](BACKLOG.md) / [specs](specs/README.md) | 任务依赖、状态（唯一维护处）与分项规格 |
+| [IMPLEMENTATION](IMPLEMENTATION.md) | 当前已落地实现与待补代码缺口 |
+| [TESTING](TESTING.md) | 测试分层、本机与 CI 分工、验收命令 |
+| [ROADMAP](ROADMAP.md) | 阶段划分与远期规划 |
+| [DECISIONS](DECISIONS.md) | 关键产品与技术架构决策（Dxx） |
+| [licenses](licenses.md) | 字体、词表与第三方资源许可 |
 
-文档不互相复制完整表格：默认值只在 SPEC-CORE 维护，任务状态只在 BACKLOG 维护，平台支持只在 PLATFORMS 维护。发现冲突先按上述优先级修订，不让旧归档重新成为实施要求。
+## 2. 产品与学习链路
 
-## 2. 产品方向
+词间是以本地数据为中心的英语学习桌面应用。主导航固定为：**今日、复习、文章、词库、生词箱、统计**；设置独立置于导航底部（窄屏置于顶部）。
 
-词间是以本地学习数据为中心、当前以桌面为主的英语学习 App。入口顺序固定为：**今日、复习、文章、词库、生词箱、统计**；设置独立置于桌面导航底部，紧凑布局放顶部入口。
+完整学习闭环：
+1. **词库导入**：导入自有词书（CSV/TXT/APKG）或含双口音录音的词包（`.cijianpack`）。
+2. **间隔复习**：按 Anki 步进与 ease 调度复习词卡，FSRS 评估记忆可提取率，支持英/美发音点播与换卡自动朗读。
+3. **文章生成与阅读/先听**：在文章工作区按目标词与已知词集合生成短文，支持语境查词、朗读与难度/不自然句反馈。
+4. **生词整理与统计**：在生词箱批量加入复习或忽略，在今日与统计页查看热力图、覆盖率趋势与对照实验。
 
-Web/WASM、移动原生与跨端同步只作为远期规划保留，不进入本轮范围（[D47](DECISIONS.md)）。
+数据保存在本地设备；在线 LLM/TTS 为可配置能力，未配置 AI 时不阻塞离线导入与复习。
 
-学习链路：导入自有词书 → Anki 式间隔复习 → 用相关词生成文章 → 阅读或先听 → 点词标记 → 生词箱整理 → 后续复习与效果观察。首页展示今天可做的事；生成控制集中在文章页。数据优先留在设备，在线 AI 是可配置能力，缺少配置不阻塞离线复习。
+## 3. 技术栈与交付边界（统一说明）
 
-## 3. 技术方向
-
-- 共享 Rust 领域规则与应用服务，GPUI 渲染，gpui-kit-material 提供 M3 Expressive 外观；通过 gpui-kit facade 使用匹配的引擎类型。
-- 桌面采用本地 SQLite、文件音频缓存、系统凭据存储与平台音频适配器；本轮只在 Linux 交付，Windows／macOS 不做（[D54](DECISIONS.md)）。
-- 远期（不排期）：Web/WASM 复用可编译的领域与 UI 层，另做浏览器存储、音频、凭据和网络能力适配；不把桌面文件系统代码直接编译到浏览器。
-- 远期（不排期）：Android / iOS 原生先验证 GPUI 的渲染、输入、存储、音频与生命周期；验证不足时不擅自改换 UI 框架。
-- 远期（不排期）：多端各设备独立数据，可导出／恢复；同步有独立的后续协议任务。
-
-上游已有桌面和 WASM 实现材料，但 Material 库自述为预发布且尚无组件通过独立生产验收。资料见 [GPUI-FEASIBILITY](spikes/GPUI-FEASIBILITY.md)，本地消费者的实际构建及运行证据见 [R00 平台记录](spikes/R00-platform.md)。未验证设备和交互仍不算通过。
-
-## 4. 保留与替代
-
-保留：Anki 式间隔调度与 FSRS 记忆评估、确定性已知词集合、覆盖率分析、目标词／对照词、CSV/TXT/基础 APKG、语境释义缓存、阅读／听力分别反馈、事件审计、音频缓存与调用前配额预留、配置驱动 AI、已有原创 fixtures。
-
-替代：Next.js 作为主产品架构、服务端专属密钥假设、浏览器作为所有端唯一免费朗读方案、首页生成器、正文遮挡式桌面点词弹层、旧 M0–M6 的任务状态。`prompts/*.v1.md` 是运行时资产，本轮不改其语义；未来变更有版本和评测。
-
-## 5. 实施顺序与完成定义
-
-先做 R00 平台／依赖验证，再建立 workspace、领域模型与存储、设计系统与壳层；随后导入／复习、分析／生成、阅读／整理／音频、首页／统计／设置，最后迁移工具与桌面验收（R17）。Web/WASM、移动原生与同步不排入本轮顺序，仅在远期重新启动。详见 BACKLOG 的依赖图。
-
-每项完成需要：规格对应的 AC 在 CI 全绿；涉及 UI 的截图由 CI 产出；涉及数据的事务、事件、重启与失败证据可在干净环境重现。旧 Web 的测试通过数不能抵作 Rust 的验收。真实 AI 质量、主观听感与长期留存不在本轮 AC。
-
-## 6. 当前交付边界
-
-用户已授权执行全部重构，并要求主代理直接实施、按原子提交交付。根 Cargo 工程、独立 Rust 迁移与业务代码已开始实现；各项完成程度以 BACKLOG 和实施证据为准。**当前交付范围仅 Linux 桌面；Windows／macOS、Web/WASM、移动原生与跨端同步都不在本轮，验收证据以 CI 为准。** 原先的 Web/provider 工作区及暂存改动保留，不纳入 Rust 功能提交。真实付费评测、私人数据迁入、签名和发布没有由此获得授权。
-
-旧规划见 git 历史（提交 46f499a）；规划轮的文档验收与后续实现证据分开记录。历史命令和证据不保证仍适用。
+- **技术栈**：纯 Rust 领域层（`cijian-domain`）+ 应用服务（`cijian-app`）+ SQLite 存储（`cijian-storage`）+ GPUI / `gpui-kit-material` 界面（`cijian-ui`）。
+- **当前交付范围**：仅交付 **Linux 桌面端**（任务 `R00–R17`、`R22`）。
+- **远期搁置（不排期、不阻塞交付）**：Web/WASM（`R18`）、Android/iOS 原生（`R19–R20`）、跨端同步（`R21`），相关草案已归档至 `docs/archive/`（见 [D47](DECISIONS.md)）。
+- **不在验收范围内**：Windows/macOS、真实中文 IME、触摸、读屏、人工听感、付费真实模型生成质量（见 [D54](DECISIONS.md)）。
+- **验证原则**：本机运行用于秒级开发反馈，干净环境的 Linux CI 用于产出最终验收证据（见 [D56](DECISIONS.md)）。`prompts/*.v1.md` 为运行时资产，未经版本化评测不改动语义。

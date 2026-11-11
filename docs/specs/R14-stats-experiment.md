@@ -6,7 +6,7 @@
 
 query_stats(range,page)、experiment_report(window=7d,version)；结果有sample/excluded/missing与nullable rate。
 
-设计追踪：screen-stats。通用约定见 [specs/README](README.md)；未列出的后续功能不在本任务扩展。
+设计追踪：screen-stats。通用约定见 [specs/README](README.md)。
 
 ## 验收标准
 
@@ -20,10 +20,6 @@ query_stats(range,page)、experiment_report(window=7d,version)；结果有sample
 
 种子日志手算对账、CLI或同服务报告快照、空组／窗口边界／重复词观察、图表可访问数值；50 条以上已学词分页的自动化测试待补。
 
-每条AC在交付记录中对应 CI 运行结果；本机用同一条命令复现用于排错，不单独作为验收证据（[D56](../DECISIONS.md)）。变更业务写入时同时断言events；失败路径检查不产生部分成功。
-
 ## 边界与风险
 
 生成入组不等于实际阅读曝光；本轮保留观察性实验，解释混杂。
-
-执行中发现设计或契约变化时更新 [DECISIONS](../DECISIONS.md) 和相应规格；没有实证的能力标未验证。
