@@ -20,6 +20,9 @@
 | Material Symbols | Material README称Apache-2.0，独立图标repo锁revision | 保留原notice，不从网页随意提取未确认资源 |
 | 中文字体fallback | 使用系统 Noto Sans CJK SC／Noto Sans SC fallback | 不复制系统字体；未随二进制分发中文字体 |
 | 桌面图标 | `apps/desktop/assets/cijian.svg` 的“词”字形取自本机 Noto Sans CJK SC Bold；`apps/desktop/assets/Noto-OFL.txt` 为对应 OFL 全文 | 仅嵌入单字轮廓；不宣称 Noto 其它字形或字体文件已打包 |
+| Kokoro-82M 权重（`model_q8f16.onnx`、`af_heart.bin`、`bf_emma.bin`）及其 config | hexgrad/Kokoro-82M 与 onnx-community/Kokoro-82M-v1.0-ONNX 声明 Apache-2.0 | **不随桌面二进制分发**；由 `tools/install-kokoro.py` 按固定 SHA-256 下载到用户 `~/.local/share/cijian/kokoro`，安装时校验哈希 |
+| espeak-ng 语音数据与运行时（经 `espeakng-loader`／`phonemizer` 装入本机 venv） | espeak-ng 为 GPLv3；仅作为用户本机工具使用 | 不链接进应用二进制、不随包分发；如需随包分发必须重新评估许可 |
+| `kokoro-onnx`、`onnxruntime`、`numpy`、`phonemizer` 等 Python 依赖 | 各自 PyPI 页面许可 | 仅由安装脚本装进用户本机 venv，版本固定在 `tools/kokoro-requirements.txt` |
 
 上述为公开文档查阅结果，不是全依赖许可证审计。R00/R01锁定后生成依赖与资源清单，发布打包时核对实际包含的字体／图标／音频素材。设计稿只有部分字体字符子集，不应直接当作全语言字体包。
 

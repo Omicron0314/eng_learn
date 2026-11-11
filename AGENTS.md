@@ -42,6 +42,11 @@ pnpm report:experiment
 paid-call authorization. Never run it as routine validation. Keep dev logs
 outside the repository to avoid Turbopack refresh loops.
 
+Desktop whole-article speech is local: `python3 tools/install-kokoro.py` installs the
+pinned Kokoro q8f16 assets and venv under `$XDG_DATA_HOME/cijian/kokoro`. No remote
+TTS endpoint, key or character quota exists any more. The model is not distributed
+with the binary, so CI only covers the missing-model path.
+
 Rust commands are available through the root workspace and pinned toolchain.
 Use `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 and `cargo test --workspace`. GPUI tests need the test-support feature where
@@ -53,7 +58,8 @@ its outstanding platform checks remain acceptance limitations.
 - Domain is pure Rust: no GPUI, DB, network, filesystem, platform clock or RNG.
   Inject time, randomness and identifiers.
 - UI calls application commands/queries. Repositories own persistence;
-  provider adapters own LLM/TTS calls; platform adapters own device facilities.
+  provider adapters own LLM calls; platform adapters own device facilities and the
+  local speech worker; whole-article speech never leaves the machine.
 - Use the gpui-kit facade for matching GPUI types; do not mix engine versions.
   Material supplies visuals/motion and Kit supplies behavior/focus/accessibility.
 - Validate all boundary input and model output. Deserialization is not validation.

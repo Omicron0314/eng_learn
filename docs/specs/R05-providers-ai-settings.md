@@ -4,14 +4,14 @@
 
 ## 目标与范围
 
-LLMProvider、TTSProvider、HttpTransport、SecretStore；ProviderConfigView只给脱敏状态，密钥patch为Keep/Replace/Clear。
+LLMProvider、HttpTransport、SecretStore；ProviderConfigView只给脱敏状态，密钥patch为Keep/Replace/Clear。整篇朗读改由本地 Kokoro 承担（D64），设置页不再暴露 TTS 端点／密钥。
 
 设计追踪：screen-settings。通用约定见 [specs/README](README.md)。
 
 ## 验收标准
 
 - **AC1**：无配置可启动并使用本地功能；相关在线动作返回CONFIG_MISSING，不自动切fake。
-- **AC2**：LLM/TTS输入显式校验，模型／端点／voice无代码默认；保存后新请求生效，在途请求保留快照。
+- **AC2**：LLM 输入显式校验，模型／端点无代码默认；保存后新请求生效，在途请求保留快照。
 - **AC3**：保存／撤销不发测试调用；密钥留空保持、显式清除、替换可区分；key不可出现在日志／事件／备份。
 - **AC4**：每个底层LLM调用含失败有日志，SDK自动重试关闭，结构非法最多修复一次。
 - **AC5**：系统凭据不可用时会话内模式明确，UI展示真实配置来源；test doubles只在测试依赖。

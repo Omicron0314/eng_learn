@@ -19,7 +19,7 @@
 | controlRatio | 0.20 | 0–0.5 |
 | generationMaxRetries | 2 | 整数 0–3，仅覆盖率重写次数 |
 | lookupMode | markOnly | markOnly / autoAdd |
-| ttsDailyCharLimit | 20000 | 整数 0–200000；0 禁新合成 |
+| ttsDailyCharLimit | 20000 | 旧库兼容字段：整数 0–200000；朗读改为本地模型后不再参与额度判定，也不再出现在设置页 |
 | timezone / dayStartHour | Asia/Shanghai / 4 | IANA 时区；整数 0–23 |
 | playbackRate | 1.0 | 0.75 / 0.9 / 1.0 / 1.1 / 1.25；设备偏好 |
 | theme | system | system / light / dark；设备偏好 |

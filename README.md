@@ -23,7 +23,13 @@ cargo run -p cijian-desktop
 cargo run -p cijian-desktop -- --data-dir /tmp/cijian-dev
 ```
 
-复习卡的单词发音随词书提供。导入纯词表后需要补齐英／美录音时，先关闭应用再运行维护工具（它会访问有道词典音频与条目接口，不占远程 TTS 额度）：
+整篇朗读使用本机 Kokoro-82M（`model_q8f16.onnx`），不联网、不计字符额度。首次使用前安装到用户目录（需要 `uv`，脚本按固定 SHA-256 校验权重并自检英／美两个音色）：
+
+```sh
+python3 tools/install-kokoro.py
+```
+
+未安装时点击播放会提示模型不可用，其余离线功能照常。复习卡的单词发音随词书提供。导入纯词表后需要补齐英／美录音时，先关闭应用再运行维护工具（它会访问有道词典音频与条目接口）：
 
 ```sh
 # 补齐已有词卡的英/美录音
@@ -57,7 +63,7 @@ tools/build-desktop.sh --release  # release，交付前检查
 tools/package-desktop.sh
 ```
 
-学习数据默认写入 `$XDG_DATA_HOME/org.cijian.cijian`；桌面包未签名、无自动更新，真实模型和 TTS 凭据不随包分发。
+学习数据默认写入 `$XDG_DATA_HOME/org.cijian.cijian`；桌面包未签名、无自动更新，本地朗读模型与凭据都不随包分发。
 
 ## 运行现有 Web 版本
 
@@ -69,7 +75,7 @@ pnpm dev
 # http://localhost:3000
 ```
 
-在设置页配置自己的 OpenAI 兼容 LLM / TTS。配置缺失时相关在线操作报错，已有词卡复习等本地操作可用。产品不提供 fake / 演示 provider。数据库默认 `data/app.sqlite`，音频默认 `data/blobs`；不要提交数据库或密钥。现有 Web 的密钥存储与原生目标方案不同，见[迁移方案](docs/MIGRATION.md)。
+在设置页配置自己的 OpenAI 兼容 LLM。整篇朗读由本机 Kokoro 模型承担，先运行 `python3 tools/install-kokoro.py`。配置缺失时相关在线操作报错，已有词卡复习等本地操作可用。产品不提供 fake / 演示 provider。数据库默认 `data/app.sqlite`，音频默认 `data/blobs`；不要提交数据库或密钥。现有 Web 的密钥存储与原生目标方案不同，见[迁移方案](docs/MIGRATION.md)。
 
 ```sh
 pnpm lint

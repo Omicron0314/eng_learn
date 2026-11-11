@@ -24,11 +24,11 @@ flowchart TD
 ```text
 crates/
   cijian-domain/          # FSRS封装、时间、词形／覆盖率、选词、统计纯规则
-  cijian-ports/           # Repository/UoW、LLM/TTS、Blob、Audio、Secret等契约
+  cijian-ports/           # Repository/UoW、LLM、Blob、Audio、Secret等契约
   cijian-app/             # 用例、验证、事件、任务与幂等
   cijian-storage/         # 原生SQLite、迁移、备份导入／导出
   cijian-providers/       # OpenAI兼容协议、结构输出和调用日志适配
-  cijian-platform/        # 原生文件选择、音频、系统朗读、凭据、生命周期
+  cijian-platform/        # 原生文件选择、音频、本地语音合成、凭据、生命周期
   cijian-ui/              # 主题、导航、页面、应用控件；依赖gpui-kit facade
   cijian-testing/         # test-only doubles与固定时钟、随机源
 apps/
@@ -51,9 +51,9 @@ R00 确认 crate 名与边界可编译后固定，不能把上图当已有模块
 | 调度 | Rust FSRS 实现 | 选型、参数／版本转换与跨语言向量在 R00/R02 验证 |
 | 原生存储 | SQLite | SQL迁移、仓储、事务；具体 Rust driver 在 R00 验证后锁定 |
 | 边界校验 | Rust typed DTO＋显式约束 | serde 反序列化不代替范围／跨字段校验 |
-| 网络 | OpenAI兼容 LLM/TTS，transport 接口 | 桌面 transport 本轮实现；WASM transport 属远期 R18；超时、取消、计数统一 |
+| 网络 | OpenAI兼容 LLM，transport 接口 | 桌面 transport 本轮实现；WASM transport 属远期 R18；超时、取消、计数统一 |
 | 异步 | GPUI task 与后台 executor 桥接 | 阻塞 SQLite／APKG 放后台，UI 线程只更新视图 |
-| 音频 | AudioPlayer＋SystemSpeech ports | 缓存播放、seek／rate capability；浏览器走媒体API |
+| 音频 | AudioPlayer port＋本地 Kokoro 工作进程 | 全文合成后内容寻址缓存、seek／rate capability；模型为可选的用户本机安装（D64） |
 | 凭据 | SecretStore | 桌面优先系统凭据存储；浏览器默认会话内，无假定等价安全保证 |
 | 校验工具 | cargo fmt/clippy/test＋UI harness | 命令在 workspace 存在后启用；旧TS检查继续用于旧代码 |
 

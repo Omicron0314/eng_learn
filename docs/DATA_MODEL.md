@@ -74,13 +74,13 @@ payload 中只放必要业务标识与摘要，不放凭据。导入与备份可
 2. 导入：先解析校验 → 建词／书／成员／卡 → import报告 → event／receipt，数据库错误整批回滚。
 3. 标记／批量：marks、inbox、cards、events、receipt同事务，不能先显示成功再补事件。
 4. 生成：job先记录，网络与日志独立；文章、targets、generate event、成功receipt最后原子提交。
-5. 音频：reservations＋audio_reserve先独立原子提交；网络和blob IO在事务外；asset、link、audio_generate与成功receipt再提交。
+5. 音频：blob写入在事务外并原子改名；`audio_assets`、`article_audio_links`、`audio_generate` 与 receipt 同事务提交；本地合成不写 `audio_reservations`（该表仅为旧库兼容保留）。
 
 llm_calls、缓存、可恢复的job进度、读取位置及投影更新无需递归生成事件；业务状态变更必须有事件。事件本身不可更新。存储层按 operation_id 识别既有预留，避免重启后二次扣同一请求额度。
 
 ## 索引、兼容与恢复
 
-原生至少索引 cards(profile,archived,suspended,due)、review_logs(profile,time)/card、events(profile,type,time)、articles(profile,created)、inbox(profile,status)、book_entries(book,lexeme)、audio_reservations(profile,time)。大列表用分页／游标，统计投影可重建，不能成为唯一数据。
+原生至少索引 cards(profile,archived,suspended,due)、review_logs(profile,time)/card、events(profile,type,time)、articles(profile,created)、inbox(profile,status)、book_entries(book,lexeme)、audio_assets(profile,cache_key)。大列表用分页／游标，统计投影可重建，不能成为唯一数据。
 
 secret_ref 指向系统凭据；无法保存时只允许会话内配置并说明重启后失效。学习备份默认排除密钥、可重建释义缓存与未完成job；音频可选且每blob有checksum。文章、评分、标记和inbox不能因清缓存丢失。
 
