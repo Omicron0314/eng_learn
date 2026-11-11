@@ -5,7 +5,7 @@ use crate::timestretch::stretch;
 use cijian_domain::audio::{Playback, PlaybackState};
 use cijian_ports::{AppError, ErrorCode, Result};
 use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source};
-use std::{io::BufReader, path::PathBuf, sync::mpsc, time::Duration};
+use std::{path::PathBuf, sync::mpsc, time::Duration};
 #[derive(Debug, Clone)]
 pub enum AudioCommand {
     Play {
@@ -43,9 +43,11 @@ fn open_stretched(
     path: &std::path::Path,
     rate: f64,
 ) -> Result<(impl Source<Item = f32> + use<>, Option<f64>)> {
+    // `Decoder::try_from(BufReader<File>)` marks the stream non-seekable, so
+    // symphonia answers every seek with `RandomAccessNotSupported` and 后退 5 秒
+    // fails. The `File` conversion passes the byte length and enables seeking.
     let file = std::fs::File::open(path).map_err(|_| failure("音频缓存文件不可用"))?;
-    let decoder =
-        Decoder::try_from(BufReader::new(file)).map_err(|_| failure("音频格式无法解码"))?;
+    let decoder = Decoder::try_from(file).map_err(|_| failure("音频格式无法解码"))?;
     let total = decoder.total_duration().map(|total| total.as_secs_f64());
     Ok((stretch(decoder, rate), total))
 }
@@ -152,8 +154,8 @@ impl NativeAudio {
                             }
                             let file = std::fs::File::open(path)
                                 .map_err(|_| failure("单词发音文件不可用"))?;
-                            let decoder = Decoder::try_from(BufReader::new(file))
-                                .map_err(|_| failure("单词发音无法解码"))?;
+                            let decoder =
+                                Decoder::try_from(file).map_err(|_| failure("单词发音无法解码"))?;
                             let next =
                                 Sink::connect_new(stream.as_ref().expect("opened output").mixer());
                             next.append(decoder);
@@ -189,7 +191,14 @@ impl NativeAudio {
                             let sink =
                                 sink.as_ref().ok_or_else(|| failure("没有正在播放的音频"))?;
                             let mut next = state.clone();
-                            next.seek(position).map_err(|e| failure(&e.to_string()))?;
+                            next.seek(position).map_err(|_| {
+                                // A field name is not a user-facing message.
+                                failure(if position > next.duration.unwrap_or(f64::MAX) {
+                                    "音频位置超出范围"
+                                } else {
+                                    "音频位置无效"
+                                })
+                            })?;
                             sink.try_seek(
                                 Duration::try_from_secs_f64(next.position / state.rate)
                                     .map_err(|_| failure("音频位置超出范围"))?,

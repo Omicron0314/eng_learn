@@ -167,3 +167,29 @@ fn changing_rate_keeps_the_position_and_words_play_at_one_speed() {
     assert_eq!(after_word.session, stopped.session);
     assert_eq!(after_word.rate, stopped.rate);
 }
+
+/// Regression: decoding through `BufReader<File>` made every seek fail with
+/// `RandomAccessNotSupported`, so 后退 5 秒 reported "音频不支持定位".
+#[test]
+fn opened_article_audio_seeks_forward_backward_and_to_the_start() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tone.wav");
+    std::fs::write(&path, wave(32000)).unwrap();
+    for rate in [1., 1.25, 0.75, 2.] {
+        let (mut source, total) = open_stretched(&path, rate).unwrap();
+        assert_eq!(total, Some(2.));
+        for _ in 0..1000 {
+            source.next();
+        }
+        source
+            .try_seek(Duration::from_secs_f64(1.5 / rate))
+            .unwrap_or_else(|error| panic!("{rate}x forward seek failed: {error:?}"));
+        for _ in 0..1000 {
+            source.next();
+        }
+        source
+            .try_seek(Duration::ZERO)
+            .unwrap_or_else(|error| panic!("{rate}x backward seek failed: {error:?}"));
+        assert!(source.next().is_some());
+    }
+}
