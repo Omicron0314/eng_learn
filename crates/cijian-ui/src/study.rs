@@ -3756,7 +3756,9 @@ impl Shell {
                 .flex()
                 .gap(px(4.))
                 .mt(px(22.));
-            for (index, (label, english, rating, bg, fg, radii, weight)) in [
+            // All four buttons share one width: the design's wider 1.25 Good
+            // button read as a layout glitch next to the other three.
+            for (index, (label, english, rating, bg, fg, radii, font_size)) in [
                 (
                     "重来",
                     "Again",
@@ -3764,7 +3766,7 @@ impl Shell {
                     ColorRole::ERROR_CONTAINER,
                     ColorRole::ON_ERROR_CONTAINER,
                     [32., 10., 10., 32.],
-                    (19., 1.),
+                    19.,
                 ),
                 (
                     "困难",
@@ -3773,7 +3775,7 @@ impl Shell {
                     ColorRole::WARNING_BG,
                     ColorRole::ON_WARNING,
                     [10., 10., 10., 10.],
-                    (19., 1.),
+                    19.,
                 ),
                 (
                     "记得",
@@ -3782,7 +3784,7 @@ impl Shell {
                     ColorRole::PRIMARY,
                     ColorRole::ON_PRIMARY,
                     [10., 10., 10., 10.],
-                    (21., 1.25),
+                    21.,
                 ),
                 (
                     "轻松",
@@ -3791,7 +3793,7 @@ impl Shell {
                     ColorRole::SUCCESS_BG,
                     ColorRole::ON_SUCCESS,
                     [10., 32., 32., 10.],
-                    (19., 1.),
+                    19.,
                 ),
             ]
             .into_iter()
@@ -3807,8 +3809,9 @@ impl Shell {
                     .role(gpui_kit::Role::Button)
                     .aria_label(format!("{label} · {english}"))
                     .cursor_pointer()
-                    .flex_grow(weight.1)
+                    .flex_grow(1.)
                     .flex_basis(px(0.))
+                    .min_w_0()
                     .h(px(100.))
                     .text_color(design::c(fg))
                     .when(self.loading, |button| button.opacity(0.38))
@@ -3854,9 +3857,18 @@ impl Shell {
                                     .justify_center()
                                     .child((index + 1).to_string()),
                             )
-                            .child(design::text(weight.0, 26., 700.).child(label)),
+                            .child(design::text(font_size, 26., 700.).child(label)),
                     )
-                    .child(design::text(13., 18., 400.).child(format!("{english} · {interval}")));
+                    .child(
+                        design::text(
+                            if self.compact { 12. } else { 13. },
+                            if self.compact { 16. } else { 18. },
+                            400.,
+                        )
+                        .id(gpui_kit::SharedString::from(format!("rating-meta-{index}")))
+                        .test_support()
+                        .child(format!("{english} · {interval}")),
+                    );
                 ratings = ratings.child(button);
             }
             pane = pane.child(ratings);

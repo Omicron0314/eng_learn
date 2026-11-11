@@ -80,6 +80,7 @@ fn long_meaning_wraps_without_overlapping_the_source_or_ratings(cx: &mut TestApp
                             let mut shell = Shell::new();
                             shell.navigation.navigate(Route::Review);
                             shell.revealed = true;
+                            shell.intervals = Some([60_000, 480_000, 259_200_000, 777_600_000]);
                             shell.review = vec![cijian_ports::library::CardView {
                                 id: "long-card".into(),
                                 lexeme_id: "long-lexeme".into(),
@@ -116,6 +117,28 @@ fn long_meaning_wraps_without_overlapping_the_source_or_ratings(cx: &mut TestApp
                 rating.origin.y + rating.size.height <= px(height),
                 "the rating row must stay inside {width}x{height}: {rating:?}"
             );
+            let widths = (0..4)
+                .map(|index| {
+                    window
+                        .find(format!("rating-{index}"))
+                        .bounds()
+                        .size
+                        .width
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                widths.windows(2).all(|pair| pair[0] == pair[1]),
+                "all four rating buttons share one width at {width}x{height}: {widths:?}"
+            );
+            for index in 0..4 {
+                let button = window.find(format!("rating-{index}")).bounds();
+                let meta = window.find(format!("rating-meta-{index}")).bounds();
+                assert!(
+                    meta.origin.x >= button.origin.x
+                        && meta.origin.x + meta.size.width <= button.origin.x + button.size.width,
+                    "rating {index} meta text must stay inside its button at {width}x{height}: button={button:?} meta={meta:?}"
+                );
+            }
         })
         .unwrap();
     }
