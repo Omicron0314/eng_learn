@@ -3818,7 +3818,9 @@ impl Shell {
                         }
                     }));
                 if index == 2 {
-                    button = button.bg(design::c(bg));
+                    // The middle "记得" button paints its own background, so
+                    // it needs the same 10px radius as the shaped corners.
+                    button = button.bg(design::c(bg)).rounded(px(10.));
                 } else {
                     button =
                         button.child(design::shaped(radii, design::c(bg)).absolute().inset_0());

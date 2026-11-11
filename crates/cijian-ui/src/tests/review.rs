@@ -688,3 +688,86 @@ fn auto_play_preference_off_keeps_new_cards_silent(cx: &mut TestAppContext) {
         "auto-play off must not read a new card aloud"
     );
 }
+
+#[gpui_kit::test]
+fn space_reveals_after_reopening_review_from_the_nav(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_kit_material::init(cx);
+        init_component_theme(theme::scheme(false), 1., cx);
+        cx.set_reduce_motion(true);
+    });
+    let bus = std::sync::Arc::new(QueueBus(std::sync::Mutex::new((
+        vec![vec![review_card("first", "overlook", true)]],
+        Vec::new(),
+    ))));
+    let (handle, shell) = cx
+        .update(|cx| {
+            let bus = bus.clone();
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui_kit::WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1000.), px(900.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                move |_, cx| {
+                    cx.new(|_| {
+                        let mut shell = Shell::new();
+                        shell.backend = Some(bus);
+                        shell.review_auto_play = false;
+                        shell
+                    })
+                },
+            )
+        })
+        .unwrap();
+    let review_nav = || {
+        gpui_kit::ElementId::NamedChild(
+            gpui_kit::ElementId::from("main-nav").into(),
+            "review".into(),
+        )
+    };
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        window.click(review_nav(), cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        window.press("space", cx);
+        assert!(
+            shell.read_with(cx, |shell, _| shell.revealed),
+            "space reveals the card"
+        );
+        window.render_frame(cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    assert!(
+        shell.read_with(cx, |shell, _| shell.revealed),
+        "space must not re-trigger navigation and reload the card"
+    );
+    // The same focused nav item must not swallow the rating keys either.
+    cx.update_window(handle, |_, window, cx| window.press("3", cx))
+        .unwrap();
+    cx.run_until_parked();
+    assert!(
+        bus.0
+            .lock()
+            .unwrap()
+            .1
+            .iter()
+            .any(|command| matches!(command, Command::Rate { .. })),
+        "a number key rates the revealed card instead of activating the nav"
+    );
+    assert_eq!(
+        shell.read_with(cx, |shell, _| shell.navigation.current().clone()),
+        Route::Review
+    );
+}

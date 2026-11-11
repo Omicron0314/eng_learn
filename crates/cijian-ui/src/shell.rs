@@ -892,6 +892,23 @@ impl Shell {
         let background = div()
             .capture_key_down(
                 cx.listener(|this, event: &gpui_kit::KeyDownEvent, window, cx| {
+                    // Review shortcuts run before the focused control, so a
+                    // focused nav button cannot treat Space as its own click
+                    // and reload the queue underneath a revealed card. Both
+                    // actions guard `loading` themselves.
+                    if this.navigation.current() == &Route::Review {
+                        match event.keystroke.key.as_str() {
+                            "space" => {
+                                this.reveal_card(cx);
+                                cx.stop_propagation();
+                            }
+                            "1" => this.rate(Rating::Again, cx),
+                            "2" => this.rate(Rating::Hard, cx),
+                            "3" => this.rate(Rating::Good, cx),
+                            "4" => this.rate(Rating::Easy, cx),
+                            _ => {}
+                        }
+                    }
                     if event.keystroke.key == "escape"
                         && !this.compact_reader
                         && !this.reader_flags.open
@@ -920,7 +937,6 @@ impl Shell {
                         if !focus.is_focused(window) {
                             window.focus(&focus, cx);
                             cx.stop_propagation();
-                            return;
                         }
                     }
                     if this.navigation.current().section() == "library"
@@ -930,20 +946,6 @@ impl Shell {
                     {
                         this.close_card_editor(cx);
                         cx.stop_propagation();
-                        return;
-                    }
-                    if this.navigation.current() == &Route::Review && !this.loading {
-                        match event.keystroke.key.as_str() {
-                            "space" if !this.revealed => {
-                                this.reveal_card(cx);
-                                cx.stop_propagation();
-                            }
-                            "1" => this.rate(Rating::Again, cx),
-                            "2" => this.rate(Rating::Hard, cx),
-                            "3" => this.rate(Rating::Good, cx),
-                            "4" => this.rate(Rating::Easy, cx),
-                            _ => {}
-                        }
                     }
                 }),
             )
