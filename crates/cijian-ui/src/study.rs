@@ -2047,11 +2047,29 @@ impl Shell {
                     .px(px(16.))
                     .py(px(8.))
                     .rounded(px(16.))
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    // The listening card is PRIMARY_CONTAINER, so a selected chip
+                    // painted in the same role looked like the unselected one:
+                    // always use a filled primary chip with inverted text.
                     .bg(design::c(if selected {
-                        ColorRole::PRIMARY_CONTAINER
+                        ColorRole::PRIMARY
                     } else {
-                        ColorRole::SURFACE_CONTAINER
+                        ColorRole::SURFACE_CONTAINER_LOWEST
                     }))
+                    .text_color(design::c(if selected {
+                        ColorRole::ON_PRIMARY
+                    } else {
+                        ColorRole::ON_SURFACE_VARIANT
+                    }))
+                    .when(!selected, |cell| {
+                        cell.border_1()
+                            .border_color(design::c(ColorRole::OUTLINE_VARIANT))
+                    })
+                    .when(selected, |cell| {
+                        cell.child(design::icon_role(Icon::Check, 14., ColorRole::ON_PRIMARY))
+                    })
                     .when(self.loading, |cell| cell.opacity(0.38))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if this.loading || this.review_accent == accent {

@@ -9,22 +9,7 @@ use gpui_kit::{
     base::input::{BufferPoint, DisplayPoint, TextareaState},
     component::input::Textarea,
 };
-use gpui_kit_material::color::ColorRole as cijian_ui_color;
 const READER_LINE_HEIGHT: f32 = 34.;
-
-/// Underline-style marker for the looked-up word. `range_to_bounds` reports
-/// window coordinates and `paint_quad` paints in the same space, so this must
-/// stay in window space: subtracting any container origin would move the
-/// marker away from the word and look like a stray box.
-fn lookup_marker(
-    origin: gpui_kit::Point<gpui_kit::Pixels>,
-    size: gpui_kit::Size<gpui_kit::Pixels>,
-) -> gpui_kit::Bounds<gpui_kit::Pixels> {
-    gpui_kit::Bounds {
-        origin: gpui_kit::point(origin.x, origin.y + size.height - px(3.)),
-        size: gpui_kit::size(size.width, px(3.)),
-    }
-}
 
 pub(super) struct ReaderText {
     key: (String, String),
@@ -273,40 +258,14 @@ impl Shell {
             return div().into_any_element();
         };
         let weak = cx.entity().downgrade();
-        let highlight = self.lookup.as_ref().and_then(|(context, _, _)| {
-            reader
-                .input
-                .read(cx)
-                .range_to_bounds(&(context.selection.range.start..context.selection.range.end))
-                .map(|bounds| (bounds.origin, bounds.size))
-        });
         let (reader_size, reader_line) = if self.compact { (18., 30.) } else { (20., 34.) };
-        let mut text = div()
+        let text = div()
             .id("reader-text")
             .test_support()
             .relative()
             .w_full()
             .text_size(px(reader_size))
             .line_height(px(reader_line));
-        if let Some((origin, size)) = highlight {
-            // `range_to_bounds` already reports window coordinates, and paint_quad
-            // paints there too, so this must not subtract the canvas origin:
-            // doing that shifted the marker away from the word by the whole text
-            // block offset, which showed up as a stray box.
-            text = text.child(
-                gpui_kit::canvas(
-                    |_, _, _| (),
-                    move |_, _, window, _| {
-                        window.paint_quad(gpui_kit::fill(
-                            lookup_marker(origin, size),
-                            crate::design::c(cijian_ui_color::PRIMARY),
-                        ));
-                    },
-                )
-                .absolute()
-                .inset_0(),
-            );
-        }
         text.child(
             Textarea::new(&reader.input)
                 .appearance(false)
@@ -330,6 +289,11 @@ impl Shell {
         .on_mouse_up(
             gpui_kit::MouseButton::Left,
             cx.listener(|this, event: &gpui_kit::MouseUpEvent, _, cx| {
+                // A double or triple click is the reader selecting a word or a
+                // sentence; only a plain click asks for a definition.
+                if event.click_count > 1 {
+                    return;
+                }
                 this.lookup_reader_word(Some(event.position), cx)
             }),
         )

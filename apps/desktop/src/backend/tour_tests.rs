@@ -827,6 +827,31 @@ in the morning,在早上,Phrase row.\n\
             1,
             "a cached article is not synthesized twice"
         );
+        // Switching the accent must reach the synthesizer, not just the chip.
+        backend
+            .execute(Command::SetPronunciationAccent {
+                accent: cijian_domain::audio::Accent::Uk,
+            })
+            .unwrap();
+        let _ = backend.execute(Command::EnsureAudio {
+            article: article_id.clone(),
+            operation: "tour-audio-british".into(),
+        });
+        let voices = backend
+            .store
+            .article_audio_assets(&backend.profile, &article_id)
+            .unwrap()
+            .into_iter()
+            .map(|asset| asset.voice)
+            .collect::<Vec<_>>();
+        assert!(
+            voices.contains(&"bf_emma".to_owned()),
+            "British accent should synthesize with bf_emma, got {voices:?}"
+        );
+        assert!(
+            voices.contains(&"af_heart".to_owned()),
+            "the American asset stays cached separately, got {voices:?}"
+        );
     } else {
         assert_eq!(
             audio.err().map(|error| error.code),

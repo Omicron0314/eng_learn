@@ -791,7 +791,7 @@ impl Shell {
         let (message, color) = if let Some(error) = &self.error {
             (error.clone(), ColorRole::ERROR_CONTAINER)
         } else if self.busy_visible {
-            ("正在处理，请稍候…".to_owned(), ColorRole::INVERSE_SURFACE)
+            (self.busy_label.to_owned(), ColorRole::INVERSE_SURFACE)
         } else {
             (self.notice.clone()?, ColorRole::INVERSE_SURFACE)
         };

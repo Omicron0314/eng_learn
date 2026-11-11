@@ -77,7 +77,12 @@ impl NativeAudio {
                 if let Some(sink) = &sink
                     && state.state == PlaybackState::Playing
                 {
-                    state.position = position_base + sink.get_pos().as_secs_f64();
+                    // The timeline the UI shows is the article's own: played time
+                    // is scaled back by the current rate so the total stays fixed.
+                    state.position = (position_base + sink.get_pos().as_secs_f64()) * state.rate;
+                    if let Some(duration) = state.duration {
+                        state.position = state.position.min(duration);
+                    }
                     if sink.empty()
                         && let Some(session) = state.session.clone()
                     {
@@ -125,7 +130,8 @@ impl NativeAudio {
                             let next =
                                 Sink::connect_new(stream.as_ref().expect("opened output").mixer());
                             state.set_rate(rate).map_err(|e| failure(&e.to_string()))?;
-                            let duration = original.map(|total| total / rate);
+                            // The reported duration never changes with the rate.
+                            let duration = original;
                             position_base = 0.;
                             current = Some((path, original));
                             next.append(source);
@@ -185,7 +191,7 @@ impl NativeAudio {
                             let mut next = state.clone();
                             next.seek(position).map_err(|e| failure(&e.to_string()))?;
                             sink.try_seek(
-                                Duration::try_from_secs_f64(next.position)
+                                Duration::try_from_secs_f64(next.position / state.rate)
                                     .map_err(|_| failure("音频位置超出范围"))?,
                             )
                             .map_err(|_| failure("当前音频不支持定位"))?;
@@ -198,7 +204,9 @@ impl NativeAudio {
                             let previous = state.rate;
                             state.set_rate(rate).map_err(|e| failure(&e.to_string()))?;
                             if let Some((path, original)) = current.clone() {
-                                let played = state.position * previous / rate;
+                                // Convert the shown position back to played time, then
+                                // keep it: changing speed must not move the progress bar.
+                                let played = state.position / previous;
                                 let (mut source, _) = open_stretched(&path, rate)?;
                                 if played > 0. {
                                     source
@@ -216,8 +224,7 @@ impl NativeAudio {
                                     next.pause();
                                 }
                                 position_base = played;
-                                state.position = played;
-                                state.duration = original.map(|total| total / rate);
+                                state.duration = original;
                                 sink = Some(next);
                             }
                         }

@@ -196,6 +196,26 @@ impl Command {
     /// Local playback and preference writes are fire-and-forget from the user's
     /// point of view. They must never take the busy flag: that flashed the
     /// snackbar and disabled the card on every pronunciation click.
+    /// What a slow foreground request is doing, so the busy notice never says
+    /// only "processing". Local and background commands return None.
+    pub fn busy_label(&self) -> Option<&'static str> {
+        match self {
+            Self::Lookup { .. } => Some("正在查询释义…"),
+            Self::ExplainCard { .. } => Some("正在生成释义…"),
+            Self::GenerateArticle { .. } => Some("正在生成文章…"),
+            Self::EnsureAudio { .. } => Some("正在生成全文音频…"),
+            Self::OpenArticle { .. } => Some("正在打开文章…"),
+            Self::ImportLegacy { .. } => Some("正在迁入旧数据…"),
+            Self::ChooseImport { .. } => Some("正在读取文件…"),
+            Self::ImportSelected { .. } => Some("正在导入词书…"),
+            Self::ExportBackup { .. } => Some("正在写入备份…"),
+            Self::RestoreBackup => Some("正在恢复备份…"),
+            Self::Mark { .. } | Self::BatchInbox { .. } => Some("正在保存…"),
+            Self::Rate { .. } => Some("正在记录评分…"),
+            Self::SaveSettings { .. } | Self::SaveProvider { .. } => Some("正在保存设置…"),
+            _ => None,
+        }
+    }
     pub fn is_quiet(&self) -> bool {
         self.is_background_poll()
             || matches!(

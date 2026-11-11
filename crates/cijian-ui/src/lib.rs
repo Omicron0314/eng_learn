@@ -58,6 +58,8 @@ struct Shell {
     /// Set only after a foreground request stays unanswered past
     /// `BUSY_NOTICE_DELAY`, so quick local queries never blink the snackbar.
     busy_visible: bool,
+    /// Specific wording for the pending foreground request.
+    busy_label: &'static str,
     compact_reader: bool,
     reader_scroll: gpui_kit::ScrollHandle,
     heatmap_focus: std::cell::RefCell<Vec<gpui_kit::FocusHandle>>,
@@ -150,6 +152,7 @@ impl Shell {
             backend: None,
             loading: false,
             busy_visible: false,
+            busy_label: "正在处理，请稍候…",
             compact_reader: false,
             reader_scroll: gpui_kit::ScrollHandle::new(),
             heatmap_focus: Default::default(),
@@ -238,6 +241,7 @@ impl Shell {
         if !quiet {
             self.loading = true;
             self.busy_visible = false;
+            self.busy_label = command.busy_label().unwrap_or("正在处理，请稍候…");
             self.lookup_loading = matches!(command, Command::Lookup { .. });
             self.error = None;
             self.request_id += 1;

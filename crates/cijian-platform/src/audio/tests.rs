@@ -120,25 +120,40 @@ fn changing_rate_keeps_the_position_and_words_play_at_one_speed() {
         .unwrap();
     assert_eq!(playing.duration, Some(2.));
     assert_eq!(playing.rate, 1.);
-    // The played timeline shrinks when the speed rises: the whole article is
-    // shorter because the pitch is kept instead of resampling the file.
+    // The article really plays faster, but the reported timeline stays the
+    // article's own length so the progress bar never rescales.
     let faster = player.command(AudioCommand::Rate(1.25)).unwrap();
     assert_eq!(faster.rate, 1.25);
-    assert_eq!(faster.duration, Some(1.6));
+    assert_eq!(faster.duration, Some(2.));
     let slower = player.command(AudioCommand::Rate(0.75)).unwrap();
-    assert_eq!(
-        slower.duration.map(|total| (total * 100.).round()),
-        Some(267.)
-    );
+    assert_eq!(slower.duration, Some(2.));
     // Position stays continuous across a rate change instead of restarting.
     player.command(AudioCommand::Seek(0.8)).unwrap();
     std::thread::sleep(Duration::from_millis(120));
     let before = player.command(AudioCommand::Status).unwrap().position;
     let after = player.command(AudioCommand::Rate(1.5)).unwrap();
     assert!(
-        (after.position - before * 0.75 / 1.5).abs() < 0.05,
+        (after.position - before).abs() < 0.06,
         "position jumped from {before}s to {}s",
         after.position
+    );
+    assert_eq!(after.duration, Some(2.));
+    // 2s of article left at 1.5x finishes in about 0.8s of wall time.
+    let started = std::time::Instant::now();
+    loop {
+        if player.command(AudioCommand::Status).unwrap().state == PlaybackState::Ended {
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "1.5x playback did not finish"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "1.5x from 0.8s should finish quickly, took {:?}",
+        started.elapsed()
     );
     player.command(AudioCommand::Stop).unwrap();
     // A word recording never joins the article timeline, so article state and
